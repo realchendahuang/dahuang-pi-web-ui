@@ -59,7 +59,7 @@ import {
 	renderSystemdUnit,
 } from "./nativeServices/serviceRendering.js";
 
-const PI_WEB_PACKAGE_NAME = "@jmfederico/pi-web";
+const PI_WEB_PACKAGE_NAME = "@realchendahuang/dahuang-pi-web-ui";
 
 const systemdServiceDir = join(homedir(), ".config", "systemd", "user");
 const launchdServiceDir = join(homedir(), "Library", "LaunchAgents");
@@ -1512,11 +1512,11 @@ Usage:
   pi-web version
 
 From Pi (plugin style):
-  pi install npm:@jmfederico/pi-web   # or git/local source — install once
+  pi install https://github.com/realchendahuang/dahuang-pi-web-ui
   /pi-web                             # only slash command you need
 
-Shell alternative to global npm + services:
-  npm install -g @jmfederico/pi-web --allow-scripts=node-pty
+Shell alternative from a checkout:
+  npm install && npm run build
   pi-web up
 
 Development service install from a checkout:

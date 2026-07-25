@@ -1,9 +1,9 @@
 {
-  "name": "@jmfederico/pi-web",
-  "version": "1.202607.1",
-  "description": "Web UI for persistent Pi Coding Agent sessions in real workspaces.",
+  "name": "@realchendahuang/dahuang-pi-web-ui",
+  "version": "0.1.0",
+  "description": "Pi Studio \u2014 Web UI for Pi Coding Agent (fork of pi-web with Studio UI and /pi-web slash entry).",
   "license": "MIT",
-  "author": "Federico Jaramillo Martinez",
+  "author": "Kim <realchendahuang@gmail.com>",
   "type": "module",
   "bin": {
     "pi-web": "dist/cli.js",
@@ -106,17 +106,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jmfederico/pi-web.git"
+    "url": "git+https://github.com/realchendahuang/dahuang-pi-web-ui.git"
   },
   "bugs": {
-    "url": "https://github.com/jmfederico/pi-web/issues"
+    "url": "https://github.com/realchendahuang/dahuang-pi-web-ui/issues"
   },
-  "homepage": "https://pi-web.dev/",
+  "homepage": "https://github.com/realchendahuang/dahuang-pi-web-ui#readme",
   "packageManager": "npm@11.11.0",
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": ">=0.81.1 <0.82",
-    "@earendil-works/pi-ai": ">=0.81.1 <0.82",
-    "@earendil-works/pi-coding-agent": ">=0.81.1 <0.82"
+    "@earendil-works/pi-agent-core": ">=0.81.1 <0.83",
+    "@earendil-works/pi-ai": ">=0.81.1 <0.83",
+    "@earendil-works/pi-coding-agent": ">=0.81.1 <0.83"
   },
   "keywords": [
     "pi-package",
@@ -140,6 +140,6 @@
     "extensions": [
       "./extensions"
     ],
-    "image": "https://raw.githubusercontent.com/jmfederico/pi-web/main/docs/assets/pi-web-banner.png"
+    "image": "https://raw.githubusercontent.com/realchendahuang/dahuang-pi-web-ui/ui-rebuild/docs/assets/pi-web-banner.png"
   }
 }

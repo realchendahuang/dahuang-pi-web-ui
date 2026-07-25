@@ -44,12 +44,11 @@ Requirements:
 Install the package once with Pi, then use a single slash command:
 
 ```bash
-# npm package
-pi install npm:@jmfederico/pi-web
+# from GitHub
+pi install https://github.com/realchendahuang/dahuang-pi-web-ui
 
-# or this fork / a checkout
-pi install git:https://github.com/realchendahuang/dahuang-pi-web-ui
-# pi install /path/to/dahuang-pi-web-ui
+# or a local checkout (after npm install && npm run build)
+pi install /path/to/dahuang-pi-web-ui
 ```
 
 In any Pi session:
@@ -69,8 +68,12 @@ pi-web up
 ### Classic global install
 
 ```bash
-npm install -g @jmfederico/pi-web --allow-scripts=node-pty
-pi-web install
+git clone https://github.com/realchendahuang/dahuang-pi-web-ui.git
+cd dahuang-pi-web-ui
+npm install --allow-scripts=node-pty
+npm run build
+npm link   # optional: exposes pi-web on PATH
+pi-web up
 pi-web doctor
 ```
 
