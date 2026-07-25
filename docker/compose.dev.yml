@@ -103,13 +103,13 @@ services:
     environment:
       <<: *pi-web-dev-environment
       PI_WEB_HOST: 0.0.0.0
-      PI_WEB_PORT: "8504"
+      PI_WEB_PORT: "31415"
     ports:
-      - "${PI_WEB_DEV_API_BIND_ADDR:-127.0.0.1}:${PI_WEB_DEV_API_PORT:-8504}:8504"
-      - "${PI_WEB_DEV_BIND_ADDR:-127.0.0.1}:${PI_WEB_DEV_PORT:-8505}:8505"
+      - "${PI_WEB_DEV_API_BIND_ADDR:-127.0.0.1}:${PI_WEB_DEV_API_PORT:-31415}:31415"
+      - "${PI_WEB_DEV_BIND_ADDR:-127.0.0.1}:${PI_WEB_DEV_PORT:-31416}:31416"
     volumes: *pi-web-dev-volumes
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8504/api/pi-web/runtime >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:31415/api/pi-web/runtime >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12

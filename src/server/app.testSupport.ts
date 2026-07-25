@@ -177,7 +177,7 @@ function appTestAgentProfile(dir: string): ActiveAgentProfileDescriptor {
 export function fullPiWebConfig(): PiWebConfigValues {
   return {
     host: "127.0.0.1",
-    port: 8504,
+    port: 31415,
     allowedHosts: ["gateway.example.test"],
     shortcuts: { "core:view.chat": "mod+1" },
     plugins: { info: { enabled: true, settings: { note: "remote" } } },

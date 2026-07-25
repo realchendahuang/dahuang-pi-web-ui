@@ -78,7 +78,7 @@ RUN bash -euxo pipefail -c '\
 # including custom image hooks, rerun this step and refresh the named volume.
 RUN node -e 'process.stdout.write(`${require("node:crypto").randomUUID()}\n`)' > /opt/pi-web-dev-dependencies/generation
 
-EXPOSE 8504 8505
+EXPOSE 31415 31416
 
 ENTRYPOINT ["tini", "--"]
 CMD ["npm", "run", "dev"]

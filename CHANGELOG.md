@@ -1,4 +1,25 @@
-# @jmfederico/pi-web
+# @realchendahuang/dahuang-pi-web-ui
+
+## 0.202607.0
+
+### Patch Changes
+
+- af54b83: Allow npm 12 global installs and updates to run node-pty's required native-module installation scripts, and diagnose blocked native modules before installing services.
+- af54b83: Add a hierarchical `/tree` navigator for switching conversation branches in place while retaining abandoned branches, with optional branch summaries.
+- af54b83: Show project activity indicators for active sessions and terminals in external Git worktrees before the project is opened.
+- af54b83: Clarify agent instructions so independent sessions are created only when explicitly requested and tracked subsessions remain part of the current task.
+- af54b83: Keep session unread indicators and counts synchronized across browser clients and daemon restarts, and clear them when the completed chat is viewed. Tracked sub-sessions remain excluded from unread counts.
+- af54b83: Add a List/Tree toggle to the Git panel's changed-file list. Tree view groups changes by directory and opens fully collapsed, with a one-click expand-all/collapse-all control, and the chosen view is remembered across sessions.
+- af54b83: Expand a changed submodule in the Git panel to see the work inside it. Tree view nests the submodule's own modified and untracked files (keeping their folder structure) and list view flattens them into one group, with a moved commit pointer shown as `<old> → <new>` when it changed. Selecting any inner file shows its real diff instead of the bare `Subproject commit` line.
+- af54b83: Require Pi Coding Agent `>=0.81.1 <0.82` and build an immutable provider baseline at session-daemon startup. Globally installed Pi extensions can register both config-form and native providers during startup bootstrap; every later Pi extension registration or unregistration—including global replay, project same-ID replacement, lifecycle callbacks, and `/reload`—is ignored. PI WEB browser plugins are a separate browser-only system and are unaffected. Non-provider Pi extension features still work, and ignored calls are de-duplicated in session-daemon logs by operation/provider ID without logging provider configuration or credentials or creating session warnings/notifications.
+
+  After updating PI WEB, or after installing, removing, or updating a globally installed Pi extension that registers providers, manually restart `pi-web-sessiond.service` (`systemctl --user restart pi-web-sessiond`). Restarting only the web/API service and running `/reload` do not rebuild the provider baseline.
+
+- af54b83: Keep PI WEB-managed sessions running when extensions use `ctx.ui.theme`, preserving formatted output as readable plain text.
+- af54b83: Show extension notifications in a compact, dismissible tray for the selected chat, with reconnect recovery and per-chat collapse state.
+- af54b83: Let users minimise session warnings with an accessible status-bar count that remains available as an expand/collapse toggle, an in-pane minimise chevron on the expanded warnings pane, per-session remembered state, and SVG warning icons.
+- af54b83: Keep the session tree usable across mobile and desktop by compacting branch indentation and allowing the preselected no-summary choice to navigate immediately.
+- Change the default web port to 31415 (Vite dev UI 31416) to avoid collisions with common local services, and stop the API server from serving the unbuilt Vite source tree (which caused a blank white page on the API port).
 
 ## 1.202607.1
 

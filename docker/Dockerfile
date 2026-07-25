@@ -50,7 +50,7 @@ ENV NODE_ENV=production \
   HOME=/data/home \
   XDG_CONFIG_HOME=/data/config \
   PI_WEB_HOST=0.0.0.0 \
-  PI_WEB_PORT=8504 \
+  PI_WEB_PORT=31415 \
   PI_WEB_DATA_DIR=/data/pi-web \
   PI_WEB_SESSIOND_SOCKET=/data/pi-web/sessiond.sock \
   PI_CODING_AGENT_DIR=/data/pi-agent \
@@ -81,7 +81,7 @@ RUN bash -euxo pipefail -c '\
 WORKDIR /workspace
 USER pi-web
 
-EXPOSE 8504
+EXPOSE 31415
 
 ENTRYPOINT ["tini", "--"]
 CMD ["pi-web-server"]

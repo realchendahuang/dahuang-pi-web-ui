@@ -967,13 +967,13 @@ If you are an AI agent building or editing a PI WEB plugin, follow this checklis
 Check discovery:
 
 ```bash
-curl http://127.0.0.1:8504/pi-web-plugins/manifest.json
+curl http://127.0.0.1:31415/pi-web-plugins/manifest.json
 ```
 
 Check a plugin module:
 
 ```bash
-curl http://127.0.0.1:8504/pi-web-plugins/my-plugin/pi-web-plugin.js
+curl http://127.0.0.1:31415/pi-web-plugins/my-plugin/pi-web-plugin.js
 ```
 
 Common issues:

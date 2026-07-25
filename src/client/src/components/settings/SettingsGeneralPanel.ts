@@ -96,7 +96,7 @@ export class SettingsGeneralPanel extends LitElement {
                 <span>Port</span>
                 ${this.renderOverrideBadge("port")}
               </span>
-              <input .value=${this.gatewayDraft.port} inputmode="numeric" pattern="[0-9]*" placeholder="8504" autocomplete="off" @input=${(event: Event) => { this.updateGatewayDraft({ port: inputValue(event) }); }}>
+              <input .value=${this.gatewayDraft.port} inputmode="numeric" pattern="[0-9]*" placeholder="31415" autocomplete="off" @input=${(event: Event) => { this.updateGatewayDraft({ port: inputValue(event) }); }}>
               <small>TCP port from 1 to 65535. Leave empty to use PI WEB's default.</small>
             </label>
 
@@ -193,7 +193,7 @@ export class SettingsGeneralPanel extends LitElement {
         <h3>Effective gateway settings after environment overrides</h3>
         <dl>
           <div><dt>Host</dt><dd>${effective.host ?? html`<span class="muted">127.0.0.1 default</span>`}</dd></div>
-          <div><dt>Port</dt><dd>${effective.port ?? html`<span class="muted">8504 default</span>`}</dd></div>
+          <div><dt>Port</dt><dd>${effective.port ?? html`<span class="muted">31415 default</span>`}</dd></div>
           <div><dt>Allowed hosts</dt><dd>${formatAllowedHosts(effective.allowedHosts)}</dd></div>
         </dl>
       </section>

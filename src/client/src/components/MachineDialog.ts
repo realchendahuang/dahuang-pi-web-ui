@@ -102,7 +102,7 @@ export class MachineDialog extends LitElement {
               ${this.error === "" ? null : html`<div class="dialog-error" role="alert">${this.error}</div>`}
               <label>
                 Remote PI WEB URL
-                <input name="baseUrl" type="url" .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:8504" autocomplete="url" inputmode="url" autofocus />
+                <input name="baseUrl" type="url" .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:31415" autocomplete="url" inputmode="url" autofocus />
               </label>
               <small class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? "Enter the reachable base URL first, including http:// or https://."}</small>
               ${hasUrl ? html`

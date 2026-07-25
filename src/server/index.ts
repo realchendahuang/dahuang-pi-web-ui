@@ -4,4 +4,4 @@ import { buildApp } from "./app.js";
 
 const { config } = effectivePiWebConfig();
 const app = await buildApp({ bodyLimit: maxUploadBytes(process.env, config) });
-await app.listen({ port: config.port ?? 8504, host: config.host ?? "127.0.0.1" });
+await app.listen({ port: config.port ?? 31415, host: config.host ?? "127.0.0.1" });

@@ -82,7 +82,7 @@ On npm 12, the scoped flag lets `node-pty` prepare its required native module wi
 Then open:
 
 ```text
-http://127.0.0.1:8504
+http://127.0.0.1:31415
 ```
 
 Useful commands:
@@ -178,7 +178,7 @@ npm run dev
 Open the Vite URL, usually:
 
 ```text
-http://localhost:8505
+http://localhost:31416
 ```
 
 For the split development setup:

@@ -54,7 +54,7 @@ Defaults:
 
 - install directory: `~/.local/share/pi-web-docker` (or `$XDG_DATA_HOME/pi-web-docker`);
 - persistent data: `<install-dir>/data`, mounted at `/data`;
-- browser URL: <http://127.0.0.1:8504>;
+- browser URL: <http://127.0.0.1:31415>;
 - npm packages: latest `@jmfederico/pi-web`; Pi Coding Agent is resolved as PI WEB's npm peer dependency (newest compatible version) and the peer-provided `pi` binary is linked into the image.
 
 Updating recreates the Docker `sessiond` container. Active Pi agent runtimes in this Docker install may stop, so update while sessions are idle. Persisted PI WEB state, Pi config, and session history under the data directory are kept.
@@ -92,7 +92,7 @@ curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/insta
       --install-dir ~/.local/share/pi-web-docker \
       --data-dir ~/.local/share/pi-web-docker/data \
       --bind-address 127.0.0.1 \
-      --port 8504 \
+      --port 31415 \
       --pi-web-version latest
 ```
 
@@ -196,20 +196,20 @@ curl -fsSL "https://raw.githubusercontent.com/jmfederico/pi-web/$ref/docker/inst
 
 ## Localhost binding and remote access
 
-The runtime listens on `0.0.0.0:8504` inside the container but publishes it to `127.0.0.1:8504` on the host by default.
+The runtime listens on `0.0.0.0:31415` inside the container but publishes it to `127.0.0.1:31415` on the host by default.
 
 For SSH access from your laptop:
 
 ```bash
-ssh -L 8504:127.0.0.1:8504 user@server
-# open http://127.0.0.1:8504 locally
+ssh -L 31415:127.0.0.1:31415 user@server
+# open http://127.0.0.1:31415 locally
 ```
 
 For a trusted VPN/private interface, bind to that private address:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/install.sh \
-  | sh -s -- --bind-address 100.x.y.z --port 8504
+  | sh -s -- --bind-address 100.x.y.z --port 31415
 ```
 
 If you use a reverse proxy, keep the container bound to localhost or a private address and put authentication/TLS at the proxy. Avoid `--bind-address 0.0.0.0` unless another trusted layer restricts access.
@@ -291,7 +291,7 @@ You can run the dev stack in the background with:
 ./docker/pi-web-docker --dev start
 ```
 
-Open the Vite UI at <http://127.0.0.1:8505>. The dev API is published on <http://127.0.0.1:8504>.
+Open the Vite UI at <http://127.0.0.1:31416>. The dev API is published on <http://127.0.0.1:31415>.
 
 Useful development commands:
 

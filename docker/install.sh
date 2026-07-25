@@ -25,7 +25,7 @@ Options:
                           or ~/.local/share/pi-web-docker)
   --data-dir DIR          Persistent data directory (default: INSTALL_DIR/data)
   --bind-address ADDR     Host bind address (default: 127.0.0.1)
-  --port PORT             Host port (default: 8504)
+  --port PORT             Host port (default: 31415)
   --pi-web-version VER    npm @jmfederico/pi-web version pin (default: latest)
   --opensuse-image IMAGE  openSUSE base image (default: opensuse/tumbleweed)
   --nodejs-major MAJOR    Node.js major version package to install (default: 22)
@@ -363,7 +363,7 @@ raw_data_dir=$(value_from_env_or_existing_or_default PI_WEB_DOCKER_DATA_DIR "$in
 data_dir=$(absolute_dir "$(path_from_base "$install_dir" "$raw_data_dir")") || die "could not create data directory"
 
 pi_web_bind_addr=$(value_from_env_or_existing_or_default PI_WEB_BIND_ADDR 127.0.0.1)
-pi_web_port=$(value_from_env_or_existing_or_default PI_WEB_PORT 8504)
+pi_web_port=$(value_from_env_or_existing_or_default PI_WEB_PORT 31415)
 pi_web_version=$(value_from_env_or_existing_or_default PI_WEB_VERSION latest)
 pi_web_opensuse_image=$(value_from_env_or_existing_or_default PI_WEB_OPENSUSE_IMAGE opensuse/tumbleweed)
 pi_web_nodejs_major=$(value_from_env_or_existing_or_default PI_WEB_NODEJS_MAJOR 22)

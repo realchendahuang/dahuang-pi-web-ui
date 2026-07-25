@@ -1,10 +1,10 @@
-import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOptions } from "fastify";
 import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
+import { resolveClientDist } from "./clientDist.js";
 import { ProjectStore } from "./storage/projectStore.js";
 import { ProjectService } from "./projects/projectService.js";
 import { WorkspaceService } from "./workspaces/workspaceService.js";
@@ -237,9 +237,12 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
 
   registerMachineProxyRoutes(app, machines);
 
-  const packagedClientDist = join(dirname(fileURLToPath(import.meta.url)), "..", "client");
-  const clientDist = deps.clientDist ?? (existsSync(packagedClientDist) ? packagedClientDist : join(process.cwd(), "dist", "client"));
-  if (clientDist !== false && existsSync(clientDist)) {
+  const clientDist = resolveClientDist({
+    override: deps.clientDist,
+    packagedCandidate: join(dirname(fileURLToPath(import.meta.url)), "..", "client"),
+    cwdCandidate: join(process.cwd(), "dist", "client"),
+  });
+  if (clientDist !== false) {
     await app.register(fastifyStatic, { root: clientDist });
     app.setNotFoundHandler((_request, reply) => reply.sendFile("index.html"));
   }

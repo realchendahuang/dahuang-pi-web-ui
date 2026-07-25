@@ -141,7 +141,7 @@
                 The scoped <code>--allow-scripts=node-pty</code> flag lets npm 12 run the native-module installation required
                 by PI WEB terminals without enabling install scripts for other dependencies.
               </p>
-              <p>Then open <a href="http://127.0.0.1:8504">http://127.0.0.1:8504</a>.</p>
+              <p>Then open <a href="http://127.0.0.1:31415">http://127.0.0.1:31415</a>.</p>
               <p>If preflight fails, no config or existing services are changed. Follow the detected shell guidance: zsh services read <code>~/.zprofile</code>, not interactive-only <code>~/.zshrc</code>; bash uses <code>~/.bash_profile</code> or <code>~/.profile</code>.</p>
               <p>On Linux servers, also consider <code>sudo loginctl enable-linger "$USER"</code> so user services survive logout/reboot.</p>
             </section>
@@ -195,7 +195,7 @@
 <span class="prompt">$</span> pi-web-sessiond
 
 <span class="comment"># Terminal 2</span>
-<span class="prompt">$</span> PI_WEB_PORT=8504 pi-web-server</code></pre>
+<span class="prompt">$</span> PI_WEB_PORT=31415 pi-web-server</code></pre>
               </div>
               <p>
                 On modern WSL distributions with systemd enabled, the installer can work. Without systemd, use the
@@ -210,7 +210,7 @@
             <section id="remote-access">
               <h2>Remote access</h2>
               <p>
-                PI WEB binds to <code>127.0.0.1:8504</code> by default. For a remote server, the safest option is an SSH
+                PI WEB binds to <code>127.0.0.1:31415</code> by default. For a remote server, the safest option is an SSH
                 tunnel:
               </p>
               <div class="code-card">
@@ -218,8 +218,8 @@
                   <strong>SSH tunnel</strong>
                   <button class="copy-button" data-copy="#ssh-tunnel">Copy</button>
                 </div>
-                <pre id="ssh-tunnel"><code><span class="prompt">$</span> ssh -L 8504:127.0.0.1:8504 user@your-server
-<span class="comment"># Open http://127.0.0.1:8504 on your local machine</span></code></pre>
+                <pre id="ssh-tunnel"><code><span class="prompt">$</span> ssh -L 31415:127.0.0.1:31415 user@your-server
+<span class="comment"># Open http://127.0.0.1:31415 on your local machine</span></code></pre>
               </div>
               <div class="callout danger">
                 PI WEB is designed for trusted users and trusted server paths. Do not expose it directly to the public
@@ -237,7 +237,7 @@
                 no prefix-specific rebuild or PI WEB configuration is needed.
               </p>
               <p>
-                For a root deployment, proxy <code>/</code> directly to <code>http://127.0.0.1:8504</code> without
+                For a root deployment, proxy <code>/</code> directly to <code>http://127.0.0.1:31415</code> without
                 rewriting the path. For a nested deployment:
               </p>
               <ol>
@@ -273,7 +273,7 @@ server {
 
     location ^~ /ai/ {
         <span class="comment"># The trailing slash strips /ai/ before forwarding.</span>
-        proxy_pass http://127.0.0.1:8504/;
+        proxy_pass http://127.0.0.1:31415/;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;
@@ -353,7 +353,7 @@ server {
                 </div>
                 <pre id="config-example"><code>{
   "host": "127.0.0.1",
-  "port": 8504,
+  "port": 31415,
   "pathAccess": {
     "allowedPaths": ["~/SDKs", "/opt/reference"]
   },
@@ -372,7 +372,7 @@ server {
                 environment variable reference? Read the <a href="config">configuration reference</a>.
               </div>
               <p>
-                The web server defaults to <code>127.0.0.1:8504</code>, and PI WEB-managed state defaults to
+                The web server defaults to <code>127.0.0.1:31415</code>, and PI WEB-managed state defaults to
                 <code>~/.pi-web</code>. External filesystem paths are denied by default unless listed in
                 <code>pathAccess.allowedPaths</code>.
               </p>

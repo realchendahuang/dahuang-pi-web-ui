@@ -1,5 +1,5 @@
 async (page) => {
-	await page.goto("http://localhost:8505/");
+	await page.goto("http://localhost:31416/");
 	await page.waitForTimeout(2500);
 	const project = page.locator("text=/dahuang-pi-web-ui/").first();
 	if (await project.count()) {

@@ -72,7 +72,7 @@ describe("settings-dialog general settings machine targeting", () => {
     stubWindowTimers();
     const gatewayConfig = configResponse({
       host: "127.0.0.1",
-      port: 8504,
+      port: 31415,
       allowedHosts: ["gateway.local"],
       shortcuts: { "core:view.chat": "mod+1" },
       plugins: { info: { enabled: true } },
@@ -96,7 +96,7 @@ describe("settings-dialog general settings machine targeting", () => {
     expect(getDialogProperty(dialog, "configResponse")).toMatchObject({
       config: {
         host: "127.0.0.1",
-        port: 8504,
+        port: 31415,
         allowedHosts: ["gateway.local"],
         shortcuts: { "core:view.chat": "mod+1" },
         plugins: { info: { enabled: true } },
@@ -107,7 +107,7 @@ describe("settings-dialog general settings machine targeting", () => {
       },
       effectiveConfig: {
         host: "127.0.0.1",
-        port: 8504,
+        port: 31415,
         allowedHosts: ["gateway.local"],
         shortcuts: { "core:view.chat": "mod+1" },
         plugins: { info: { enabled: true } },
@@ -119,7 +119,7 @@ describe("settings-dialog general settings machine targeting", () => {
     });
     expect(onConfigSaved).toHaveBeenCalledWith({
       host: "127.0.0.1",
-      port: 8504,
+      port: 31415,
       allowedHosts: ["gateway.local"],
       shortcuts: { "core:view.chat": "mod+1" },
       plugins: { info: { enabled: true } },

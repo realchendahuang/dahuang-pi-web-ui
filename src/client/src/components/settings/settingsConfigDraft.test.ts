@@ -13,7 +13,7 @@ describe("settings config drafts", () => {
   it("splits gateway server and selected-machine access drafts", () => {
     const config = {
       host: "0.0.0.0",
-      port: 8504,
+      port: 31415,
       allowedHosts: ["example.local", "192.168.1.20"],
       pathAccess: { allowedPaths: ["/tmp", "~/SDKs"] },
       uploads: { defaultFolder: "manual/uploads" },
@@ -21,7 +21,7 @@ describe("settings config drafts", () => {
 
     expect(gatewayServerDraftFromConfig(config)).toEqual({
       host: "0.0.0.0",
-      port: "8504",
+      port: "31415",
       allowedHostsMode: "list",
       allowedHostsText: "example.local\n192.168.1.20",
     });

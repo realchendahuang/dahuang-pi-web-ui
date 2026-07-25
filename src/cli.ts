@@ -142,7 +142,7 @@ function manualRunAdvice(): string {
 	return [
 		"Run PI WEB manually from a checkout:",
 		"  npm run start:sessiond",
-		"  PI_WEB_PORT=8504 npm start",
+		"  PI_WEB_PORT=31415 npm start",
 		"",
 		"For development in one terminal:",
 		"  npm run dev",
@@ -216,7 +216,7 @@ function isLingerEnabled(): boolean | undefined {
 function parseInstallOptions(args: string[]): InstallOptions {
 	const options: InstallOptions = {
 		host: "127.0.0.1",
-		port: "8504",
+		port: "31415",
 		mode: "production",
 	};
 	for (let i = 0; i < args.length; i += 1) {
@@ -379,7 +379,16 @@ function validateDevCheckout(root: string): void {
 		);
 	}
 
-	const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Development mode must be installed from a PI WEB checkout. Could not parse ${packageJsonPath}: ${detail}`,
+			{ cause: error },
+		);
+	}
 	if (!isRecord(parsed) || parsed["name"] !== PI_WEB_PACKAGE_NAME) {
 		throw new Error(
 			`Development mode must be installed from a PI WEB checkout. ${packageJsonPath} is not ${PI_WEB_PACKAGE_NAME}.`,
@@ -910,7 +919,7 @@ async function install(args: string[]): Promise<void> {
 	console.log(`\nPI WEB ${options.mode} services are installed and starting.`);
 	console.log(`Config: ${configPath}`);
 	if (options.mode === "dev") {
-		console.log("Open: http://127.0.0.1:8505");
+		console.log("Open: http://127.0.0.1:31416");
 	} else {
 		console.log(
 			`Open: http://${options.host === "0.0.0.0" ? "127.0.0.1" : options.host}:${options.port}`,
@@ -1407,7 +1416,7 @@ export function defaultWebUrl(env: NodeJS.ProcessEnv = process.env): string {
 	const { config } = effectivePiWebConfig({ env });
 	return defaultWebUrlFromConfig(
 		config.host ?? "127.0.0.1",
-		config.port ?? 8504,
+		config.port ?? 31415,
 	);
 }
 
@@ -1460,6 +1469,22 @@ function servicesInstalled(backend: ServiceBackend): boolean {
  * prints the URL, and opens a browser unless --no-open.
  * Pass --no-install to skip automatic service setup.
  */
+async function waitForServicesRunning(
+	backend: ServiceBackend,
+	attempts = 20,
+	delayMs = 250,
+): Promise<boolean> {
+	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		if (servicesFullyRunning(backend)) return true;
+		if (attempt + 1 < attempts) {
+			await new Promise((resolve) => {
+				setTimeout(resolve, delayMs);
+			});
+		}
+	}
+	return servicesFullyRunning(backend);
+}
+
 async function up(args: string[]): Promise<void> {
 	const noInstall = args.includes("--no-install");
 	const noOpen = args.includes("--no-open");
@@ -1479,6 +1504,19 @@ async function up(args: string[]): Promise<void> {
 		serviceAction("start");
 	} else {
 		console.log("PI WEB services are already running.");
+	}
+
+	if (!(await waitForServicesRunning(backend))) {
+		console.log("PI WEB services failed to become healthy.");
+		printServiceStatusReport(backend);
+		console.log(
+			"\nCommon cause: port 31415 is already taken by a manual `npm run dev` / `npm run dev:web` process.",
+		);
+		console.log(
+			"Stop that process, then re-run `/pi-web` (or `pi-web up`). For source-checkout UI dev, open http://127.0.0.1:31416 instead.",
+		);
+		process.exitCode = 1;
+		return;
 	}
 
 	const url = defaultWebUrl();
@@ -1505,7 +1543,7 @@ function help(): void {
 Usage:
   pi-web up [--no-open] [--no-install]   Bring UI up (auto service setup + open browser)
   pi-web open                            Open the Web UI in a browser
-  pi-web install [--dev] [--host 127.0.0.1] [--port 8504] [--config ...]
+  pi-web install [--dev] [--host 127.0.0.1] [--port 31415] [--config ...]
   pi-web uninstall
   pi-web start|stop|restart|status|logs
   pi-web doctor

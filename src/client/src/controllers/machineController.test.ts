@@ -15,7 +15,7 @@ const remoteMachine: Machine = {
   id: "remote-1",
   name: "Remote",
   kind: "remote",
-  baseUrl: "http://remote.example.test:8504",
+  baseUrl: "http://remote.example.test:31415",
   createdAt: "2026-05-26T00:00:00.000Z",
   updatedAt: "2026-05-26T00:00:00.000Z",
 };

@@ -28,7 +28,7 @@ describe("plugin settings config helpers", () => {
   it("merges local selected-machine plugin config into gateway config without dropping gateway-only values", () => {
     const gateway = configResponse({
       host: "127.0.0.1",
-      port: 8504,
+      port: 31415,
       allowedHosts: ["gateway.local"],
       shortcuts: { "core:view.chat": "mod+1" },
       spawnSessions: false,
@@ -40,7 +40,7 @@ describe("plugin settings config helpers", () => {
       ...gateway,
       config: {
         host: "127.0.0.1",
-        port: 8504,
+        port: 31415,
         allowedHosts: ["gateway.local"],
         shortcuts: { "core:view.chat": "mod+1" },
         spawnSessions: false,
@@ -48,7 +48,7 @@ describe("plugin settings config helpers", () => {
       },
       effectiveConfig: {
         host: "127.0.0.1",
-        port: 8504,
+        port: 31415,
         allowedHosts: ["gateway.local"],
         shortcuts: { "core:view.chat": "mod+1" },
         spawnSessions: false,

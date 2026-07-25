@@ -45,8 +45,8 @@ afterEach(() => {
 
 describe("defaultWebUrlFromConfig", () => {
 	it("uses the configured host and port", () => {
-		expect(defaultWebUrlFromConfig("127.0.0.1", 8504)).toBe(
-			"http://127.0.0.1:8504",
+		expect(defaultWebUrlFromConfig("127.0.0.1", 31415)).toBe(
+			"http://127.0.0.1:31415",
 		);
 	});
 
@@ -54,29 +54,29 @@ describe("defaultWebUrlFromConfig", () => {
 		expect(defaultWebUrlFromConfig("0.0.0.0", 9000)).toBe(
 			"http://127.0.0.1:9000",
 		);
-		expect(defaultWebUrlFromConfig("::", 8504)).toBe("http://127.0.0.1:8504");
-		expect(defaultWebUrlFromConfig("[::]", 8504)).toBe("http://127.0.0.1:8504");
+		expect(defaultWebUrlFromConfig("::", 31415)).toBe("http://127.0.0.1:31415");
+		expect(defaultWebUrlFromConfig("[::]", 31415)).toBe("http://127.0.0.1:31415");
 	});
 });
 
 describe("browserOpenInvocation", () => {
 	it("uses open on macOS", () => {
-		expect(browserOpenInvocation("http://127.0.0.1:8504", "darwin")).toEqual({
+		expect(browserOpenInvocation("http://127.0.0.1:31415", "darwin")).toEqual({
 			command: "open",
-			args: ["http://127.0.0.1:8504"],
+			args: ["http://127.0.0.1:31415"],
 		});
 	});
 
 	it("uses xdg-open on linux", () => {
-		expect(browserOpenInvocation("http://127.0.0.1:8504", "linux")).toEqual({
+		expect(browserOpenInvocation("http://127.0.0.1:31415", "linux")).toEqual({
 			command: "xdg-open",
-			args: ["http://127.0.0.1:8504"],
+			args: ["http://127.0.0.1:31415"],
 		});
 	});
 
 	it("returns undefined on unsupported platforms", () => {
 		expect(
-			browserOpenInvocation("http://127.0.0.1:8504", "aix"),
+			browserOpenInvocation("http://127.0.0.1:31415", "aix"),
 		).toBeUndefined();
 	});
 });

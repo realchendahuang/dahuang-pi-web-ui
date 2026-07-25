@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
-import { copyFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
@@ -23,7 +22,9 @@ interface FakeDocker {
 }
 
 beforeEach(async () => {
-  tempDir = await mkdtemp(join(tmpdir(), "pi-web-docker-test-"));
+  // Prefer a short base path: macOS AF_UNIX sockets reject long sun_path values, and
+  // shell `pwd -P` resolves /var and /tmp into /private/... so realpath keeps assertions aligned.
+  tempDir = await realpath(await mkdtemp(join("/tmp", "pw-docker-")));
 });
 
 afterEach(async () => {
@@ -559,8 +560,8 @@ async function createDevGeneratedEnv(ids: { uid: number; gid: number; dockerGid:
     `PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}`,
     "PI_WEB_DEV_API_BIND_ADDR=127.0.0.1",
     "PI_WEB_DEV_BIND_ADDR=127.0.0.1",
-    "PI_WEB_DEV_API_PORT=8504",
-    "PI_WEB_DEV_PORT=8505",
+    "PI_WEB_DEV_API_PORT=31415",
+    "PI_WEB_DEV_PORT=31416",
     "PI_WEB_DEV_IMAGE=pi-web:test",
     "COMPOSE_PROJECT_NAME=pi-web-dev-test",
     "",

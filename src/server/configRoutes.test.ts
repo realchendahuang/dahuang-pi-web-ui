@@ -8,7 +8,7 @@ let savedConfig: PiWebConfigValues;
 let service: PiWebConfigService;
 
 beforeEach(async () => {
-  savedConfig = { host: "127.0.0.1", port: 8504, allowedHosts: [] };
+  savedConfig = { host: "127.0.0.1", port: 31415, allowedHosts: [] };
   service = {
     read: vi.fn(() => responseFor(savedConfig, true)),
     write: vi.fn((config: PiWebConfigValues) => {
@@ -250,7 +250,7 @@ describe("config routes", () => {
 function fullConfig(): PiWebConfigValues {
   return {
     host: "127.0.0.1",
-    port: 8504,
+    port: 31415,
     allowedHosts: ["gateway.example.test"],
     shortcuts: { "core:view.chat": "mod+1" },
     plugins: { info: { enabled: true, settings: { note: "visible" } } },

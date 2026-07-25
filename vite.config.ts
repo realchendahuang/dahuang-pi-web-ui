@@ -7,7 +7,7 @@ import { defineConfig } from "vite";
 import { effectivePiWebConfig } from "./src/config";
 
 const { config } = effectivePiWebConfig();
-const apiPort = config.port ?? 8504;
+const apiPort = config.port ?? 31415;
 const docsRoot = resolve("docs");
 const docsPrefix = "/site";
 
@@ -112,7 +112,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 8505,
+    port: 31416,
     strictPort: true,
     ...(config.allowedHosts === undefined ? {} : { allowedHosts: config.allowedHosts }),
     proxy: {

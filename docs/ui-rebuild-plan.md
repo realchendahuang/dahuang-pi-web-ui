@@ -6,7 +6,7 @@
 ## 1. Current architecture (as-found)
 
 ```text
-Browser (Lit SPA, Vite :8505)
+Browser (Lit SPA, Vite :31416)
   └─ src/client/src/components/PiWebApp.ts   root element <pi-web-app>, owns AppState
        ├─ controllers/            sessionController, projectController, workspaceController,
        │                          terminalSelection, gitController, authController, …
@@ -19,7 +19,7 @@ Browser (Lit SPA, Vite :8505)
               ├─ core/panels.ts   core:workspace.files | core:workspace.git | core:workspace.terminal
               └─ themes/index.ts  theme pairs as token maps (--pi-* CSS variables)
                 ↓ HTTP/WS (app-relative `api/…`, resolved once at boundary)
-Fastify API (:8504)  src/server/app.ts + sessionRoutes/gitRoutes/terminalRoutes/…
+Fastify API (:31415)  src/server/app.ts + sessionRoutes/gitRoutes/terminalRoutes/…
                 ↓ unix socket (~/.pi-web/sessiond.sock)
 Session daemon       src/server/sessiond.ts  owns Pi Coding Agent runtimes
                      (survives browser disconnects; sessions keep running)

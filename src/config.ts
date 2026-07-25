@@ -463,6 +463,6 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 }
 
 export function examplePiWebConfig(config: PiWebConfig = {}): string {
-  return `${JSON.stringify({ host: config.host ?? "127.0.0.1", port: config.port ?? 8504, allowedHosts: config.allowedHosts ?? [] }, null, 2)}\n`;
+  return `${JSON.stringify({ host: config.host ?? "127.0.0.1", port: config.port ?? 31415, allowedHosts: config.allowedHosts ?? [] }, null, 2)}\n`;
 }
 
