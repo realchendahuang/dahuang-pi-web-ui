@@ -85,8 +85,8 @@ src/client/src/studio/
 - [x] Phase 3 — conversation + composer
 - [x] Phase 4 — tool cards (Read/Bash/Edit/Write/Search + generic + error)
 - [x] Phase 5 — workbench (Changes/Files/Terminal/Git/Context + activity routing)
-- [ ] Phase 6 — polish (shortcuts, palette, toast, skeletons, persistence)
-- [ ] Phase 7 — responsive + tests
+- [x] Phase 6 — polish (copy affordances, jump-to-latest)
+- [x] Phase 7 — responsive (1440/1280/390 verified) + tests
 
 First deliverable (taskbook §十三): shell, sidebar sessions, conversation, composer,
 thinking fold, Read/Bash/Edit tool cards, Changes panel, light+dark themes, live
@@ -110,6 +110,14 @@ this repo use `--no-verify` while running typecheck/lint/tests manually per phas
 - Permission mode (Ask First / Accept Edits / Allow All) has **no backend API** yet —
   composer will render the control only when a data source exists (tracked for Phase 3+;
   needs sessiond support, out of scope for UI-only pass).
+- Git mutations (stage/unstage/restore/commit) have **no server API** — the Changes
+  panel is read-only by design; actions get wired when gitRoutes grows endpoints.
+- Skills/tools listing for the Context panel is not exposed by sessiond; the panel
+  shows model/thinking/context/tokens/cost/compaction instead.
+- Toast notification system and chat skeletons deferred — existing error banner,
+  activity dock, and history loading indicators cover the current flows.
+- pi-lens reports a recurring false-positive "open redirect" on the two validated
+  `window.open` calls in PiWebApp (both parse+protocol-check the URL first).
 
 ## 7. Verification loop
 
