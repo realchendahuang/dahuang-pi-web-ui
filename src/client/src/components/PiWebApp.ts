@@ -942,7 +942,7 @@ export class PiWebApp extends LitElement {
     if (!this.unreadConnected) return;
     const machineIds = new Set(this.state.machines.map((machine) => machine.id));
     machineIds.add(selectedMachineId(this.state));
-    await Promise.all([...machineIds].map(async (machineId) => { await this.renegotiateUnreadMachine(machineId); }));
+    await Promise.all([...machineIds].map((machineId) => this.renegotiateUnreadMachine(machineId)));
   }
 
   private renegotiateUnreadMachine(machineId: string): Promise<void> {
@@ -1358,6 +1358,12 @@ export class PiWebApp extends LitElement {
         .onCleanupSessions=${() => { this.openSessionCleanupDialog(); }}
         .onFocusNavigationTarget=${(target: NavigationFocusTarget) => { void this.focusNavigationTarget(target); }}
         .onCancelKeyboardNavigation=${() => { void this.focusChatComposer(); }}
+        .onOpenSettings=${() => { this.openSettings(); }}
+        .onToggleTheme=${() => { this.toggleTheme(); }}
+        .themeIsDark=${this.resolveCurrentThemePreference().activeTheme?.colorScheme !== "light"}
+        .machineName=${this.state.selectedMachine?.name ?? "Local"}
+        .machineConnected=${this.state.machineStatuses[selectedMachineId(this.state)]?.ok === true}
+        .versionLabel=${this.state.piWebStatus?.components.web.installedVersion ?? this.state.piWebStatus?.components.web.runtimeVersion ?? ""}
       ></app-navigation-panel>
     `;
   }
@@ -1931,7 +1937,9 @@ export class PiWebApp extends LitElement {
   private openSelectedMachine(): void {
     const machine = this.state.selectedMachine;
     if (machine?.kind !== "remote" || machine.baseUrl === undefined) return;
-    window.open(machine.baseUrl, "_blank", "noopener,noreferrer");
+    const url = URL.parse(machine.baseUrl);
+    if (url === null || (url.protocol !== "http:" && url.protocol !== "https:")) return;
+    window.open(url.href, "_blank", "noopener,noreferrer");
   }
 
   private runAction(action: AppAction): void {
@@ -2017,6 +2025,27 @@ export class PiWebApp extends LitElement {
     this.activeThemeId = theme.id;
     applyPiWebTheme(theme);
     if (persist) writeStoredThemePreference(this.themePreference);
+  }
+
+  /** Quick light/dark toggle for the sidebar footer; picks the opposite member of the current theme pair. */
+  private toggleTheme(): void {
+    const resolution = this.resolveCurrentThemePreference();
+    const active = resolution.activeTheme;
+    if (active === undefined) return;
+    const pair = this.themePairForTheme(active.id) ?? resolution.selectedThemePair;
+    if (pair !== undefined) {
+      const nextId = active.colorScheme === "light" ? pair.dark : pair.light;
+      const nextTheme = this.plugins.getThemes().find((candidate) => candidate.id === nextId);
+      if (nextTheme !== undefined) {
+        this.themePreference = { themeId: nextTheme.id, auto: false };
+        this.applyPreferredTheme(true);
+        return;
+      }
+    }
+    const fallback = this.plugins.getThemes().find((candidate) => candidate.colorScheme !== active.colorScheme);
+    if (fallback === undefined) return;
+    this.themePreference = { themeId: fallback.id, auto: false };
+    this.applyPreferredTheme(true);
   }
 
   private resolveCurrentThemePreference(themes = this.plugins.getThemes()): ThemePreferenceResolution {

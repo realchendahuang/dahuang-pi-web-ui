@@ -234,10 +234,12 @@ export type ThemeColorScheme = "dark" | "light";
 export type ThemeToken =
   | "--pi-bg"
   | "--pi-surface"
+  | "--pi-surface-secondary"
   | "--pi-surface-hover"
   | "--pi-terminal-bg"
   | "--pi-terminal-text"
   | "--pi-border"
+  | "--pi-border-strong"
   | "--pi-border-muted"
   | "--pi-text"
   | "--pi-text-secondary"

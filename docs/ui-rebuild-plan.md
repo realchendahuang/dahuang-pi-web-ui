@@ -106,6 +106,7 @@ streaming intact, existing tests green.
 Baseline after node-pty rebuild: **1755 passed, 7 failed** (all listed above).
 Pre-commit hook runs full `verify:staged` and therefore blocks on these 7; commits in
 this repo use `--no-verify` while running typecheck/lint/tests manually per phase.
+
 - Permission mode (Ask First / Accept Edits / Allow All) has **no backend API** yet —
   composer will render the control only when a data source exists (tracked for Phase 3+;
   needs sessiond support, out of scope for UI-only pass).

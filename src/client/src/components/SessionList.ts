@@ -9,6 +9,7 @@ import { actionMenuPanelStyle } from "./actionMenu";
 import { renderActionActivityIndicator, type ActivityIndicatorKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
+import { formatRelativeTime, groupSessionRowsByTime, sessionMatchesQuery } from "../sessionGrouping";
 import { listStyles } from "./shared";
 
 function sessionLabel(session: SessionInfo): string {
@@ -65,6 +66,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   @state() private archivedExpanded = false;
   @state() private selectionScopes: ReadonlySet<SessionSelectionScope> = new Set();
   @state() private selectedSessionIds: ReadonlySet<string> = new Set();
+  @state() private searchQuery = "";
 
   private readonly onDocumentClick = (event: MouseEvent) => {
     if (event.composedPath().includes(this)) return;
@@ -113,14 +115,24 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
       activities: this.activities,
       sending: this.sending,
     });
+    const visibleRows = this.searchQuery.trim() === ""
+      ? currentRows
+      : currentRows.filter((row) => sessionMatchesQuery(this.searchQuery, row.session.name, row.session.firstMessage));
+    const groups = groupSessionRowsByTime(visibleRows, (row) => row.session.modified);
     return html`
       <section>
         ${this.renderHeading(currentRows.length + archivedRows.length, currentSelectableSessions, unreadCount)}
         ${this.collapsed ? null : html`
+          ${this.renderSearch()}
           <div class="list-body">
             ${this.renderCurrentSelectionToolbar(currentSelectableSessions)}
             ${this.startingCount > 0 ? this.renderStartingSession() : null}
-            ${currentRows.map((row) => this.renderSession(row, descendantCounts.get(row.session.id) ?? 0, "current"))}
+            ${groups.map((group) => html`
+              <h3 class="time-group" data-group=${group.id}>${group.label}</h3>
+              ${group.items.map((row) => this.renderSession(row, descendantCounts.get(row.session.id) ?? 0, "current"))}
+            `)}
+            ${currentRows.length === 0 && this.startingCount === 0 ? html`<p class="list-empty">No sessions yet. Start one with the + button above.</p>` : null}
+            ${currentRows.length > 0 && visibleRows.length === 0 ? html`<p class="list-empty">No sessions match “${this.searchQuery.trim()}”.</p>` : null}
             ${archivedRows.length > 0 ? html`
               ${this.renderArchivedHeading(archivedRows.map((row) => row.session))}
               ${this.archivedExpanded ? html`
@@ -131,6 +143,20 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
           </div>
         `}
       </section>
+    `;
+  }
+
+  private renderSearch() {
+    return html`
+      <div class="session-search">
+        <input
+          type="search"
+          placeholder="Search sessions"
+          aria-label="Search sessions"
+          .value=${this.searchQuery}
+          @input=${(event: InputEvent) => { const target = event.target; if (target instanceof HTMLInputElement) this.searchQuery = target.value; }}
+        />
+      </div>
     `;
   }
 
@@ -265,7 +291,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
       >
         <div class="action-main ${selectionActive ? "selecting" : ""}">
           ${showsCheckbox ? html`<input class="session-checkbox" type="checkbox" aria-label=${`Select ${sessionLabel(session)}`} .checked=${bulkSelected} @click=${(event: MouseEvent) => { event.stopPropagation(); }} @change=${() => { this.toggleSelected(session.id); }}>` : null}
-          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">depth ${row.depth}</span>` : null}${row.hasMissingParent ? html` <span class="badge">parent unavailable</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${String(session.messageCount)} messages</small>
+          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">depth ${row.depth}</span>` : null}${row.hasMissingParent ? html` <span class="badge">parent unavailable</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${formatRelativeTime(session.modified)} · ${String(session.messageCount)} messages</small>
           ${this.renderActivity(indicatorKind)}
         </div>
         <div class="action-menu">
@@ -438,6 +464,13 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
     h2 { min-height: 30px; }
     h2 > .section-count { flex: 0 0 auto; display: inline; color: var(--pi-muted); font-size: inherit; }
     h2 > .section-unread-count { flex: 0 0 auto; display: inline; color: var(--pi-accent); font-size: inherit; text-transform: none; }
+    .session-search { flex: 0 0 auto; margin: 0 0 6px; }
+    .session-search input { box-sizing: border-box; width: 100%; border: 1px solid var(--pi-border); border-radius: var(--pi-radius-sm, 8px); background: var(--pi-surface-secondary, var(--pi-surface)); color: var(--pi-text); padding: 6px 9px; font: inherit; font-size: 13px; }
+    .session-search input::placeholder { color: var(--pi-muted); }
+    .session-search input:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    .time-group { margin: 14px 2px 4px; color: var(--pi-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    .time-group:first-of-type { margin-top: 4px; }
+    .list-empty { margin: 12px 2px; color: var(--pi-muted); font-size: 13px; }
     .bulk-select-entry { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; font-size: 13px; line-height: 1; text-transform: none; }
     .start-session-button { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 9px; }
     .cleanup-entry { flex: 0 0 auto; padding: 5px 7px; font-size: 12px; text-transform: none; }

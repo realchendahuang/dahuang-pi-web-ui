@@ -5,10 +5,12 @@ import type { QualifiedContributionId, QualifiedThemeContribution, QualifiedThem
 const tokens = {
   "--pi-bg": "#000000",
   "--pi-surface": "#000000",
+  "--pi-surface-secondary": "#000000",
   "--pi-surface-hover": "#000000",
   "--pi-terminal-bg": "#000000",
   "--pi-terminal-text": "#000000",
   "--pi-border": "#000000",
+  "--pi-border-strong": "#000000",
   "--pi-border-muted": "#000000",
   "--pi-text": "#000000",
   "--pi-text-secondary": "#000000",
@@ -41,12 +43,22 @@ const tokens = {
 } satisfies ThemeTokens;
 
 const themes = [
+  theme("studio-dark", "Studio Dark", "dark"),
+  theme("studio-light", "Studio Light", "light"),
   theme("pi-web-dark", "PI WEB Dark", "dark"),
   theme("pi-web-light", "PI WEB Light", "light"),
   theme("classic", "PI WEB Classic", "dark"),
 ];
 
 const themePairs: QualifiedThemePairContribution[] = [
+  {
+    id: "themes:studio",
+    pluginId: "themes",
+    localId: "studio",
+    name: "Studio",
+    light: "themes:studio-light",
+    dark: "themes:studio-dark",
+  },
   {
     id: "themes:pi-web",
     pluginId: "themes",
@@ -60,12 +72,12 @@ const themePairs: QualifiedThemePairContribution[] = [
 describe("resolveThemePreference", () => {
   it("resolves the default auto preference to the dark member when the system is dark", () => {
     expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: false }).activeTheme?.id)
-      .toBe("themes:pi-web-dark");
+      .toBe("themes:studio-dark");
   });
 
   it("resolves the default auto preference to the light member when the system is light", () => {
     expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: true }).activeTheme?.id)
-      .toBe("themes:pi-web-light");
+      .toBe("themes:studio-light");
   });
 
   it("keeps an unpaired theme selected when auto is enabled", () => {

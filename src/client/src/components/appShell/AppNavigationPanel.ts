@@ -74,6 +74,12 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) onRemoveMachine?: (machine: Machine) => void | Promise<void>;
   @property({ attribute: false }) onFocusNavigationTarget?: (target: NavigationFocusTarget) => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
+  @property({ attribute: false }) onOpenSettings?: () => void;
+  @property({ attribute: false }) onToggleTheme?: () => void;
+  @property({ type: Boolean }) themeIsDark = true;
+  @property({ type: String }) machineName = "";
+  @property({ type: Boolean }) machineConnected = false;
+  @property({ type: String }) versionLabel = "";
 
   @query("machine-list") private machineList?: KeyboardNavigableSection;
   @query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
@@ -94,7 +100,10 @@ export class AppNavigationPanel extends LitElement {
   override render() {
     return html`
       <header>
-        <strong>PI WEB</strong>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">π</span>
+          <strong class="brand-name">Pi Studio</strong>
+        </div>
         ${shouldShowMachinesSection(this.machines) ? html`
           <machine-switcher
             .machines=${this.machines}
@@ -109,9 +118,14 @@ export class AppNavigationPanel extends LitElement {
         ` : null}
         <div class="header-actions">
           ${this.refreshControl}
-          <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
+          <button class="icon-button" title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
         </div>
       </header>
+      <div class="new-task">
+        <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? "Start a new task" : "Select a workspace to start a new task"} @click=${() => { void this.onStartSession?.(); }}>
+          <span class="new-task-plus" aria-hidden="true">+</span> New task
+        </button>
+      </div>
       ${this.compact && shouldShowMachinesSection(this.machines) ? html`
         <machine-list
           .machines=${this.machines}
@@ -191,6 +205,15 @@ export class AppNavigationPanel extends LitElement {
         .onFocusNextSection=${() => { this.focusNextFrom("sessions"); }}
         .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
       ></session-list>
+      <footer class="nav-footer">
+        <button class="footer-button" title="Settings" @click=${() => { this.onOpenSettings?.(); }}>Settings</button>
+        <button class="footer-button" title=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} aria-label=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} @click=${() => { this.onToggleTheme?.(); }}>${this.themeIsDark ? "☾" : "☀"}</button>
+        <span class="footer-status" title=${this.machineConnected ? "Connected" : "Disconnected"}>
+          <span class="status-dot ${this.machineConnected ? "connected" : "disconnected"}" aria-hidden="true"></span>
+          <span class="footer-machine">${this.machineName}</span>
+        </span>
+        ${this.versionLabel !== "" ? html`<span class="footer-version">${this.versionLabel}</span>` : null}
+      </footer>
     `;
   }
 
@@ -215,11 +238,30 @@ export class AppNavigationPanel extends LitElement {
   static override styles = css`
     :host { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
     :host([compact]) { flex: 1 1 auto; }
-    header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid var(--pi-border); }
+    header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 8px; }
     header strong { flex: 0 0 auto; }
+    .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .brand-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--pi-border-strong, var(--pi-border)); border-radius: var(--pi-radius-xs, 6px); background: var(--pi-surface); color: var(--pi-text); font-size: 13px; font-weight: 600; line-height: 1; }
+    .brand-name { font-size: 14px; font-weight: 600; letter-spacing: .01em; }
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }
+    :host([compact]) .new-task { display: none; }
+    :host([compact]) .nav-footer { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+    .new-task { flex: 0 0 auto; padding: 0 12px 8px; border-bottom: 1px solid var(--pi-border-muted); }
+    .new-task-button { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; border: 1px solid var(--pi-border-strong, var(--pi-border)); border-radius: var(--pi-radius-sm, 8px); background: var(--pi-text); color: var(--pi-bg); padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .new-task-button:hover { opacity: .88; }
+    .new-task-button:disabled { opacity: .45; cursor: not-allowed; }
+    .new-task-plus { font-size: 15px; line-height: 1; }
+    .nav-footer { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--pi-border-muted); }
+    .footer-button { border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 5px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+    .footer-button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
+    .footer-status { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin-left: auto; color: var(--pi-muted); font-size: 12px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-muted); }
+    .status-dot.connected { background: var(--pi-success); }
+    .status-dot.disconnected { background: var(--pi-danger); }
+    .footer-machine { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .footer-version { color: var(--pi-dim); font-size: 11px; }
     machine-list, project-list, workspace-list { flex: 0 0 auto; max-height: 26%; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--pi-border-muted); }
     session-list { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     machine-list[collapsed],
@@ -234,7 +276,7 @@ export class AppNavigationPanel extends LitElement {
     :host([compact]) project-list[collapsed],
     :host([compact]) workspace-list[collapsed],
     :host([compact]) session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
-    button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
+    button.icon-button { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-sm, 8px); background: var(--pi-surface); color: var(--pi-text); padding: 6px 8px; font-size: 12px; cursor: pointer; }
   `;
 }
 

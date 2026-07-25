@@ -23,3 +23,154 @@
     at async http://localhost:8505/src/components/PiWebApp.ts:1341:4
     at async PiWebApp.withChatScrollTransition (http://localhost:8505/src/components/PiWebApp.ts:672:3)
     at async PiWebApp.selectNavigationItem (http://localhost:8505/src/components/PiWebApp.ts:1339:3) @ http://localhost:8505/src/components/PiWebApp.ts:107
+[  919614ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1018982ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1101661ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1144575ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1314412ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1620033ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1620046ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620053ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620054ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620058ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620058ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620058ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620061ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620061ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620061ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620061ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620063ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620063ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620063ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620063ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620067ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620067ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620067ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620069ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620069ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620127ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620127ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620824ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1620824ms] ReferenceError: groupSessionRowsByTime is not defined
+    at SessionList.render (http://localhost:8505/src/components/SessionList.ts?t=1784961802242:86:18)
+    at SessionList.update (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/lit.js?v=10353af9:101:22)
+    at SessionList.performUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:696:10)
+    at SessionList.scheduleUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:655:23)
+    at SessionList.__enqueueUpdate (http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:633:23)
+[ 1654384ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1691404ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1770502ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1917346ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 1967485ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 2015182ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[ 2109812ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121

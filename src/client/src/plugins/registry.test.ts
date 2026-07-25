@@ -744,10 +744,12 @@ function testThemeTokens(): ThemeTokens {
   return {
     "--pi-bg": "#000000",
     "--pi-surface": "#000000",
+    "--pi-surface-secondary": "#000000",
     "--pi-surface-hover": "#000000",
     "--pi-terminal-bg": "#000000",
     "--pi-terminal-text": "#000000",
     "--pi-border": "#000000",
+    "--pi-border-strong": "#000000",
     "--pi-border-muted": "#000000",
     "--pi-text": "#000000",
     "--pi-text-secondary": "#000000",

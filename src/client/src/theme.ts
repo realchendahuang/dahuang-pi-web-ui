@@ -21,17 +21,19 @@ export interface ThemePreferenceResolution {
 }
 
 export const CLASSIC_THEME_ID: QualifiedContributionId = "themes:classic";
-export const DEFAULT_THEME_ID: QualifiedContributionId = "themes:pi-web-dark";
+export const DEFAULT_THEME_ID: QualifiedContributionId = "themes:studio-dark";
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = { themeId: DEFAULT_THEME_ID, auto: true };
 export const THEME_STORAGE_KEY = "pi-web-app-theme";
 
 export const THEME_TOKENS: ThemeToken[] = [
   "--pi-bg",
   "--pi-surface",
+  "--pi-surface-secondary",
   "--pi-surface-hover",
   "--pi-terminal-bg",
   "--pi-terminal-text",
   "--pi-border",
+  "--pi-border-strong",
   "--pi-border-muted",
   "--pi-text",
   "--pi-text-secondary",
