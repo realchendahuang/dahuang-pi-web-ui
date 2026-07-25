@@ -10,7 +10,13 @@ const cliPath = join(packageRoot, "dist", "cli.js");
 const serviceNames = ["pi-web-sessiond.service", "pi-web.service", "pi-web-ui-dev.service"];
 const macLogPaths = ["sessiond.log", "web.log", "ui-dev.log"].map((name) => join(homedir(), ".pi-web", "logs", name));
 
+/**
+ * Single slash surface: `/pi-web`.
+ * Bare `/pi-web` (no args) means "bring the Web UI up" — not help.
+ */
 const subcommands = [
+  "up",
+  "open",
   "install",
   "status",
   "logs",
@@ -20,19 +26,26 @@ const subcommands = [
   "doctor",
   "version",
   "uninstall",
-  "open",
   "help",
 ] as const;
 
 type Subcommand = (typeof subcommands)[number];
 
-function parseArgs(args: string): string[] {
+export function parseArgs(args: string): string[] {
   return args.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => {
     if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
       return part.slice(1, -1);
     }
     return part;
   }) ?? [];
+}
+
+/** Bare `/pi-web` defaults to `up` (start if needed + open URL). */
+export function resolvePiWebSubcommand(args: string): { subcommand: string; rest: string[] } {
+  const parsedArgs = parseArgs(args);
+  const head = parsedArgs[0];
+  if (head === undefined || head === "") return { subcommand: "up", rest: [] };
+  return { subcommand: head, rest: parsedArgs.slice(1) };
 }
 
 function truncateOutput(output: string): string {
@@ -89,7 +102,7 @@ async function boundedLogs(): Promise<{ code: number; output: string }> {
 
 export default function piWebExtension(pi: ExtensionAPI): void {
   pi.registerCommand("pi-web", {
-    description: "Manage PI WEB services: install, status, logs, restart, start, stop, doctor, version, open",
+    description: "Open PI WEB UI (default), or manage services: up, open, install, status, start, stop, …",
     getArgumentCompletions(prefix: string): { value: string; label: string }[] | null {
       const [first = ""] = parseArgs(prefix);
       const items = subcommands
@@ -98,17 +111,27 @@ export default function piWebExtension(pi: ExtensionAPI): void {
       return items.length > 0 ? items : null;
     },
     async handler(args, ctx) {
-      const parsedArgs = parseArgs(args);
-      const subcommand = parsedArgs[0] ?? "help";
-      const rest = parsedArgs.slice(1);
+      const { subcommand, rest } = resolvePiWebSubcommand(args);
 
       if (subcommand === "help") {
-        ctx.ui.notify(`PI WEB commands:\n\n${subcommands.map((command) => `/pi-web ${command}`).join("\n")}\n\nLogs are bounded to the last 100 service log lines in the Pi command. Use \`pi-web logs\` in a shell to follow logs.`, "info");
-        return;
-      }
-
-      if (subcommand === "open") {
-        ctx.ui.notify("PI WEB default URL: http://127.0.0.1:8504", "info");
+        ctx.ui.notify(
+          [
+            "PI WEB — single slash entry `/pi-web`",
+            "",
+            "/pi-web              Start if needed, print URL, open browser  (same as /pi-web up)",
+            "/pi-web up [--install] [--no-open]",
+            "/pi-web open         Open the Web UI URL in a browser",
+            "/pi-web install      One-time user service install (LaunchAgent / systemd)",
+            "/pi-web status|start|stop|restart|logs|doctor|version|uninstall",
+            "",
+            "First time after `pi install`:",
+            "  /pi-web install",
+            "  /pi-web",
+            "",
+            "Logs in this command are bounded to the last 100 lines. Use `pi-web logs` in a shell to follow.",
+          ].join("\n"),
+          "info",
+        );
         return;
       }
 
@@ -127,6 +150,7 @@ export default function piWebExtension(pi: ExtensionAPI): void {
         return;
       }
 
+      // `up` / `open` / everything else goes through the CLI so behavior matches the shell.
       showResult(ctx, `pi-web ${subcommand}`, await runPiWeb([subcommand, ...rest]));
     },
   });

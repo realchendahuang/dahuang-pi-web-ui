@@ -39,7 +39,34 @@ Requirements:
 - Pi Coding Agent `>=0.81.1 <0.82`, configured for your user
 - git and the development tools your agents need
 
-Install and start PI WEB as per-user services:
+### Plugin-style (recommended with Pi)
+
+Install as a Pi package, then start the Web UI from a slash command:
+
+```bash
+# npm package
+pi install npm:@jmfederico/pi-web
+
+# or this fork / a checkout
+pi install git:https://github.com/realchendahuang/dahuang-pi-web-ui
+# pi install /path/to/dahuang-pi-web-ui
+```
+
+In any Pi session:
+
+```text
+/pi-web install     # one-time: install user services (LaunchAgent / systemd)
+/pi-web             # start if needed, print URL, open browser
+```
+
+Same entry from a shell:
+
+```bash
+pi-web up           # equivalent to bare /pi-web
+pi-web open         # open the URL only
+```
+
+### Classic global install
 
 ```bash
 npm install -g @jmfederico/pi-web --allow-scripts=node-pty
@@ -58,6 +85,7 @@ http://127.0.0.1:8504
 Useful commands:
 
 ```bash
+pi-web up
 pi-web status
 pi-web logs
 pi-web restart

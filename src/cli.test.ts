@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   agentCommandForChecks,
+  browserOpenInvocation,
   commandWithVersionCheck,
+  defaultWebUrlFromConfig,
   doctorExitCode,
   isCliEntrypoint,
   launchdRuntimeDetails,
@@ -33,6 +35,38 @@ afterEach(() => {
   } else {
     process.env["PI_WEB_AGENT_COMMAND"] = originalPiWebAgentCommand;
   }
+});
+
+describe("defaultWebUrlFromConfig", () => {
+  it("uses the configured host and port", () => {
+    expect(defaultWebUrlFromConfig("127.0.0.1", 8504)).toBe("http://127.0.0.1:8504");
+  });
+
+  it("maps wildcard bind addresses to loopback for the browser", () => {
+    expect(defaultWebUrlFromConfig("0.0.0.0", 9000)).toBe("http://127.0.0.1:9000");
+    expect(defaultWebUrlFromConfig("::", 8504)).toBe("http://127.0.0.1:8504");
+    expect(defaultWebUrlFromConfig("[::]", 8504)).toBe("http://127.0.0.1:8504");
+  });
+});
+
+describe("browserOpenInvocation", () => {
+  it("uses open on macOS", () => {
+    expect(browserOpenInvocation("http://127.0.0.1:8504", "darwin")).toEqual({
+      command: "open",
+      args: ["http://127.0.0.1:8504"],
+    });
+  });
+
+  it("uses xdg-open on linux", () => {
+    expect(browserOpenInvocation("http://127.0.0.1:8504", "linux")).toEqual({
+      command: "xdg-open",
+      args: ["http://127.0.0.1:8504"],
+    });
+  });
+
+  it("returns undefined on unsupported platforms", () => {
+    expect(browserOpenInvocation("http://127.0.0.1:8504", "aix")).toBeUndefined();
+  });
 });
 
 describe("commandWithVersionCheck", () => {

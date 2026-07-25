@@ -1051,17 +1051,110 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Build the browser URL for the local PI WEB server. */
+export function defaultWebUrlFromConfig(host: string, port: number): string {
+  const normalizedHost = host === "0.0.0.0" || host === "::" || host === "[::]" ? "127.0.0.1" : host;
+  return `http://${normalizedHost}:${String(port)}`;
+}
+
+export function defaultWebUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const { config } = effectivePiWebConfig({ env });
+  return defaultWebUrlFromConfig(config.host ?? "127.0.0.1", config.port ?? 8504);
+}
+
+export function browserOpenInvocation(
+  url: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } | undefined {
+  if (platform === "darwin") return { command: "open", args: [url] };
+  if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", url] };
+  if (platform === "linux") return { command: "xdg-open", args: [url] };
+  return undefined;
+}
+
+export function openBrowser(url: string, platform: NodeJS.Platform = process.platform): { ok: boolean; detail: string } {
+  const invocation = browserOpenInvocation(url, platform);
+  if (invocation === undefined) {
+    return { ok: false, detail: `No browser opener for platform ${platform}. Open ${url} manually.` };
+  }
+  const result = spawnSync(invocation.command, invocation.args, { stdio: "ignore" });
+  if (result.error !== undefined) return { ok: false, detail: result.error.message };
+  if (result.status !== 0) return { ok: false, detail: `exit code ${String(result.status ?? 1)}` };
+  return { ok: true, detail: "opened" };
+}
+
+function servicesFullyRunning(backend: ServiceBackend): boolean {
+  const refs = statusServiceRefs(backend);
+  if (refs.length === 0) return false;
+  return refs.every((ref) => runtimeStatus(backend, ref).health === "running");
+}
+
+function servicesInstalled(backend: ServiceBackend): boolean {
+  return statusServiceRefs(backend).length > 0;
+}
+
+/**
+ * One-shot entry for slash-command / casual use:
+ * ensure services are up, print the URL, and open a browser unless --no-open.
+ * Pass --install to run `pi-web install` first when services are missing.
+ */
+async function up(args: string[]): Promise<void> {
+  const installIfNeeded = args.includes("--install");
+  const noOpen = args.includes("--no-open");
+  const backend = requireServiceBackend("pi-web up");
+
+  if (!servicesInstalled(backend)) {
+    if (!installIfNeeded) {
+      console.log("PI WEB user services are not installed yet.");
+      console.log("Run once:  pi-web install");
+      console.log("Or:        pi-web up --install");
+      process.exitCode = 1;
+      return;
+    }
+    console.log("Installing PI WEB user services...");
+    await install([]);
+  } else if (!servicesFullyRunning(backend)) {
+    console.log("Starting PI WEB services...");
+    serviceAction("start");
+  } else {
+    console.log("PI WEB services are already running.");
+  }
+
+  const url = defaultWebUrl();
+  console.log(`Open: ${url}`);
+  if (noOpen) return;
+  const opened = openBrowser(url);
+  if (!opened.ok) console.log(`Could not open a browser automatically (${opened.detail}).`);
+}
+
+function openCommand(): void {
+  const url = defaultWebUrl();
+  console.log(url);
+  const opened = openBrowser(url);
+  if (!opened.ok) {
+    console.log(`Could not open a browser automatically (${opened.detail}).`);
+    process.exitCode = 1;
+  }
+}
+
 function help(): void {
   console.log(`PI WEB
 
 Usage:
+  pi-web up [--install] [--no-open]   Start if needed, print URL, open browser
+  pi-web open                        Open the Web UI in a browser
   pi-web install [--dev] [--host 127.0.0.1] [--port 8504] [--config ~/.config/pi-web/config.json]
   pi-web uninstall
   pi-web start|stop|restart|status|logs
   pi-web doctor
   pi-web version
 
-Recommended install:
+Plugin-style (from Pi):
+  pi install npm:@jmfederico/pi-web   # or a git/local source
+  /pi-web                            # same as: pi-web up
+  /pi-web install                    # one-time user service install
+
+Recommended shell install:
   npm install -g @jmfederico/pi-web --allow-scripts=node-pty
   pi-web install
 
@@ -1072,7 +1165,9 @@ Development service install from a checkout:
 
 async function main(): Promise<void> {
   const [command = "help", ...args] = process.argv.slice(2);
-  if (command === "install") await install(args);
+  if (command === "up") await up(args);
+  else if (command === "open") openCommand();
+  else if (command === "install") await install(args);
   else if (command === "uninstall") await uninstall();
   else if (command === "start" || command === "stop" || command === "restart" || command === "status") serviceAction(command);
   else if (command === "logs") logs();
