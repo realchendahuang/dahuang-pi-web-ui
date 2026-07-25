@@ -146,19 +146,20 @@ export class AppContextBar extends LitElement {
     .context-items { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; gap: 5px; margin: 0; padding: 0 8px; list-style: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 8px; scrollbar-width: thin; }
     .context-bar.has-context-actions .context-items { padding-right: 58px; scroll-padding-inline: 8px 58px; }
     .context-bar.has-context-actions-double .context-items { padding-right: 102px; scroll-padding-inline: 8px 102px; }
-    .context-item { flex: 0 0 auto; min-width: 0; display: flex; }
+    .context-item { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; }
+    .context-item + .context-item::before { content: "/"; margin: 0 2px; color: var(--pi-dim); font-size: 12px; }
     .context-actions { position: absolute; top: 6px; right: 0; bottom: 6px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--pi-bg); pointer-events: none; }
     .context-actions::before { content: ""; position: absolute; top: 0; bottom: 0; left: -24px; z-index: 0; width: 24px; background: linear-gradient(90deg, transparent, var(--pi-bg)); pointer-events: none; }
     app-refresh-control, .context-action-button { position: relative; z-index: 1; pointer-events: auto; }
     .context-action-button { box-sizing: border-box; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); padding: 0; line-height: 1; }
     .context-action-button:hover, .context-action-button:focus-visible { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     .context-action-icon { width: 18px; height: 18px; fill: currentColor; pointer-events: none; }
-    .context-chip { flex: 0 0 auto; min-width: 0; display: inline-flex; align-items: baseline; gap: 5px; border: 1px solid var(--pi-border-muted); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); padding: 4px 8px; font: inherit; text-align: left; }
-    .context-chip:hover { background: var(--pi-surface-hover); }
-    .context-chip:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    .context-chip.empty { border-style: dashed; color: var(--pi-muted); }
+    .context-chip { flex: 0 0 auto; min-width: 0; display: inline-flex; align-items: baseline; gap: 5px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 4px 6px; font: inherit; font-size: 13px; text-align: left; }
+    .context-chip:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
+    .context-chip:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    .context-chip.empty { color: var(--pi-dim); }
     .context-kind { display: none; }
-    .context-value { min-width: 0; overflow: visible; text-overflow: clip; white-space: nowrap; }
+    .context-value { min-width: 0; max-width: 44ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button { cursor: pointer; }
   `;
 }
@@ -184,7 +185,7 @@ function projectContextTitle(project: Project | undefined): string {
 }
 
 function workspaceContextLabel(workspace: Workspace | undefined): string {
-  return workspace === undefined ? "No workspace" : `${workspace.label}${workspace.isMain ? " · main" : ""} · ${workspace.path}`;
+  return workspace === undefined ? "No workspace" : `${workspace.label}${workspace.isMain ? " · main" : ""}`;
 }
 
 function workspaceContextTitle(workspace: Workspace | undefined): string {

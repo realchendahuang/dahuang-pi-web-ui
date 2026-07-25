@@ -2166,7 +2166,6 @@ export class PiWebApp extends LitElement {
   }
 
   private renderContextBar() {
-    if (!this.appShell.isMobileNavigationLayout) return null;
     return html`
       <app-context-bar
         .machines=${this.state.machines}
