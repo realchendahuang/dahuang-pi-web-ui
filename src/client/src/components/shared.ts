@@ -386,6 +386,9 @@ export const chatStyles = css`
   .chat > * { max-width: 920px; margin-inline: auto; }
   .scroll-marker { display: block; height: 0; overflow: hidden; pointer-events: none; }
   .activity-dock { position: absolute; left: 16px; right: 16px; bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 8px 12px; font-size: 13px; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
+  .jump-to-latest { position: absolute; right: 20px; bottom: 56px; z-index: 21; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-bg-overlay); color: var(--pi-text-secondary); padding: 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; box-shadow: 0 6px 20px var(--pi-shadow); backdrop-filter: blur(6px); }
+  .jump-to-latest:hover { color: var(--pi-text); border-color: var(--pi-border-strong, var(--pi-border)); }
+  .jump-to-latest:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
   .activity-dock.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }

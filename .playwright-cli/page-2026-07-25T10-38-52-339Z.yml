@@ -1,0 +1,56 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]: π
+          - strong [ref=e9]: Pi Studio
+        - button "Show Actions" [ref=e11] [cursor=pointer]: Actions
+      - button "New task" [disabled] [ref=e13]:
+        - generic [ref=e14]: +
+        - text: New task
+      - heading [level=2] [ref=e17]:
+        - button "▾ Projects 0" [expanded] [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: ▾ Projects
+          - generic [ref=e21]: "0"
+      - heading [level=2] [ref=e24]:
+        - button "▾ Workspaces 0" [expanded] [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: ▾ Workspaces
+          - generic [ref=e28]: "0"
+      - generic [ref=e30]:
+        - heading "▾ Sessions 0 Clean up Start a new session" [level=2] [ref=e31]:
+          - button "▾ Sessions" [expanded] [ref=e32] [cursor=pointer]
+          - generic [ref=e35]: "0"
+          - button "Clean up" [ref=e36] [cursor=pointer]
+          - button "Start a new session" [disabled] [ref=e37]: +
+        - searchbox "Search sessions" [ref=e39]
+        - paragraph [ref=e41]: No sessions yet. Start one with the + button above.
+      - generic [ref=e42]:
+        - button "Settings" [ref=e43] [cursor=pointer]
+        - button "Switch to dark theme" [ref=e44] [cursor=pointer]: ☀
+        - generic "Disconnected" [ref=e45]: Local
+  - generic [ref=e48]:
+    - separator "Resize navigation panel" [ref=e49]
+    - button "Collapse navigation panel" [expanded] [ref=e50] [cursor=pointer]
+  - main [ref=e51]:
+    - navigation "Current location" [ref=e53]:
+      - list [ref=e54]:
+        - listitem [ref=e55]:
+          - 'button "Project: No project. Open project selection." [ref=e56] [cursor=pointer]':
+            - generic [ref=e57]: No project
+        - listitem [ref=e58]:
+          - text: /
+          - 'button "Workspace: No workspace. Open workspace selection." [ref=e59] [cursor=pointer]':
+            - generic [ref=e60]: No workspace
+        - listitem [ref=e61]:
+          - text: /
+          - 'button "Session: No session. Open session selection." [ref=e62] [cursor=pointer]':
+            - generic [ref=e63]: No session
+      - button "Show Actions" [ref=e64] [cursor=pointer]
+    - generic [ref=e65]: Loading projects…
+  - generic [ref=e66]:
+    - separator "Resize workspace panel" [ref=e67]
+    - button "Collapse workspace panel" [expanded] [ref=e68] [cursor=pointer]
+  - status [ref=e70]:
+    - heading "Loading projects…" [level=2] [ref=e71]
+    - paragraph [ref=e72]: Looking for projects you have added to PI WEB.

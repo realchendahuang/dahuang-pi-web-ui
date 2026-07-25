@@ -705,14 +705,12 @@ describe("PluginRegistry", () => {
 		});
 
 		expect(
-			registry
-				.getThemes()
-				.map((theme) => ({
-					id: theme.id,
-					pluginId: theme.pluginId,
-					localId: theme.localId,
-					name: theme.name,
-				})),
+			registry.getThemes().map((theme) => ({
+				id: theme.id,
+				pluginId: theme.pluginId,
+				localId: theme.localId,
+				name: theme.name,
+			})),
 		).toEqual([
 			{
 				id: "example:first",
@@ -728,15 +726,13 @@ describe("PluginRegistry", () => {
 			},
 		]);
 		expect(
-			registry
-				.getThemePairs()
-				.map((pair) => ({
-					id: pair.id,
-					pluginId: pair.pluginId,
-					localId: pair.localId,
-					light: pair.light,
-					dark: pair.dark,
-				})),
+			registry.getThemePairs().map((pair) => ({
+				id: pair.id,
+				pluginId: pair.pluginId,
+				localId: pair.localId,
+				light: pair.light,
+				dark: pair.dark,
+			})),
 		).toEqual([
 			{
 				id: "example:pair",

@@ -99,8 +99,15 @@ export class ToolCard extends LitElement {
 				preview.text === ""
 					? null
 					: html`
-        <pre class="output" data-kind="read"><code>${preview.text}</code></pre>
-        ${preview.truncated ? html`<p class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</p>` : null}
+        <div class="output-block">
+          <pre class="output" data-kind="read"><code>${preview.text}</code></pre>
+          <div class="output-footer">
+            ${preview.truncated ? html`<span class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</span>` : null}
+            <button type="button" class="text-button" @click=${() => {
+							void this.copy("output", model.resultText ?? "");
+						}}>${this.copiedTarget === "output" ? "Copied" : "Copy output"}</button>
+          </div>
+        </div>
       `
 			}
     `;

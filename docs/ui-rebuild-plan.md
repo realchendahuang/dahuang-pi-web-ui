@@ -80,11 +80,11 @@ src/client/src/studio/
 ## 5. Phase plan (matches taskbook §九)
 
 - [x] Phase 0 — analysis, baseline tests, screenshots, this document
-- [ ] Phase 1 — tokens, Studio themes, shell layout, base components
-- [ ] Phase 2 — sidebar + session system
-- [ ] Phase 3 — conversation + composer
-- [ ] Phase 4 — tool cards (Read/Bash/Edit/Write/Search + generic + error)
-- [ ] Phase 5 — workbench (Changes/Files/Terminal/Git/Context)
+- [x] Phase 1 — tokens, Studio themes, shell layout, base components
+- [x] Phase 2 — sidebar + session system
+- [x] Phase 3 — conversation + composer
+- [x] Phase 4 — tool cards (Read/Bash/Edit/Write/Search + generic + error)
+- [x] Phase 5 — workbench (Changes/Files/Terminal/Git/Context + activity routing)
 - [ ] Phase 6 — polish (shortcuts, palette, toast, skeletons, persistence)
 - [ ] Phase 7 — responsive + tests
 

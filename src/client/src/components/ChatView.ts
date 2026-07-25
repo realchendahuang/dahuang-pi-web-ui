@@ -513,6 +513,16 @@ export class ChatView extends LitElement {
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
         </div>
+        ${
+					this.pinnedToBottom
+						? null
+						: html`
+          <button type="button" class="jump-to-latest" aria-label="Jump to latest messages" @click=${() => {
+						this.pinnedToBottom = true;
+						this.scrollToBottom();
+					}}><span aria-hidden="true">↓</span> Latest</button>
+        `
+				}
         ${this.renderActivityDock()}
       </div>
       ${this.renderImageZoom()}

@@ -615,3 +615,112 @@
 [13574151ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
 [13597654ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
 [13759589ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[13978768ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/messages?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui&limit=100:0
+[13978768ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/status?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13978770ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/stream-snapshot?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13978770ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13978770ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13978790ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/activity:0
+[13978790ms] [WARNING] Failed to refresh workspace activity for local Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async http://localhost:8505/src/controllers/activityController.ts:15:74
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async PiWebApp.refreshWorkspaceActivity (http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:447:4) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:448
+[13978792ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13978792ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13978805ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:8505/api/machines/local/projects/ebe9a29f-dab0-4914-aac0-6db8420649e3/workspaces/7c1d0e27306a/terminals:0
+[13979276ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/messages?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui&limit=100:0
+[13979276ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/status?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979278ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/stream-snapshot?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979278ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979278ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13979288ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/activity:0
+[13979288ms] [WARNING] Failed to refresh workspace activity for local Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async http://localhost:8505/src/controllers/activityController.ts:15:74
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async PiWebApp.refreshWorkspaceActivity (http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:447:4) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:448
+[13979290ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979291ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13979303ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:8505/api/machines/local/projects/ebe9a29f-dab0-4914-aac0-6db8420649e3/workspaces/7c1d0e27306a/terminals:0
+[13979781ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/messages?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui&limit=100:0
+[13979782ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/stream-snapshot?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979782ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/status?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979782ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979782ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13979793ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/activity:0
+[13979793ms] [WARNING] Failed to refresh workspace activity for local Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async http://localhost:8505/src/controllers/activityController.ts:15:74
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async PiWebApp.refreshWorkspaceActivity (http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:447:4) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:448
+[13979796ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13979796ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13979809ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:8505/api/machines/local/projects/ebe9a29f-dab0-4914-aac0-6db8420649e3/workspaces/7c1d0e27306a/terminals:0
+[13980285ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/messages?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui&limit=100:0
+[13980287ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/status?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980287ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/stream-snapshot?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980287ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980287ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13980300ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/activity:0
+[13980300ms] [WARNING] Failed to refresh workspace activity for local Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async http://localhost:8505/src/controllers/activityController.ts:15:74
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async PiWebApp.refreshWorkspaceActivity (http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:447:4) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:448
+[13980302ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980302ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13980311ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:8505/api/machines/local/projects/ebe9a29f-dab0-4914-aac0-6db8420649e3/workspaces/7c1d0e27306a/terminals:0
+[13980789ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/messages?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui&limit=100:0
+[13980791ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/status?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980791ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/stream-snapshot?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980791ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980791ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13980803ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/activity:0
+[13980803ms] [WARNING] Failed to refresh workspace activity for local Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async http://localhost:8505/src/controllers/activityController.ts:15:74
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async PiWebApp.refreshWorkspaceActivity (http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:447:4) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:448
+[13980804ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13980805ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session daemon unavailable: connect ENOENT /Users/kim/.pi-web/sessiond.sock
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13980816ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:8505/api/machines/local/projects/ebe9a29f-dab0-4914-aac0-6db8420649e3/workspaces/7c1d0e27306a/terminals:0
+[13981298ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13981299ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session not found
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3)
+    at async http://localhost:8505/src/controllers/sessionController.ts:853:43
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6 @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[13981320ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[13981321ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session not found
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22) @ http://localhost:8505/src/components/PiWebApp.ts?t=1784973941809:109
+[14101147ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[14277618ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[14365752ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
