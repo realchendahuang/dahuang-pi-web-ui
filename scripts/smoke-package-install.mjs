@@ -57,7 +57,8 @@ try {
     "--no-fund",
   ], root);
 
-  const packageRoot = join(globalPrefix, "lib", "node_modules", "@jmfederico", "pi-web");
+  const packageName = readPackageName(await readFile(join(repoRoot, "package.json"), "utf8"));
+  const packageRoot = join(globalPrefix, "lib", "node_modules", ...packageName.split("/"));
   await smokeInstalledTerminalService(packageRoot);
   console.log(`Installed-package PTY smoke test passed with npm ${NPM_VERSION}.`);
 } finally {
@@ -74,8 +75,25 @@ async function runNpm(npmCliPath, args, cwd) {
   return result.stdout;
 }
 
+function parseJson(text, label) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not parse ${label}: ${detail}`, { cause: error });
+  }
+}
+
+function readPackageName(packageJsonText) {
+  const parsed = parseJson(packageJsonText, "package.json");
+  if (typeof parsed?.name !== "string" || parsed.name.length === 0) {
+    throw new Error("package.json is missing a valid name");
+  }
+  return parsed.name;
+}
+
 function packageTarballFilename(output) {
-  const parsed = JSON.parse(output);
+  const parsed = parseJson(output, "npm pack --json output");
   if (!Array.isArray(parsed) || parsed.length !== 1 || typeof parsed[0]?.filename !== "string") {
     throw new Error("npm pack returned an unexpected result");
   }
@@ -85,7 +103,7 @@ function packageTarballFilename(output) {
 async function smokeInstalledTerminalService(packageRoot) {
   const requireFromPackage = createRequire(join(packageRoot, "package.json"));
   const nodePtyPackageJsonPath = requireFromPackage.resolve("node-pty/package.json");
-  const nodePtyPackage = JSON.parse(await readFile(nodePtyPackageJsonPath, "utf8"));
+  const nodePtyPackage = parseJson(await readFile(nodePtyPackageJsonPath, "utf8"), nodePtyPackageJsonPath);
   if (typeof nodePtyPackage.version !== "string" || nodePtyPackage.version.includes("-")) {
     throw new Error(`Installed package resolved a non-stable node-pty version: ${String(nodePtyPackage.version)}`);
   }

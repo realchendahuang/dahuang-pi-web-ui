@@ -122,13 +122,13 @@ function machine(id: string): Machine {
 
 function status(generatedAt: string, release: Partial<PiWebReleaseStatus> = {}): PiWebStatusResponse {
   return {
-    packageName: "@jmfederico/pi-web",
+    packageName: "@realchendahuang/dahuang-pi-web-ui",
     generatedAt,
     components: {
       web: { component: "web", label: "Web/UI", stale: false, available: true },
       sessiond: { component: "sessiond", label: "Session daemon", stale: false, available: true },
     },
-    release: { packageName: "@jmfederico/pi-web", updateAvailable: false, ...release },
+    release: { packageName: "@realchendahuang/dahuang-pi-web-ui", updateAvailable: false, ...release },
     commands: {},
     messages: [],
   };

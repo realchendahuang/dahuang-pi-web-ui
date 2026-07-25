@@ -67,13 +67,13 @@ export function fallbackDockerStatus(hint: UpdatesRuntimeHint, generatedAt = "fe
   const commandPrefix = hint.dockerMode === "dev" ? "pi-web-docker --dev" : "pi-web-docker";
   const installation: PiWebInstallationInfo = { kind: "docker", dockerMode: hint.dockerMode };
   return {
-    packageName: "@jmfederico/pi-web",
+    packageName: "@realchendahuang/dahuang-pi-web-ui",
     generatedAt,
     components: {
       web: { component: "web", label: "Web/UI", stale: false, available: true, installation },
       sessiond: { component: "sessiond", label: "Session daemon", stale: false, available: true, installation },
     },
-    release: { packageName: "@jmfederico/pi-web", updateAvailable: false, skipped: true },
+    release: { packageName: "@realchendahuang/dahuang-pi-web-ui", updateAvailable: false, skipped: true },
     commands: {
       update: `${commandPrefix} update`,
       restart: `${commandPrefix} restart`,

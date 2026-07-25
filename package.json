@@ -1,6 +1,6 @@
 {
   "name": "@realchendahuang/dahuang-pi-web-ui",
-  "version": "0.202607.0",
+  "version": "0.202607.1",
   "description": "Pi Studio — Web UI for Pi Coding Agent (fork of pi-web with Studio UI and /pi-web slash entry).",
   "license": "MIT",
   "author": "Kim <realchendahuang@gmail.com>",

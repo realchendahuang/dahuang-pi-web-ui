@@ -1,5 +1,11 @@
 # @realchendahuang/dahuang-pi-web-ui
 
+## 0.202607.1
+
+### Patch Changes
+
+- Fix package identity for the fork (`@realchendahuang/dahuang-pi-web-ui`) in status, install, diagnostics, and npm smoke install path so GitHub Actions can publish successfully.
+
 ## 0.202607.0
 
 ### Patch Changes

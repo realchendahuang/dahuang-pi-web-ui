@@ -95,7 +95,7 @@ export function registerAppTestHooks(): void {
         },
         now: () => new Date("2026-05-25T00:00:00.000Z"),
         localRuntime: () => Promise.resolve({
-          packageName: "@jmfederico/pi-web",
+          packageName: "@realchendahuang/dahuang-pi-web-ui",
           generatedAt: "2026-05-25T00:00:00.000Z",
           components: {
             web: { component: "web", label: "PI WEB", available: true, capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived] },
