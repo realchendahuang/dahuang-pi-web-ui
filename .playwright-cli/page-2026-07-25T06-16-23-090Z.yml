@@ -1,0 +1,30 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - strong [ref=e7]: PI WEB
+        - button "Show Actions" [ref=e9] [cursor=pointer]: Actions
+      - heading [level=2] [ref=e12]:
+        - button "▾ Projects 0" [expanded] [ref=e13] [cursor=pointer]:
+          - generic [ref=e14]: ▾ Projects
+          - generic [ref=e16]: "0"
+      - heading [level=2] [ref=e19]:
+        - button "▾ Workspaces 0" [expanded] [ref=e20] [cursor=pointer]:
+          - generic [ref=e21]: ▾ Workspaces
+          - generic [ref=e23]: "0"
+      - heading "▾ Sessions 0 Clean up Start a new session" [level=2] [ref=e26]:
+        - button "▾ Sessions" [expanded] [ref=e27] [cursor=pointer]
+        - generic [ref=e30]: "0"
+        - button "Clean up" [ref=e31] [cursor=pointer]
+        - button "Start a new session" [disabled] [ref=e32]: +
+  - generic [ref=e34]:
+    - separator "Resize navigation panel" [ref=e35]
+    - button "Collapse navigation panel" [expanded] [ref=e36] [cursor=pointer]
+  - main [ref=e37]:
+    - generic [ref=e38]: Loading projects…
+  - generic [ref=e39]:
+    - separator "Resize workspace panel" [ref=e40]
+    - button "Collapse workspace panel" [expanded] [ref=e41] [cursor=pointer]
+  - status [ref=e43]:
+    - heading "Loading projects…" [level=2] [ref=e44]
+    - paragraph [ref=e45]: Looking for projects you have added to PI WEB.

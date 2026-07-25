@@ -1,0 +1,25 @@
+[     713ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[  244083ms] [WARNING] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information. @ http://localhost:8505/@fs/Users/kim/code/dahuang-pi-web-ui/node_modules/.vite/deps/reactive-element-CKo3LdqU.js?v=c4bb1355:121
+[  280945ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8505/api/machines/local/sessions/019f97bc-c7db-77bc-9c57-fac7fc93b4ad/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[  280948ms] [WARNING] Failed to refresh notifications for session 019f97bc-c7db-77bc-9c57-fac7fc93b4ad Error: Session not found
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3)
+    at async http://localhost:8505/src/controllers/sessionController.ts:853:43
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async SessionController.selectSession (http://localhost:8505/src/controllers/sessionController.ts:161:4)
+    at async WorkspaceController.selectWorkspace (http://localhost:8505/src/controllers/workspaceController.ts:86:17)
+    at async WorkspaceController.selectProject (http://localhost:8505/src/controllers/workspaceController.ts:57:19)
+    at async http://localhost:8505/src/components/PiWebApp.ts:1341:4
+    at async PiWebApp.withChatScrollTransition (http://localhost:8505/src/components/PiWebApp.ts:672:3) @ http://localhost:8505/src/components/PiWebApp.ts:107
+[  306617ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:8505/api/machines/local/sessions/019f97b0-2396-73ea-be5a-0f53cdb9b573/notifications?cwd=%2FUsers%2Fkim%2Fcode%2Fdahuang-pi-web-ui:0
+[  306618ms] [WARNING] Failed to refresh notifications for session 019f97b0-2396-73ea-be5a-0f53cdb9b573 Error: Session not found
+    at request (http://localhost:8505/src/api/http.ts:11:9)
+    at async SessionNotificationController.runSelectedRefresh (http://localhost:8505/src/controllers/sessionNotificationController.ts:199:22)
+    at async Promise.all (index 3)
+    at async http://localhost:8505/src/controllers/sessionController.ts:853:43
+    at async http://localhost:8505/src/controllers/trailingRefreshCoordinator.ts:31:6
+    at async SessionController.selectSession (http://localhost:8505/src/controllers/sessionController.ts:161:4)
+    at async http://localhost:8505/src/components/PiWebApp.ts:1341:4
+    at async PiWebApp.withChatScrollTransition (http://localhost:8505/src/components/PiWebApp.ts:672:3)
+    at async PiWebApp.selectNavigationItem (http://localhost:8505/src/components/PiWebApp.ts:1339:3) @ http://localhost:8505/src/components/PiWebApp.ts:107
