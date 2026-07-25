@@ -1,2 +1,6 @@
 node_modules/
 dist/
+
+# local dev artifacts
+.tmp-*.png
+.playwright-cli/
