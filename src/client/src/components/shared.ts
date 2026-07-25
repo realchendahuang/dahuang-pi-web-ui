@@ -1,26 +1,29 @@
 import { css, svg, type TemplateResult } from "lit";
 import type { SessionWarningSeverity } from "../api";
 
-export function renderSessionWarningIcon(severity: SessionWarningSeverity, className: string): TemplateResult {
-  if (severity === "error") {
-    return svg`
+export function renderSessionWarningIcon(
+	severity: SessionWarningSeverity,
+	className: string,
+): TemplateResult {
+	if (severity === "error") {
+		return svg`
       <svg class=${className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <circle cx="12" cy="12" r="10"></circle>
         <path d="m15 9-6 6"></path>
         <path d="m9 9 6 6"></path>
       </svg>
     `;
-  }
-  if (severity === "info") {
-    return svg`
+	}
+	if (severity === "info") {
+		return svg`
       <svg class=${className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <circle cx="12" cy="12" r="10"></circle>
         <path d="M12 11v5"></path>
         <path d="M12 8h.01"></path>
       </svg>
     `;
-  }
-  return svg`
+	}
+	return svg`
     <svg class=${className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M10.3 3.7 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z"></path>
       <path d="M12 9v4"></path>
@@ -30,53 +33,67 @@ export function renderSessionWarningIcon(severity: SessionWarningSeverity, class
 }
 
 export interface ToolPreview {
-  diff?: string;
-  firstChangedLine?: number;
-  error?: string;
+	diff?: string;
+	firstChangedLine?: number;
+	error?: string;
 }
 
 export interface ToolExecutionPart {
-  type: "toolExecution";
-  toolCallId?: string;
-  toolName: string;
-  summary: string;
-  args?: unknown;
-  status: "pending" | "running" | "success" | "error";
-  resultText?: string;
-  content?: unknown;
-  details?: unknown;
-  preview?: ToolPreview;
+	type: "toolExecution";
+	toolCallId?: string;
+	toolName: string;
+	summary: string;
+	args?: unknown;
+	status: "pending" | "running" | "success" | "error";
+	resultText?: string;
+	content?: unknown;
+	details?: unknown;
+	preview?: ToolPreview;
 }
 
 export type ChatPart =
-  | { type: "text"; text: string }
-  | { type: "image"; mimeType: string; data: string }
-  | { type: "thinking"; text: string }
-  | { type: "skillInvocation"; name: string; location: string; content: string }
-  | { type: "skillRead"; name: string; path: string; toolCallId?: string }
-  | { type: "toolCall"; toolCallId?: string; toolName: string; summary: string; args?: unknown }
-  | ToolExecutionPart
-  | { type: "toolResult"; toolCallId?: string; toolName: string; text: string; isError: boolean; content?: unknown; details?: unknown }
-  | { type: "empty" };
+	| { type: "text"; text: string }
+	| { type: "image"; mimeType: string; data: string }
+	| { type: "thinking"; text: string }
+	| { type: "skillInvocation"; name: string; location: string; content: string }
+	| { type: "skillRead"; name: string; path: string; toolCallId?: string }
+	| {
+			type: "toolCall";
+			toolCallId?: string;
+			toolName: string;
+			summary: string;
+			args?: unknown;
+	  }
+	| ToolExecutionPart
+	| {
+			type: "toolResult";
+			toolCallId?: string;
+			toolName: string;
+			text: string;
+			isError: boolean;
+			content?: unknown;
+			details?: unknown;
+	  }
+	| { type: "empty" };
 
 export interface ChatLine {
-  role: "user" | "assistant" | "tool" | "system" | "bash" | "skill";
-  parts: ChatPart[];
-  source?: "compaction" | "branch_summary";
-  meta?: {
-    timestamp?: string;
-    model?: { provider?: string; id?: string; responseId?: string };
-  };
+	role: "user" | "assistant" | "tool" | "system" | "bash" | "skill";
+	parts: ChatPart[];
+	source?: "compaction" | "branch_summary";
+	meta?: {
+		timestamp?: string;
+		model?: { provider?: string; id?: string; responseId?: string };
+	};
 }
 
 export interface CompletionItem {
-  kind: "command" | "file";
-  replaceFrom: number;
-  replaceTo: number;
-  insertText: string;
-  detail: string;
-  description?: string;
-  cursorOffset?: number;
+	kind: "command" | "file";
+	replaceFrom: number;
+	replaceTo: number;
+	insertText: string;
+	detail: string;
+	description?: string;
+	cursorOffset?: number;
 }
 
 export const appStyles = css`

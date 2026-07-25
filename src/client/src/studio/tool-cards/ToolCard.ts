@@ -2,7 +2,11 @@ import { LitElement, css, html, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { writeClipboardText } from "../../clipboard";
 import type { ToolExecutionPart } from "../../components/shared";
-import { toolCardViewModel, type ToolCardKind, type ToolCardViewModel } from "./toolCardModel";
+import {
+	toolCardViewModel,
+	type ToolCardKind,
+	type ToolCardViewModel,
+} from "./toolCardModel";
 
 const MAX_COLLAPSED_DIFF_LINES = 160;
 const MAX_OUTPUT_LINES = 400;
@@ -14,21 +18,25 @@ const MAX_OUTPUT_LINES = 400;
  */
 @customElement("tool-card")
 export class ToolCard extends LitElement {
-  @property({ attribute: false }) execution: ToolExecutionPart | undefined;
-  @property({ attribute: false }) onOpenInChanges?: (filePath: string | undefined) => void;
-  @state() private open = false;
-  @state() private userToggled = false;
-  @state() private showFullDiff = false;
-  @state() private copiedTarget: "command" | "output" | "diff" | undefined;
+	@property({ attribute: false }) execution: ToolExecutionPart | undefined;
+	@property({ attribute: false }) onOpenInChanges?: (
+		filePath: string | undefined,
+	) => void;
+	@state() private open = false;
+	@state() private userToggled = false;
+	@state() private showFullDiff = false;
+	@state() private copiedTarget: "command" | "output" | "diff" | undefined;
 
-  override render() {
-    const execution = this.execution;
-    if (execution === undefined) return null;
-    const model = toolCardViewModel(execution);
-    const open = this.effectiveOpen(model);
-    return html`
+	override render() {
+		const execution = this.execution;
+		if (execution === undefined) return null;
+		const model = toolCardViewModel(execution);
+		const open = this.effectiveOpen(model);
+		return html`
       <section class=${`tool-card ${model.status} kind-${model.kind}`} data-status=${model.status}>
-        <button type="button" class="tool-row" aria-expanded=${String(open)} @click=${() => { this.toggle(model); }}>
+        <button type="button" class="tool-row" aria-expanded=${String(open)} @click=${() => {
+					this.toggle(model);
+				}}>
           <span class=${`status-dot ${model.status}`} aria-hidden="true"></span>
           <span class="tool-icon" aria-hidden="true">${toolIcon(model.kind)}</span>
           <span class="tool-title" dir="auto" title=${model.title}>${model.title}</span>
@@ -41,20 +49,20 @@ export class ToolCard extends LitElement {
         ${open ? this.renderBody(model) : null}
       </section>
     `;
-  }
+	}
 
-  private effectiveOpen(model: ToolCardViewModel): boolean {
-    if (this.userToggled) return this.open;
-    return model.status === "failed";
-  }
+	private effectiveOpen(model: ToolCardViewModel): boolean {
+		if (this.userToggled) return this.open;
+		return model.status === "failed";
+	}
 
-  private toggle(model: ToolCardViewModel): void {
-    this.open = !this.effectiveOpen(model);
-    this.userToggled = true;
-  }
+	private toggle(model: ToolCardViewModel): void {
+		this.open = !this.effectiveOpen(model);
+		this.userToggled = true;
+	}
 
-  private renderBody(model: ToolCardViewModel) {
-    return html`
+	private renderBody(model: ToolCardViewModel) {
+		return html`
       <div class="tool-body">
         ${model.status === "failed" ? this.renderErrorBody(model) : null}
         ${model.kind === "read" ? this.renderReadBody(model) : null}
@@ -64,128 +72,168 @@ export class ToolCard extends LitElement {
         ${model.kind === "generic" && model.status !== "failed" ? this.renderGenericBody(model) : null}
       </div>
     `;
-  }
+	}
 
-  private renderFileHeader(model: ToolCardViewModel) {
-    if (model.filePath === undefined) return null;
-    return html`
+	private renderFileHeader(model: ToolCardViewModel) {
+		if (model.filePath === undefined) return null;
+		return html`
       <div class="body-header">
         <span class="body-path" dir="auto" title=${model.filePath}>${model.filePath}</span>
-        ${this.onOpenInChanges === undefined ? null : html`
+        ${
+					this.onOpenInChanges === undefined
+						? null
+						: html`
           <button type="button" class="text-button" @click=${() => this.onOpenInChanges?.(model.filePath)}>Open in Changes</button>
-        `}
+        `
+				}
       </div>
     `;
-  }
+	}
 
-  private renderReadBody(model: ToolCardViewModel) {
-    const preview = truncateLines(model.resultText ?? "", MAX_OUTPUT_LINES);
-    if (model.filePath === undefined && preview.text === "") return null;
-    return html`
+	private renderReadBody(model: ToolCardViewModel) {
+		const preview = truncateLines(model.resultText ?? "", MAX_OUTPUT_LINES);
+		if (model.filePath === undefined && preview.text === "") return null;
+		return html`
       ${this.renderFileHeader(model)}
-      ${preview.text === "" ? null : html`
+      ${
+				preview.text === ""
+					? null
+					: html`
         <pre class="output" data-kind="read"><code>${preview.text}</code></pre>
         ${preview.truncated ? html`<p class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</p>` : null}
-      `}
+      `
+			}
     `;
-  }
+	}
 
-  private renderBashBody(model: ToolCardViewModel) {
-    const output = truncateLines(model.resultText ?? "", MAX_OUTPUT_LINES);
-    return html`
+	private renderBashBody(model: ToolCardViewModel) {
+		const output = truncateLines(model.resultText ?? "", MAX_OUTPUT_LINES);
+		return html`
       ${this.renderCommandBlock(model)}
-      ${output.text === "" ? null : html`
+      ${
+				output.text === ""
+					? null
+					: html`
         <div class="output-block">
           <pre class="output shell" dir="ltr"><code>${output.text}</code></pre>
           <div class="output-footer">
             ${output.truncated ? html`<span class="truncation-note">Showing first ${String(MAX_OUTPUT_LINES)} lines</span>` : null}
-            <button type="button" class="text-button" @click=${() => { void this.copy("output", model.resultText ?? ""); }}>${this.copiedTarget === "output" ? "Copied" : "Copy output"}</button>
+            <button type="button" class="text-button" @click=${() => {
+							void this.copy("output", model.resultText ?? "");
+						}}>${this.copiedTarget === "output" ? "Copied" : "Copy output"}</button>
           </div>
         </div>
-      `}
+      `
+			}
     `;
-  }
+	}
 
-  private renderDiffBody(model: ToolCardViewModel) {
-    const diff = model.diff;
-    return html`
+	private renderDiffBody(model: ToolCardViewModel) {
+		const diff = model.diff;
+		return html`
       ${this.renderFileHeader(model)}
-      ${diff === undefined ? (model.resultText === undefined || model.resultText === "" ? null : html`<pre class="output"><code>${truncateLines(model.resultText, MAX_OUTPUT_LINES).text}</code></pre>`) : html`
+      ${
+				diff === undefined
+					? model.resultText === undefined || model.resultText === ""
+						? null
+						: html`<pre class="output"><code>${truncateLines(model.resultText, MAX_OUTPUT_LINES).text}</code></pre>`
+					: html`
         ${diff.isPreview ? html`<p class="preview-note">Preview of proposed changes — the applied diff may differ.</p>` : null}
         ${this.renderDiff(diff.content)}
-      `}
+      `
+			}
     `;
-  }
+	}
 
-  private renderDiff(content: string) {
-    const lines = content.split("\n");
-    const truncated = !this.showFullDiff && lines.length > MAX_COLLAPSED_DIFF_LINES;
-    const visible = truncated ? lines.slice(0, MAX_COLLAPSED_DIFF_LINES) : lines;
-    return html`
+	private renderDiff(content: string) {
+		const lines = content.split("\n");
+		const truncated =
+			!this.showFullDiff && lines.length > MAX_COLLAPSED_DIFF_LINES;
+		const visible = truncated
+			? lines.slice(0, MAX_COLLAPSED_DIFF_LINES)
+			: lines;
+		return html`
       <pre class="diff" dir="ltr" aria-label="Diff"><code>${visible.map((line) => html`<span class=${diffLineClass(line)}>${line}</span>`)}</code></pre>
       <div class="output-footer">
-        ${truncated ? html`
-          <button type="button" class="text-button" @click=${() => { this.showFullDiff = true; }}>Show all ${String(lines.length)} lines</button>
-        ` : null}
-        <button type="button" class="text-button" @click=${() => { void this.copy("diff", content); }}>${this.copiedTarget === "diff" ? "Copied" : "Copy diff"}</button>
+        ${
+					truncated
+						? html`
+          <button type="button" class="text-button" @click=${() => {
+						this.showFullDiff = true;
+					}}>Show all ${String(lines.length)} lines</button>
+        `
+						: null
+				}
+        <button type="button" class="text-button" @click=${() => {
+					void this.copy("diff", content);
+				}}>${this.copiedTarget === "diff" ? "Copied" : "Copy diff"}</button>
       </div>
     `;
-  }
+	}
 
-  private renderSearchBody(model: ToolCardViewModel) {
-    const text = model.resultText ?? "";
-    if (text === "") return null;
-    const result = truncateLines(text, MAX_OUTPUT_LINES);
-    const count = text.split("\n").filter((line) => line.trim() !== "").length;
-    return html`
+	private renderSearchBody(model: ToolCardViewModel) {
+		const text = model.resultText ?? "";
+		if (text === "") return null;
+		const result = truncateLines(text, MAX_OUTPUT_LINES);
+		const count = text.split("\n").filter((line) => line.trim() !== "").length;
+		return html`
       <p class="result-count">${String(count)} result${count === 1 ? "" : "s"}</p>
       <pre class="output" dir="ltr"><code>${result.text}</code></pre>
       ${result.truncated ? html`<p class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</p>` : null}
     `;
-  }
+	}
 
-  private renderGenericBody(model: ToolCardViewModel) {
-    if (model.resultText === undefined || model.resultText === "") return null;
-    const result = truncateLines(model.resultText, MAX_OUTPUT_LINES);
-    return html`
+	private renderGenericBody(model: ToolCardViewModel) {
+		if (model.resultText === undefined || model.resultText === "") return null;
+		const result = truncateLines(model.resultText, MAX_OUTPUT_LINES);
+		return html`
       <pre class="output" dir="ltr"><code>${result.text}</code></pre>
       ${result.truncated ? html`<p class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</p>` : null}
     `;
-  }
+	}
 
-  private renderErrorBody(model: ToolCardViewModel) {
-    return html`
+	private renderErrorBody(model: ToolCardViewModel) {
+		return html`
       ${model.error === undefined ? null : html`<pre class="error-text" dir="auto">${model.error}</pre>`}
-      ${model.rawDetails === undefined ? null : html`
+      ${
+				model.rawDetails === undefined
+					? null
+					: html`
         <details class="raw-details">
           <summary>Raw error details</summary>
           <pre class="output" dir="ltr"><code>${truncateLines(model.rawDetails, MAX_OUTPUT_LINES).text}</code></pre>
         </details>
-      `}
+      `
+			}
       ${model.kind === "bash" && model.command !== undefined ? this.renderCommandBlock(model) : null}
     `;
-  }
+	}
 
-  private renderCommandBlock(model: ToolCardViewModel) {
-    if (model.command === undefined) return null;
-    return html`
+	private renderCommandBlock(model: ToolCardViewModel) {
+		if (model.command === undefined) return null;
+		return html`
       <div class="command-block">
         <pre class="command" dir="ltr"><code>$ ${model.command}</code></pre>
-        <button type="button" class="text-button" @click=${() => { void this.copy("command", model.command ?? ""); }}>${this.copiedTarget === "command" ? "Copied" : "Copy command"}</button>
+        <button type="button" class="text-button" @click=${() => {
+					void this.copy("command", model.command ?? "");
+				}}>${this.copiedTarget === "command" ? "Copied" : "Copy command"}</button>
       </div>
     `;
-  }
+	}
 
-  private async copy(target: "command" | "output" | "diff", text: string): Promise<void> {
-    const copied = await writeClipboardText(text);
-    if (!copied) return;
-    this.copiedTarget = target;
-    window.setTimeout(() => {
-      if (this.copiedTarget === target) this.copiedTarget = undefined;
-    }, 1200);
-  }
+	private async copy(
+		target: "command" | "output" | "diff",
+		text: string,
+	): Promise<void> {
+		const copied = await writeClipboardText(text);
+		if (!copied) return;
+		this.copiedTarget = target;
+		window.setTimeout(() => {
+			if (this.copiedTarget === target) this.copiedTarget = undefined;
+		}, 1200);
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); }
     .tool-card { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--pi-border-muted); border-radius: var(--pi-radius-md, 10px); background: var(--pi-surface); }
     .tool-card.failed { border-color: color-mix(in srgb, var(--pi-danger) 40%, transparent); }
@@ -239,34 +287,37 @@ export class ToolCard extends LitElement {
 }
 
 function toolIcon(kind: ToolCardKind): TemplateResult {
-  switch (kind) {
-    case "read":
-      return svg`<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
-    case "bash":
-      return svg`<svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>`;
-    case "edit":
-      return svg`<svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>`;
-    case "write":
-      return svg`<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>`;
-    case "search":
-      return svg`<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
-    case "generic":
-      return svg`<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
-  }
+	switch (kind) {
+		case "read":
+			return svg`<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+		case "bash":
+			return svg`<svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>`;
+		case "edit":
+			return svg`<svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>`;
+		case "write":
+			return svg`<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>`;
+		case "search":
+			return svg`<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
+		case "generic":
+			return svg`<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
+	}
 }
 
 function diffLineClass(line: string): string {
-  if (line.startsWith("+") && !line.startsWith("+++")) return "added";
-  if (line.startsWith("-") && !line.startsWith("---")) return "removed";
-  if (line.startsWith("@@")) return "hunk";
-  if (line.startsWith("+++") || line.startsWith("---")) return "file";
-  if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";
-  return "context";
+	if (line.startsWith("+") && !line.startsWith("+++")) return "added";
+	if (line.startsWith("-") && !line.startsWith("---")) return "removed";
+	if (line.startsWith("@@")) return "hunk";
+	if (line.startsWith("+++") || line.startsWith("---")) return "file";
+	if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";
+	return "context";
 }
 
-function truncateLines(text: string, maxLines: number): { text: string; truncated: boolean } {
-  if (text === "") return { text: "", truncated: false };
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return { text, truncated: false };
-  return { text: lines.slice(0, maxLines).join("\n"), truncated: true };
+function truncateLines(
+	text: string,
+	maxLines: number,
+): { text: string; truncated: boolean } {
+	if (text === "") return { text: "", truncated: false };
+	const lines = text.split("\n");
+	if (lines.length <= maxLines) return { text, truncated: false };
+	return { text: lines.slice(0, maxLines).join("\n"), truncated: true };
 }

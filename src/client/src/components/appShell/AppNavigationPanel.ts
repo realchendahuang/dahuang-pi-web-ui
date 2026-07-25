@@ -1,6 +1,15 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
-import type { Machine, MachineHealth, Project, SessionActivity, SessionInfo, SessionStatus, Workspace, WorkspaceActivity } from "../../api";
+import type {
+	Machine,
+	MachineHealth,
+	Project,
+	SessionActivity,
+	SessionInfo,
+	SessionStatus,
+	Workspace,
+	WorkspaceActivity,
+} from "../../api";
 import type { WorkspaceLabelItem } from "../../plugins/types";
 import type { NavigationSection } from "../../appShell/navigationState";
 import { NAVIGATION_SECTION_ORDER } from "../../appShell/navigationState";
@@ -15,96 +24,164 @@ export type NavigationFocusTarget = NavigationSection | "chat";
 
 @customElement("app-navigation-panel")
 export class AppNavigationPanel extends LitElement {
-  @property({ attribute: false }) machines: Machine[] = [];
-  @property({ attribute: false }) selectedMachine?: Machine;
-  @property({ attribute: false }) machineStatuses: Record<string, MachineHealth> = {};
-  @property({ attribute: false }) machineActivities: Record<string, Record<string, WorkspaceActivity>> = {};
-  @property({ attribute: false }) projects: Project[] = [];
-  @property({ attribute: false }) selectedProject?: Project;
-  @property({ attribute: false }) workspaces: Workspace[] = [];
-  @property({ attribute: false }) selectedWorkspace?: Workspace;
-  @property({ attribute: false }) sessions: SessionInfo[] = [];
-  @property({ attribute: false }) selectedSession?: SessionInfo;
-  @property({ attribute: false }) workspaceActivities: Record<string, WorkspaceActivity> = {};
-  @property({ attribute: false }) sessionActivities: Record<string, SessionActivity> = {};
-  @property({ attribute: false }) sessionStatuses: Record<string, SessionStatus> = {};
-  @property({ attribute: false }) sendingPrompts: Record<string, true> = {};
-  @property({ attribute: false }) unreadSessionIds: ReadonlySet<string> = new Set();
-  @property({ attribute: false }) workspacesByProjectId: Record<string, Workspace[]> = {};
-  @property({ attribute: false }) deletingWorkspaceIds: string[] = [];
-  @property({ attribute: false }) workspaceLabelItems: (workspace: Workspace) => WorkspaceLabelItem[] = () => [];
-  @property({ attribute: false }) refreshControl: unknown;
-  @property({ type: Boolean, reflect: true }) collapsible = false;
-  @property({ type: Boolean, reflect: true }) compact = false;
-  @property({ type: Boolean }) machinesCollapsed = false;
-  @property({ type: Boolean }) projectsCollapsed = false;
-  @property({ type: Boolean }) workspacesCollapsed = false;
-  @property({ type: Boolean }) sessionsCollapsed = false;
-  @property({ type: Number }) startingSessionCount = 0;
-  @property({ type: Boolean }) canStartSession = false;
-  @property({ type: Boolean }) canDeleteArchivedSessions = false;
-  @property({ type: Boolean }) canReloadSessions = false;
-  @property({ type: Boolean }) canCleanupSessions = false;
-  @property({ type: Boolean }) authoritativeSessionPersistence = false;
-  @property({ type: String }) archivedDeleteUnavailableMessage = "Update and restart Pi-Web on this machine to delete archived sessions.";
-  @property({ type: String }) cleanupUnavailableMessage = "Update and restart Pi-Web on this machine to clean up sessions.";
-  @property({ attribute: false }) onShowActions?: () => void;
-  @property({ attribute: false }) onToggleMachines?: () => void;
-  @property({ attribute: false }) onToggleProjects?: () => void;
-  @property({ attribute: false }) onToggleWorkspaces?: () => void;
-  @property({ attribute: false }) onToggleSessions?: () => void;
-  @property({ attribute: false }) onSelectProject?: (project: Project) => void | Promise<void>;
-  @property({ attribute: false }) onCloseProject?: (project: Project) => void | Promise<void>;
-  @property({ attribute: false }) onSelectWorkspace?: (workspace: Workspace) => void | Promise<void>;
-  @property({ attribute: false }) onDeleteWorkspace?: (workspace: Workspace) => void | Promise<void>;
-  @property({ attribute: false }) onStartSession?: () => void | Promise<void>;
-  @property({ attribute: false }) onSelectSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onArchiveSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onArchiveSessionWithDescendants?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onArchiveSessions?: (sessions: SessionInfo[]) => void | Promise<void>;
-  @property({ attribute: false }) onRestoreSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onDeleteCachedNewSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onDeleteArchivedSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onDeleteArchivedSessions?: (sessions: SessionInfo[]) => void | Promise<void>;
-  @property({ attribute: false }) onDetachParentSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onReloadSession?: (session: SessionInfo) => void | Promise<void>;
-  @property({ attribute: false }) onCleanupSessions?: () => void | Promise<void>;
-  @property({ attribute: false }) onArchivedCollapsed?: () => void | Promise<void>;
-  @property({ attribute: false }) onSelectMachine?: (machine: Machine) => void | Promise<void>;
-  @property({ attribute: false }) onRemoveMachine?: (machine: Machine) => void | Promise<void>;
-  @property({ attribute: false }) onFocusNavigationTarget?: (target: NavigationFocusTarget) => void | Promise<void>;
-  @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
-  @property({ attribute: false }) onOpenSettings?: () => void;
-  @property({ attribute: false }) onToggleTheme?: () => void;
-  @property({ type: Boolean }) themeIsDark = true;
-  @property({ type: String }) machineName = "";
-  @property({ type: Boolean }) machineConnected = false;
-  @property({ type: String }) versionLabel = "";
+	@property({ attribute: false }) machines: Machine[] = [];
+	@property({ attribute: false }) selectedMachine?: Machine;
+	@property({ attribute: false }) machineStatuses: Record<
+		string,
+		MachineHealth
+	> = {};
+	@property({ attribute: false }) machineActivities: Record<
+		string,
+		Record<string, WorkspaceActivity>
+	> = {};
+	@property({ attribute: false }) projects: Project[] = [];
+	@property({ attribute: false }) selectedProject?: Project;
+	@property({ attribute: false }) workspaces: Workspace[] = [];
+	@property({ attribute: false }) selectedWorkspace?: Workspace;
+	@property({ attribute: false }) sessions: SessionInfo[] = [];
+	@property({ attribute: false }) selectedSession?: SessionInfo;
+	@property({ attribute: false }) workspaceActivities: Record<
+		string,
+		WorkspaceActivity
+	> = {};
+	@property({ attribute: false }) sessionActivities: Record<
+		string,
+		SessionActivity
+	> = {};
+	@property({ attribute: false }) sessionStatuses: Record<
+		string,
+		SessionStatus
+	> = {};
+	@property({ attribute: false }) sendingPrompts: Record<string, true> = {};
+	@property({ attribute: false }) unreadSessionIds: ReadonlySet<string> =
+		new Set();
+	@property({ attribute: false }) workspacesByProjectId: Record<
+		string,
+		Workspace[]
+	> = {};
+	@property({ attribute: false }) deletingWorkspaceIds: string[] = [];
+	@property({ attribute: false }) workspaceLabelItems: (
+		workspace: Workspace,
+	) => WorkspaceLabelItem[] = () => [];
+	@property({ attribute: false }) refreshControl: unknown;
+	@property({ type: Boolean, reflect: true }) collapsible = false;
+	@property({ type: Boolean, reflect: true }) compact = false;
+	@property({ type: Boolean }) machinesCollapsed = false;
+	@property({ type: Boolean }) projectsCollapsed = false;
+	@property({ type: Boolean }) workspacesCollapsed = false;
+	@property({ type: Boolean }) sessionsCollapsed = false;
+	@property({ type: Number }) startingSessionCount = 0;
+	@property({ type: Boolean }) canStartSession = false;
+	@property({ type: Boolean }) canDeleteArchivedSessions = false;
+	@property({ type: Boolean }) canReloadSessions = false;
+	@property({ type: Boolean }) canCleanupSessions = false;
+	@property({ type: Boolean }) authoritativeSessionPersistence = false;
+	@property({ type: String }) archivedDeleteUnavailableMessage =
+		"Update and restart Pi-Web on this machine to delete archived sessions.";
+	@property({ type: String }) cleanupUnavailableMessage =
+		"Update and restart Pi-Web on this machine to clean up sessions.";
+	@property({ attribute: false }) onShowActions?: () => void;
+	@property({ attribute: false }) onToggleMachines?: () => void;
+	@property({ attribute: false }) onToggleProjects?: () => void;
+	@property({ attribute: false }) onToggleWorkspaces?: () => void;
+	@property({ attribute: false }) onToggleSessions?: () => void;
+	@property({ attribute: false }) onSelectProject?: (
+		project: Project,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onCloseProject?: (
+		project: Project,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onSelectWorkspace?: (
+		workspace: Workspace,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onDeleteWorkspace?: (
+		workspace: Workspace,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onStartSession?: () => void | Promise<void>;
+	@property({ attribute: false }) onSelectSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onArchiveSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onArchiveSessionWithDescendants?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onArchiveSessions?: (
+		sessions: SessionInfo[],
+	) => void | Promise<void>;
+	@property({ attribute: false }) onRestoreSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onDeleteCachedNewSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onDeleteArchivedSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onDeleteArchivedSessions?: (
+		sessions: SessionInfo[],
+	) => void | Promise<void>;
+	@property({ attribute: false }) onDetachParentSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onReloadSession?: (
+		session: SessionInfo,
+	) => void | Promise<void>;
+	@property({ attribute: false })
+	onCleanupSessions?: () => void | Promise<void>;
+	@property({ attribute: false })
+	onArchivedCollapsed?: () => void | Promise<void>;
+	@property({ attribute: false }) onSelectMachine?: (
+		machine: Machine,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onRemoveMachine?: (
+		machine: Machine,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onFocusNavigationTarget?: (
+		target: NavigationFocusTarget,
+	) => void | Promise<void>;
+	@property({ attribute: false })
+	onCancelKeyboardNavigation?: () => void | Promise<void>;
+	@property({ attribute: false }) onOpenSettings?: () => void;
+	@property({ attribute: false }) onToggleTheme?: () => void;
+	@property({ type: Boolean }) themeIsDark = true;
+	@property({ type: String }) machineName = "";
+	@property({ type: Boolean }) machineConnected = false;
+	@property({ type: String }) versionLabel = "";
 
-  @query("machine-list") private machineList?: KeyboardNavigableSection;
-  @query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
-  @query("project-list") private projectList?: KeyboardNavigableSection;
-  @query("workspace-list") private workspaceList?: KeyboardNavigableSection;
-  @query("session-list") private sessionList?: KeyboardNavigableSection;
+	@query("machine-list") private machineList?: KeyboardNavigableSection;
+	@query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
+	@query("project-list") private projectList?: KeyboardNavigableSection;
+	@query("workspace-list") private workspaceList?: KeyboardNavigableSection;
+	@query("session-list") private sessionList?: KeyboardNavigableSection;
 
-  async focusSection(section: NavigationSection): Promise<boolean> {
-    await this.updateComplete;
-    switch (section) {
-      case "machines": return await this.focusNavigableSection(this.compact ? this.machineList : this.machineSwitcher);
-      case "projects": return await this.focusNavigableSection(this.projectList);
-      case "workspaces": return await this.focusNavigableSection(this.workspaceList);
-      case "sessions": return await this.focusNavigableSection(this.sessionList);
-    }
-  }
+	async focusSection(section: NavigationSection): Promise<boolean> {
+		await this.updateComplete;
+		switch (section) {
+			case "machines":
+				return await this.focusNavigableSection(
+					this.compact ? this.machineList : this.machineSwitcher,
+				);
+			case "projects":
+				return await this.focusNavigableSection(this.projectList);
+			case "workspaces":
+				return await this.focusNavigableSection(this.workspaceList);
+			case "sessions":
+				return await this.focusNavigableSection(this.sessionList);
+		}
+	}
 
-  override render() {
-    return html`
+	override render() {
+		return html`
       <header>
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">π</span>
           <strong class="brand-name">Pi Studio</strong>
         </div>
-        ${shouldShowMachinesSection(this.machines) ? html`
+        ${
+					shouldShowMachinesSection(this.machines)
+						? html`
           <machine-switcher
             .machines=${this.machines}
             .selected=${this.selectedMachine}
@@ -112,21 +189,33 @@ export class AppNavigationPanel extends LitElement {
             .activities=${this.machineActivities}
             .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
             .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
-            .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
-            .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+            .onFocusNextSection=${() => {
+							this.focusNextFrom("machines");
+						}}
+            .onCancelKeyboardNavigation=${() => {
+							this.cancelKeyboardNavigation();
+						}}
           ></machine-switcher>
-        ` : null}
+        `
+						: null
+				}
         <div class="header-actions">
           ${this.refreshControl}
-          <button class="icon-button" title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
+          <button class="icon-button" title="Show Actions" aria-label="Show Actions" @click=${() => {
+						this.onShowActions?.();
+					}}>Actions</button>
         </div>
       </header>
       <div class="new-task">
-        <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? "Start a new task" : "Select a workspace to start a new task"} @click=${() => { void this.onStartSession?.(); }}>
+        <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? "Start a new task" : "Select a workspace to start a new task"} @click=${() => {
+					void this.onStartSession?.();
+				}}>
           <span class="new-task-plus" aria-hidden="true">+</span> New task
         </button>
       </div>
-      ${this.compact && shouldShowMachinesSection(this.machines) ? html`
+      ${
+				this.compact && shouldShowMachinesSection(this.machines)
+					? html`
         <machine-list
           .machines=${this.machines}
           .selected=${this.selectedMachine}
@@ -134,13 +223,21 @@ export class AppNavigationPanel extends LitElement {
           .activities=${this.machineActivities}
           .collapsible=${this.collapsible}
           .collapsed=${this.machinesCollapsed}
-          .onToggleCollapsed=${() => { this.onToggleMachines?.(); }}
+          .onToggleCollapsed=${() => {
+						this.onToggleMachines?.();
+					}}
           .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
           .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
-          .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
-          .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+          .onFocusNextSection=${() => {
+						this.focusNextFrom("machines");
+					}}
+          .onCancelKeyboardNavigation=${() => {
+						this.cancelKeyboardNavigation();
+					}}
         ></machine-list>
-      ` : null}
+      `
+					: null
+			}
       <project-list
         .projects=${this.projects}
         .selected=${this.selectedProject}
@@ -148,12 +245,20 @@ export class AppNavigationPanel extends LitElement {
         .workspacesByProjectId=${this.workspacesByProjectId}
         .collapsible=${this.collapsible}
         .collapsed=${this.projectsCollapsed}
-        .onToggleCollapsed=${() => { this.onToggleProjects?.(); }}
+        .onToggleCollapsed=${() => {
+					this.onToggleProjects?.();
+				}}
         .onSelect=${(project: Project) => this.onSelectProject?.(project)}
         .onClose=${(project: Project) => this.onCloseProject?.(project)}
-        .onFocusPreviousSection=${() => { this.focusPreviousFrom("projects"); }}
-        .onFocusNextSection=${() => { this.focusNextFrom("projects"); }}
-        .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+        .onFocusPreviousSection=${() => {
+					this.focusPreviousFrom("projects");
+				}}
+        .onFocusNextSection=${() => {
+					this.focusNextFrom("projects");
+				}}
+        .onCancelKeyboardNavigation=${() => {
+					this.cancelKeyboardNavigation();
+				}}
       ></project-list>
       <workspace-list
         .workspaces=${this.workspaces}
@@ -163,12 +268,20 @@ export class AppNavigationPanel extends LitElement {
         .collapsible=${this.collapsible}
         .collapsed=${this.workspacesCollapsed}
         .workspaceLabelItems=${this.workspaceLabelItems}
-        .onToggleCollapsed=${() => { this.onToggleWorkspaces?.(); }}
+        .onToggleCollapsed=${() => {
+					this.onToggleWorkspaces?.();
+				}}
         .onSelect=${(workspace: Workspace) => this.onSelectWorkspace?.(workspace)}
         .onDelete=${(workspace: Workspace) => this.onDeleteWorkspace?.(workspace)}
-        .onFocusPreviousSection=${() => { this.focusPreviousFrom("workspaces"); }}
-        .onFocusNextSection=${() => { this.focusNextFrom("workspaces"); }}
-        .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+        .onFocusPreviousSection=${() => {
+					this.focusPreviousFrom("workspaces");
+				}}
+        .onFocusNextSection=${() => {
+					this.focusNextFrom("workspaces");
+				}}
+        .onCancelKeyboardNavigation=${() => {
+					this.cancelKeyboardNavigation();
+				}}
       ></workspace-list>
       <session-list
         .sessions=${this.sessions}
@@ -187,7 +300,9 @@ export class AppNavigationPanel extends LitElement {
         .cleanupUnavailableMessage=${this.cleanupUnavailableMessage}
         .collapsible=${this.collapsible}
         .collapsed=${this.sessionsCollapsed}
-        .onToggleCollapsed=${() => { this.onToggleSessions?.(); }}
+        .onToggleCollapsed=${() => {
+					this.onToggleSessions?.();
+				}}
         .onArchivedCollapsed=${() => this.onArchivedCollapsed?.()}
         .onStart=${() => this.onStartSession?.()}
         .onSelect=${(session: SessionInfo) => this.onSelectSession?.(session)}
@@ -201,13 +316,23 @@ export class AppNavigationPanel extends LitElement {
         .onDetachParent=${(session: SessionInfo) => this.onDetachParentSession?.(session)}
         .onReload=${(session: SessionInfo) => this.onReloadSession?.(session)}
         .onCleanup=${() => this.onCleanupSessions?.()}
-        .onFocusPreviousSection=${() => { this.focusPreviousFrom("sessions"); }}
-        .onFocusNextSection=${() => { this.focusNextFrom("sessions"); }}
-        .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+        .onFocusPreviousSection=${() => {
+					this.focusPreviousFrom("sessions");
+				}}
+        .onFocusNextSection=${() => {
+					this.focusNextFrom("sessions");
+				}}
+        .onCancelKeyboardNavigation=${() => {
+					this.cancelKeyboardNavigation();
+				}}
       ></session-list>
       <footer class="nav-footer">
-        <button class="footer-button" title="Settings" @click=${() => { this.onOpenSettings?.(); }}>Settings</button>
-        <button class="footer-button" title=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} aria-label=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} @click=${() => { this.onToggleTheme?.(); }}>${this.themeIsDark ? "☾" : "☀"}</button>
+        <button class="footer-button" title="Settings" @click=${() => {
+					this.onOpenSettings?.();
+				}}>Settings</button>
+        <button class="footer-button" title=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} aria-label=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} @click=${() => {
+					this.onToggleTheme?.();
+				}}>${this.themeIsDark ? "☾" : "☀"}</button>
         <span class="footer-status" title=${this.machineConnected ? "Connected" : "Disconnected"}>
           <span class="status-dot ${this.machineConnected ? "connected" : "disconnected"}" aria-hidden="true"></span>
           <span class="footer-machine">${this.machineName}</span>
@@ -215,27 +340,31 @@ export class AppNavigationPanel extends LitElement {
         ${this.versionLabel !== "" ? html`<span class="footer-version">${this.versionLabel}</span>` : null}
       </footer>
     `;
-  }
+	}
 
-  private async focusNavigableSection(section: KeyboardNavigableSection | undefined): Promise<boolean> {
-    if (section === undefined) return false;
-    return await section.focusSelectedOrFirst();
-  }
+	private async focusNavigableSection(
+		section: KeyboardNavigableSection | undefined,
+	): Promise<boolean> {
+		if (section === undefined) return false;
+		return await section.focusSelectedOrFirst();
+	}
 
-  private focusPreviousFrom(section: NavigationSection): void {
-    const target = previousVisibleNavigationTarget(section, this.machines);
-    if (target !== undefined) void this.onFocusNavigationTarget?.(target);
-  }
+	private focusPreviousFrom(section: NavigationSection): void {
+		const target = previousVisibleNavigationTarget(section, this.machines);
+		if (target !== undefined) void this.onFocusNavigationTarget?.(target);
+	}
 
-  private focusNextFrom(section: NavigationSection): void {
-    void this.onFocusNavigationTarget?.(nextVisibleNavigationTarget(section, this.machines));
-  }
+	private focusNextFrom(section: NavigationSection): void {
+		void this.onFocusNavigationTarget?.(
+			nextVisibleNavigationTarget(section, this.machines),
+		);
+	}
 
-  private cancelKeyboardNavigation(): void {
-    void this.onCancelKeyboardNavigation?.();
-  }
+	private cancelKeyboardNavigation(): void {
+		void this.onCancelKeyboardNavigation?.();
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
     :host([compact]) { flex: 1 1 auto; }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 12px 8px; }
@@ -280,20 +409,32 @@ export class AppNavigationPanel extends LitElement {
   `;
 }
 
-export function shouldShowMachinesSection(machines: readonly Machine[]): boolean {
-  return machines.length > 1;
+export function shouldShowMachinesSection(
+	machines: readonly Machine[],
+): boolean {
+	return machines.length > 1;
 }
 
-function previousVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[]): NavigationSection | undefined {
-  const sections = visibleNavigationSections(machines);
-  return sections[sections.indexOf(section) - 1];
+function previousVisibleNavigationTarget(
+	section: NavigationSection,
+	machines: readonly Machine[],
+): NavigationSection | undefined {
+	const sections = visibleNavigationSections(machines);
+	return sections[sections.indexOf(section) - 1];
 }
 
-function nextVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[]): NavigationFocusTarget {
-  const sections = visibleNavigationSections(machines);
-  return sections[sections.indexOf(section) + 1] ?? "chat";
+function nextVisibleNavigationTarget(
+	section: NavigationSection,
+	machines: readonly Machine[],
+): NavigationFocusTarget {
+	const sections = visibleNavigationSections(machines);
+	return sections[sections.indexOf(section) + 1] ?? "chat";
 }
 
-function visibleNavigationSections(machines: readonly Machine[]): NavigationSection[] {
-  return NAVIGATION_SECTION_ORDER.filter((section) => section !== "machines" || shouldShowMachinesSection(machines));
+function visibleNavigationSections(
+	machines: readonly Machine[],
+): NavigationSection[] {
+	return NAVIGATION_SECTION_ORDER.filter(
+		(section) => section !== "machines" || shouldShowMachinesSection(machines),
+	);
 }

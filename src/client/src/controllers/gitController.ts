@@ -35,7 +35,10 @@ export class GitController {
   }
 
   async selectDiff(path: string): Promise<void> {
-    this.setState({ selectedDiffPath: path, selectedDiff: undefined, selectedStagedDiff: undefined, workspaceTool: "core:workspace.git", mainView: this.getState().mainView === "chat" ? "chat" : "core:workspace.git" });
+    // Keep diff-capable panels (Changes, Git) active instead of forcing Git.
+    const currentTool = this.getState().workspaceTool;
+    const tool = currentTool === "core:workspace.git" || currentTool === "core:workspace.changes" ? currentTool : "core:workspace.git";
+    this.setState({ selectedDiffPath: path, selectedDiff: undefined, selectedStagedDiff: undefined, workspaceTool: tool, mainView: this.getState().mainView === "chat" ? "chat" : tool });
     setNamespacedQueryKey(GIT_ROUTE_NAMESPACE, "diff", path);
     this.updateUrl({ replace: true });
     await this.refreshDiff(path);

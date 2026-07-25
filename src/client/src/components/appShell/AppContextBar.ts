@@ -6,69 +6,83 @@ import type { NavigationSection } from "../../appShell/navigationState";
 
 @customElement("app-context-bar")
 export class AppContextBar extends LitElement {
-  @property({ attribute: false }) machines: Machine[] = [];
-  @property({ attribute: false }) machine?: Machine;
-  @property({ attribute: false }) project?: Project;
-  @property({ attribute: false }) workspace?: Workspace;
-  @property({ attribute: false }) session?: SessionInfo;
-  @property({ attribute: false }) refreshControl: unknown;
-  @property({ attribute: false }) onOpenSection?: (section: NavigationSection) => void;
-  @property({ attribute: false }) onShowActions?: () => void;
-  @query(".context-items") private contextItems?: HTMLElement | null;
-  @state() private canScrollLeft = false;
-  @state() private canScrollRight = false;
-  private observedContextItems: HTMLElement | undefined;
-  private contextItemsResizeObserver: ResizeObserver | undefined;
+	@property({ attribute: false }) machines: Machine[] = [];
+	@property({ attribute: false }) machine?: Machine;
+	@property({ attribute: false }) project?: Project;
+	@property({ attribute: false }) workspace?: Workspace;
+	@property({ attribute: false }) session?: SessionInfo;
+	@property({ attribute: false }) refreshControl: unknown;
+	@property({ attribute: false }) onOpenSection?: (
+		section: NavigationSection,
+	) => void;
+	@property({ attribute: false }) onShowActions?: () => void;
+	@query(".context-items") private contextItems?: HTMLElement | null;
+	@state() private canScrollLeft = false;
+	@state() private canScrollRight = false;
+	private observedContextItems: HTMLElement | undefined;
+	private contextItemsResizeObserver: ResizeObserver | undefined;
 
-  override disconnectedCallback(): void {
-    this.contextItemsResizeObserver?.disconnect();
-    this.contextItemsResizeObserver = undefined;
-    this.observedContextItems = undefined;
-    super.disconnectedCallback();
-  }
+	override disconnectedCallback(): void {
+		this.contextItemsResizeObserver?.disconnect();
+		this.contextItemsResizeObserver = undefined;
+		this.observedContextItems = undefined;
+		super.disconnectedCallback();
+	}
 
-  override firstUpdated(): void {
-    this.observeContextItems();
-    this.updateScrollState();
-  }
+	override firstUpdated(): void {
+		this.observeContextItems();
+		this.updateScrollState();
+	}
 
-  override updated(): void {
-    this.observeContextItems();
-    this.updateScrollState();
-  }
+	override updated(): void {
+		this.observeContextItems();
+		this.updateScrollState();
+	}
 
-  override render() {
-    const showMachineContext = shouldShowMachineContext(this.machines);
-    const machineLabel = machineContextLabel(this.machine);
-    const projectLabel = projectContextLabel(this.project);
-    const workspaceLabel = workspaceContextLabel(this.workspace);
-    const sessionLabel = sessionContextLabel(this.session);
-    return html`
+	override render() {
+		const showMachineContext = shouldShowMachineContext(this.machines);
+		const machineLabel = machineContextLabel(this.machine);
+		const projectLabel = projectContextLabel(this.project);
+		const workspaceLabel = workspaceContextLabel(this.workspace);
+		const sessionLabel = sessionContextLabel(this.session);
+		return html`
       <nav class=${this.contextBarClass()} aria-label="Current location">
         <span class="context-bar-label">Location</span>
         <ol class="context-items" @scroll=${this.onContextScroll}>
-          ${showMachineContext ? html`
+          ${
+						showMachineContext
+							? html`
             <li class="context-item">
-              <button type="button" class=${this.machine === undefined ? "context-chip empty" : "context-chip"} title=${machineContextTitle(this.machine)} aria-label=${`Machine: ${machineLabel}. Open machine selection.`} @click=${() => { this.onOpenSection?.("machines"); }}>
+              <button type="button" class=${this.machine === undefined ? "context-chip empty" : "context-chip"} title=${machineContextTitle(this.machine)} aria-label=${`Machine: ${machineLabel}. Open machine selection.`} @click=${() => {
+								this.onOpenSection?.("machines");
+							}}>
                 <span class="context-kind">Machine</span>
                 <span class="context-value">${machineLabel}</span>
               </button>
             </li>
-          ` : null}
+          `
+							: null
+					}
           <li class="context-item">
-            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => { this.onOpenSection?.("projects"); }}>
+            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => {
+							this.onOpenSection?.("projects");
+						}}>
               <span class="context-kind">Project</span>
               <span class="context-value">${projectLabel}</span>
             </button>
           </li>
           <li class="context-item">
-            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${`Workspace: ${workspaceLabel}. Open workspace selection.`} @click=${() => { this.onOpenSection?.("workspaces"); }}>
+            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${`Workspace: ${workspaceLabel}. Open workspace selection.`} @click=${() => {
+							this.onOpenSection?.("workspaces");
+						}}>
               <span class="context-kind">Workspace</span>
               <span class="context-value">${workspaceLabel}</span>
             </button>
           </li>
           <li class="context-item">
-            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${`Session: ${sessionLabel}. Open session selection.`} @click=${() => { this.onOpenSection?.("sessions"); }}>
+            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${`Session: ${sessionLabel}. Open session selection.`} @click=${() => {
+							this.onOpenSection?.("sessions");
+						}}>
               <span class="context-kind">Session</span>
               <span class="context-value">${sessionLabel}</span>
             </button>
@@ -77,64 +91,80 @@ export class AppContextBar extends LitElement {
         ${this.hasContextActions() ? html`<div class="context-actions">${this.renderActionsButton()}${this.refreshControl}</div>` : null}
       </nav>
     `;
-  }
+	}
 
-  private renderActionsButton() {
-    if (this.onShowActions === undefined) return null;
-    return html`
-      <button type="button" class="context-action-button" title="Show Actions" aria-label="Show Actions" @click=${(event: MouseEvent) => { event.stopPropagation(); this.onShowActions?.(); }}>
+	private renderActionsButton() {
+		if (this.onShowActions === undefined) return null;
+		return html`
+      <button type="button" class="context-action-button" title="Show Actions" aria-label="Show Actions" @click=${(
+				event: MouseEvent,
+			) => {
+				event.stopPropagation();
+				this.onShowActions?.();
+			}}>
         <svg class="context-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M13 2 4 14h7l-1 8 10-13h-7V2Z"></path>
         </svg>
       </button>
     `;
-  }
+	}
 
-  private contextBarClass(): string {
-    const classes = ["context-bar"];
-    if (this.hasContextActions()) classes.push("has-context-actions");
-    if (this.refreshControl !== undefined && this.onShowActions !== undefined) classes.push("has-context-actions-double");
-    if (this.canScrollLeft) classes.push("can-scroll-left");
-    if (this.canScrollRight) classes.push("can-scroll-right");
-    return classes.join(" ");
-  }
+	private contextBarClass(): string {
+		const classes = ["context-bar"];
+		if (this.hasContextActions()) classes.push("has-context-actions");
+		if (this.refreshControl !== undefined && this.onShowActions !== undefined)
+			classes.push("has-context-actions-double");
+		if (this.canScrollLeft) classes.push("can-scroll-left");
+		if (this.canScrollRight) classes.push("can-scroll-right");
+		return classes.join(" ");
+	}
 
-  private hasContextActions(): boolean {
-    return this.refreshControl !== undefined || this.onShowActions !== undefined;
-  }
+	private hasContextActions(): boolean {
+		return (
+			this.refreshControl !== undefined || this.onShowActions !== undefined
+		);
+	}
 
-  private observeContextItems(): void {
-    const contextItems = this.contextItemsElement();
-    if (this.observedContextItems === contextItems) return;
-    this.contextItemsResizeObserver?.disconnect();
-    this.observedContextItems = contextItems;
-    this.contextItemsResizeObserver = undefined;
-    if (contextItems === undefined || typeof ResizeObserver === "undefined") return;
-    this.contextItemsResizeObserver = new ResizeObserver(() => {
-      this.updateScrollState();
-    });
-    this.contextItemsResizeObserver.observe(contextItems);
-  }
+	private observeContextItems(): void {
+		const contextItems = this.contextItemsElement();
+		if (this.observedContextItems === contextItems) return;
+		this.contextItemsResizeObserver?.disconnect();
+		this.observedContextItems = contextItems;
+		this.contextItemsResizeObserver = undefined;
+		if (contextItems === undefined || typeof ResizeObserver === "undefined")
+			return;
+		this.contextItemsResizeObserver = new ResizeObserver(() => {
+			this.updateScrollState();
+		});
+		this.contextItemsResizeObserver.observe(contextItems);
+	}
 
-  private updateScrollState(): void {
-    const contextItems = this.contextItemsElement();
-    const maxScrollLeft = contextItems === undefined ? 0 : Math.max(0, contextItems.scrollWidth - contextItems.clientWidth);
-    const canScrollLeft = contextItems !== undefined && contextItems.scrollLeft > 1;
-    const canScrollRight = contextItems !== undefined && maxScrollLeft - contextItems.scrollLeft > 1;
-    if (this.canScrollLeft !== canScrollLeft) this.canScrollLeft = canScrollLeft;
-    if (this.canScrollRight !== canScrollRight) this.canScrollRight = canScrollRight;
-  }
+	private updateScrollState(): void {
+		const contextItems = this.contextItemsElement();
+		const maxScrollLeft =
+			contextItems === undefined
+				? 0
+				: Math.max(0, contextItems.scrollWidth - contextItems.clientWidth);
+		const canScrollLeft =
+			contextItems !== undefined && contextItems.scrollLeft > 1;
+		const canScrollRight =
+			contextItems !== undefined && maxScrollLeft - contextItems.scrollLeft > 1;
+		if (this.canScrollLeft !== canScrollLeft)
+			this.canScrollLeft = canScrollLeft;
+		if (this.canScrollRight !== canScrollRight)
+			this.canScrollRight = canScrollRight;
+	}
 
-  private contextItemsElement(): HTMLElement | undefined {
-    const contextItems = this.contextItems;
-    return contextItems instanceof HTMLElement ? contextItems : undefined;
-  }
+	private contextItemsElement(): HTMLElement | undefined {
+		const contextItems = this.contextItems;
+		return contextItems instanceof HTMLElement ? contextItems : undefined;
+	}
 
-  private readonly onContextScroll = () => {
-    this.updateScrollState();
-  };
+	private readonly onContextScroll = () => {
+		this.updateScrollState();
+	};
 
-  static override styles = css`
+	static override styles = css`
     /* Keep the refresh menu in this shadow tree above the following mobile tab strip. */
     :host { position: relative; z-index: 20; flex: 0 0 auto; min-width: 0; }
     .context-bar { position: relative; flex: 0 0 auto; min-width: 0; display: flex; align-items: center; gap: 0; padding: 6px 0; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-bg); }
@@ -164,40 +194,58 @@ export class AppContextBar extends LitElement {
   `;
 }
 
-export function shouldShowMachineContext(machines: readonly Machine[]): boolean {
-  return machines.length > 1;
+export function shouldShowMachineContext(
+	machines: readonly Machine[],
+): boolean {
+	return machines.length > 1;
 }
 
 function machineContextLabel(machine: Machine | undefined): string {
-  return machine === undefined ? "No machine" : `${machine.name}${machine.kind === "remote" ? " · remote" : ""}`;
+	return machine === undefined
+		? "No machine"
+		: `${machine.name}${machine.kind === "remote" ? " · remote" : ""}`;
 }
 
 function machineContextTitle(machine: Machine | undefined): string {
-  return machine === undefined ? "No machine selected" : machine.baseUrl ?? machine.name;
+	return machine === undefined
+		? "No machine selected"
+		: (machine.baseUrl ?? machine.name);
 }
 
 function projectContextLabel(project: Project | undefined): string {
-  return project?.name ?? "No project";
+	return project?.name ?? "No project";
 }
 
 function projectContextTitle(project: Project | undefined): string {
-  return project === undefined ? "No project selected" : `${project.name} — ${project.path}`;
+	return project === undefined
+		? "No project selected"
+		: `${project.name} — ${project.path}`;
 }
 
 function workspaceContextLabel(workspace: Workspace | undefined): string {
-  return workspace === undefined ? "No workspace" : `${workspace.label}${workspace.isMain ? " · main" : ""}`;
+	return workspace === undefined
+		? "No workspace"
+		: `${workspace.label}${workspace.isMain ? " · main" : ""}`;
 }
 
 function workspaceContextTitle(workspace: Workspace | undefined): string {
-  return workspace === undefined ? "No workspace selected" : `${workspace.label}${workspace.isMain ? " · main" : ""} — ${workspace.path}`;
+	return workspace === undefined
+		? "No workspace selected"
+		: `${workspace.label}${workspace.isMain ? " · main" : ""} — ${workspace.path}`;
 }
 
 function sessionContextLabel(session: SessionInfo | undefined): string {
-  const name = session?.name?.trim();
-  const firstMessage = session?.firstMessage.trim();
-  return name !== undefined && name !== "" ? name : firstMessage !== undefined && firstMessage !== "" ? firstMessage : session === undefined ? "No session" : shortSessionId(session.id);
+	const name = session?.name?.trim();
+	const firstMessage = session?.firstMessage.trim();
+	return name !== undefined && name !== ""
+		? name
+		: firstMessage !== undefined && firstMessage !== ""
+			? firstMessage
+			: session === undefined
+				? "No session"
+				: shortSessionId(session.id);
 }
 
 function sessionContextTitle(session: SessionInfo | undefined): string {
-  return session === undefined ? "No session selected" : session.path;
+	return session === undefined ? "No session selected" : session.path;
 }
