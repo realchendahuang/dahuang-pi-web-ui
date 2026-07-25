@@ -138,7 +138,7 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/pi-web.ts"
     ],
     "image": "https://raw.githubusercontent.com/realchendahuang/dahuang-pi-web-ui/ui-rebuild/docs/assets/pi-web-banner.png"
   }
