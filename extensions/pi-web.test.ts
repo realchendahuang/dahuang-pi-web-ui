@@ -1,32 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { parseArgs, resolvePiWebSubcommand } from "./pi-web.js";
+import { parseArgs, resolvePiWebCliArgs } from "./pi-web.js";
 
 describe("parseArgs", () => {
-  it("splits plain words", () => {
-    expect(parseArgs("up --no-open")).toEqual(["up", "--no-open"]);
-  });
+	it("splits plain words", () => {
+		expect(parseArgs("up --no-open")).toEqual(["up", "--no-open"]);
+	});
 
-  it("keeps quoted segments", () => {
-    expect(parseArgs(`install --config "/tmp/my config.json"`)).toEqual([
-      "install",
-      "--config",
-      "/tmp/my config.json",
-    ]);
-  });
+	it("keeps quoted segments", () => {
+		expect(parseArgs(`install --config "/tmp/my config.json"`)).toEqual([
+			"install",
+			"--config",
+			"/tmp/my config.json",
+		]);
+	});
 });
 
-describe("resolvePiWebSubcommand", () => {
-  it("defaults bare /pi-web to up", () => {
-    expect(resolvePiWebSubcommand("")).toEqual({ subcommand: "up", rest: [] });
-    expect(resolvePiWebSubcommand("   ")).toEqual({ subcommand: "up", rest: [] });
-  });
+describe("resolvePiWebCliArgs", () => {
+	it("maps bare /pi-web to up", () => {
+		expect(resolvePiWebCliArgs("")).toEqual(["up"]);
+		expect(resolvePiWebCliArgs("   ")).toEqual(["up"]);
+	});
 
-  it("passes through explicit subcommands and flags", () => {
-    expect(resolvePiWebSubcommand("up --install")).toEqual({
-      subcommand: "up",
-      rest: ["--install"],
-    });
-    expect(resolvePiWebSubcommand("status")).toEqual({ subcommand: "status", rest: [] });
-    expect(resolvePiWebSubcommand("open")).toEqual({ subcommand: "open", rest: [] });
-  });
+	it("ignores other subcommands and only forwards --no-open", () => {
+		expect(resolvePiWebCliArgs("install")).toEqual(["up"]);
+		expect(resolvePiWebCliArgs("status")).toEqual(["up"]);
+		expect(resolvePiWebCliArgs("open")).toEqual(["up"]);
+		expect(resolvePiWebCliArgs("--no-open")).toEqual(["up", "--no-open"]);
+		expect(resolvePiWebCliArgs("up --no-open")).toEqual(["up", "--no-open"]);
+	});
 });

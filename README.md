@@ -41,7 +41,7 @@ Requirements:
 
 ### Plugin-style (recommended with Pi)
 
-Install as a Pi package, then start the Web UI from a slash command:
+Install the package once with Pi, then use a single slash command:
 
 ```bash
 # npm package
@@ -55,15 +55,15 @@ pi install git:https://github.com/realchendahuang/dahuang-pi-web-ui
 In any Pi session:
 
 ```text
-/pi-web install     # one-time: install user services (LaunchAgent / systemd)
-/pi-web             # start if needed, print URL, open browser
+/pi-web
 ```
 
-Same entry from a shell:
+That starts the Web UI (sets up local user services if needed), prints the URL, and opens the browser. No other slash subcommands required.
+
+Shell equivalent:
 
 ```bash
-pi-web up           # equivalent to bare /pi-web
-pi-web open         # open the URL only
+pi-web up
 ```
 
 ### Classic global install
