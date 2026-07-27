@@ -3,6 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import type { Workspace } from "../api";
 import type { QualifiedContributionId, QualifiedWorkspacePanelContribution, WorkspacePanelContext } from "../plugins/types";
 import { workspacePanelStyles } from "./shared";
+import { t } from "../i18n";
 
 export interface WorkspacePanelEmptyState {
   title: string;
@@ -51,7 +52,7 @@ export class WorkspacePanel extends LitElement {
     const workspace = this.workspace;
     if (workspace === undefined) return this.renderEmptyState(this.emptyState ?? {
       title: "Select a workspace",
-      body: "Choose a workspace to inspect files, Git, or terminals.",
+      body: t("empty.chooseWorkspaceGeneric"),
     });
     const context = this.panelContext;
     if (context === undefined) return this.renderEmptyState({

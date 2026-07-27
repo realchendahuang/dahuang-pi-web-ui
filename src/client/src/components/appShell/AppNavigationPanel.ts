@@ -13,6 +13,8 @@ import type {
 import type { WorkspaceLabelItem } from "../../plugins/types";
 import type { NavigationSection } from "../../appShell/navigationState";
 import { NAVIGATION_SECTION_ORDER } from "../../appShell/navigationState";
+import { LocaleController, getLocale, setLocale, t } from "../../i18n";
+import { appIcon } from "../../icons/appIcons";
 import type { KeyboardNavigableSection } from "../navigationFocus";
 import "../MachineList";
 import "../MachineSwitcher";
@@ -149,6 +151,7 @@ export class AppNavigationPanel extends LitElement {
 	@property({ type: String }) machineName = "";
 	@property({ type: Boolean }) machineConnected = false;
 	@property({ type: String }) versionLabel = "";
+	private readonly locale = new LocaleController(this);
 
 	@query("machine-list") private machineList?: KeyboardNavigableSection;
 	@query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
@@ -173,11 +176,12 @@ export class AppNavigationPanel extends LitElement {
 	}
 
 	override render() {
+		void this.locale.locale;
 		return html`
       <header>
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">π</span>
-          <strong class="brand-name">Pi Studio</strong>
+          <strong class="brand-name">${t("nav.brand")}</strong>
         </div>
         ${
 					shouldShowMachinesSection(this.machines)
@@ -201,16 +205,16 @@ export class AppNavigationPanel extends LitElement {
 				}
         <div class="header-actions">
           ${this.refreshControl}
-          <button class="icon-button" title="Show Actions" aria-label="Show Actions" @click=${() => {
+          <button class="icon-button" title=${t("nav.showActions")} aria-label=${t("nav.showActions")} @click=${() => {
 						this.onShowActions?.();
-					}}>Actions</button>
+					}}><span class="button-icon" aria-hidden="true">${appIcon("sparkles", { size: 14 })}</span><span>${t("common.actions")}</span></button>
         </div>
       </header>
       <div class="new-task">
-        <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? "Start a new task" : "Select a workspace to start a new task"} @click=${() => {
+        <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? t("nav.newTaskTitle") : t("nav.newTaskDisabled")} @click=${() => {
 					void this.onStartSession?.();
 				}}>
-          <span class="new-task-plus" aria-hidden="true">+</span> New task
+          <span class="new-task-plus" aria-hidden="true">${appIcon("plus", { size: 14 })}</span> ${t("nav.newTask")}
         </button>
       </div>
       ${
@@ -327,13 +331,16 @@ export class AppNavigationPanel extends LitElement {
 				}}
       ></session-list>
       <footer class="nav-footer">
-        <button class="footer-button" title="Settings" @click=${() => {
+        <button class="footer-button" title=${t("common.settings")} @click=${() => {
 					this.onOpenSettings?.();
-				}}>Settings</button>
-        <button class="footer-button" title=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} aria-label=${this.themeIsDark ? "Switch to light theme" : "Switch to dark theme"} @click=${() => {
+				}}><span class="button-icon" aria-hidden="true">${appIcon("settings", { size: 14 })}</span><span>${t("common.settings")}</span></button>
+        <button class="footer-button" title=${this.themeIsDark ? t("nav.themeToLight") : t("nav.themeToDark")} aria-label=${this.themeIsDark ? t("nav.themeToLight") : t("nav.themeToDark")} @click=${() => {
 					this.onToggleTheme?.();
-				}}>${this.themeIsDark ? "☾" : "☀"}</button>
-        <span class="footer-status" title=${this.machineConnected ? "Connected" : "Disconnected"}>
+				}}><span class="button-icon" aria-hidden="true">${this.themeIsDark ? appIcon("sun", { size: 14 }) : appIcon("moon", { size: 14 })}</span></button>
+        <button class="footer-button language-toggle" title=${t("nav.languageToggleTitle")} aria-label=${t("nav.languageToggleTitle")} @click=${() => {
+					setLocale(getLocale() === "zh" ? "en" : "zh");
+				}}><span class="button-icon" aria-hidden="true">${appIcon("language", { size: 14 })}</span><span>${getLocale() === "zh" ? "EN" : "中"}</span></button>
+        <span class="footer-status" title=${this.machineConnected ? t("common.connected") : t("common.disconnected")}>
           <span class="status-dot ${this.machineConnected ? "connected" : "disconnected"}" aria-hidden="true"></span>
           <span class="footer-machine">${this.machineName}</span>
         </span>
@@ -377,13 +384,18 @@ export class AppNavigationPanel extends LitElement {
     :host([compact]) .new-task { display: none; }
     :host([compact]) .nav-footer { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+    .icon-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--pi-border); border-radius: var(--pi-radius-xs, 6px); background: var(--pi-surface); color: var(--pi-text-secondary); padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+    .icon-button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
+    .button-icon { display: inline-grid; place-items: center; }
+    .button-icon .lucide-icon { width: 14px; height: 14px; }
     .new-task { flex: 0 0 auto; padding: 0 12px 8px; border-bottom: 1px solid var(--pi-border-muted); }
     .new-task-button { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; border: 1px solid var(--pi-border-strong, var(--pi-border)); border-radius: var(--pi-radius-sm, 8px); background: var(--pi-text); color: var(--pi-bg); padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .new-task-button:hover { opacity: .88; }
     .new-task-button:disabled { opacity: .45; cursor: not-allowed; }
-    .new-task-plus { font-size: 15px; line-height: 1; }
+    .new-task-plus { display: inline-grid; place-items: center; line-height: 1; }
+    .new-task-plus .lucide-icon { width: 14px; height: 14px; }
     .nav-footer { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--pi-border-muted); }
-    .footer-button { border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 5px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+    .footer-button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 5px 7px; font: inherit; font-size: 12px; cursor: pointer; }
     .footer-button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .footer-status { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin-left: auto; color: var(--pi-muted); font-size: 12px; }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-muted); }

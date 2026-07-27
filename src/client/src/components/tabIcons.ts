@@ -1,4 +1,5 @@
-import { html, svg, type TemplateResult } from "lit";
+import { html, type TemplateResult } from "lit";
+import { appIcon } from "../icons/appIcons";
 
 export type AppTabBuiltinIcon =
 	| "navigation"
@@ -17,67 +18,21 @@ export function renderAppTabIcon(icon: AppTabIcon): TemplateResult {
 }
 
 export function renderBuiltinTabIcon(icon: AppTabBuiltinIcon): TemplateResult {
+	const className = "tab-icon lucide-icon";
 	switch (icon) {
 		case "navigation":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="6" cy="7" r="1.5"></circle>
-          <path d="M10 7h8"></path>
-          <circle cx="6" cy="12" r="1.5"></circle>
-          <path d="M10 12h8"></path>
-          <circle cx="6" cy="17" r="1.5"></circle>
-          <path d="M10 17h8"></path>
-        </svg>
-      `;
+			return appIcon("list", { className, size: 16 });
 		case "chat":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M7 5h10a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-6l-5 4v-4H7a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3Z"></path>
-          <path d="M8 9h8"></path>
-          <path d="M8 13h5"></path>
-        </svg>
-      `;
+			return appIcon("message", { className, size: 16 });
 		case "files":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path>
-        </svg>
-      `;
+			return appIcon("folder", { className, size: 16 });
 		case "git":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="6" cy="6" r="2"></circle>
-          <circle cx="18" cy="6" r="2"></circle>
-          <circle cx="12" cy="18" r="2"></circle>
-          <path d="M8 6h6"></path>
-          <path d="M6 8v2a6 6 0 0 0 6 6"></path>
-          <path d="M18 8v2a6 6 0 0 1-6 6"></path>
-        </svg>
-      `;
+			return appIcon("git", { className, size: 16 });
 		case "terminal":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-          <path d="m7 10 3 3-3 3"></path>
-          <path d="M12 16h5"></path>
-        </svg>
-      `;
+			return appIcon("terminal", { className, size: 16 });
 		case "changes":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <path d="M14 2v6h6"></path>
-          <path d="M12 18v-6"></path>
-          <path d="m9 15 3 3 3-3"></path>
-        </svg>
-      `;
+			return appIcon("diff", { className, size: 16 });
 		case "context":
-			return svg`
-        <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M12 8v4"></path>
-          <path d="M12 16h.01"></path>
-        </svg>
-      `;
+			return appIcon("context", { className, size: 16 });
 	}
 }

@@ -1,224 +1,363 @@
-import { LitElement, css, html, type PropertyValues, type TemplateResult } from "lit";
+import {
+	LitElement,
+	css,
+	html,
+	type PropertyValues,
+	type TemplateResult,
+} from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupRequest } from "../api";
-import { canRunSessionCleanup, confirmSessionCleanup, DEFAULT_SESSION_CLEANUP_DRAFT, selectedSessionCleanupProjectCwds, sessionCleanupPreviewForSelectedProjects, sessionCleanupPreviewHasTargets, sessionCleanupRequestKey, validateSessionCleanupDraft, type SessionCleanupDraft } from "../sessionCleanupUi";
+import type {
+	SessionCleanupExecuteResponse,
+	SessionCleanupPreviewResponse,
+	SessionCleanupProjectSummary,
+	SessionCleanupRequest,
+} from "../api";
+import {
+	canRunSessionCleanup,
+	confirmSessionCleanup,
+	DEFAULT_SESSION_CLEANUP_DRAFT,
+	selectedSessionCleanupProjectCwds,
+	sessionCleanupPreviewForSelectedProjects,
+	sessionCleanupPreviewHasTargets,
+	sessionCleanupRequestKey,
+	validateSessionCleanupDraft,
+	type SessionCleanupDraft,
+} from "../sessionCleanupUi";
+import { LocaleController, t } from "../i18n";
 
 @customElement("session-cleanup-dialog")
 export class SessionCleanupDialog extends LitElement {
-  @property({ type: Boolean }) canCleanup = true;
-  @property({ type: String }) unavailableMessage = "Update and restart Pi-Web on this machine to clean up sessions.";
-  @property({ attribute: false }) preview?: SessionCleanupPreviewResponse;
-  @property({ attribute: false }) previewRequest?: SessionCleanupRequest;
-  @property({ attribute: false }) result?: SessionCleanupExecuteResponse;
-  @property({ type: Boolean }) loading = false;
-  @property({ type: Boolean }) running = false;
-  @property({ type: String }) error = "";
-  @property({ attribute: false }) onPreview?: (request: SessionCleanupRequest) => void | Promise<void>;
-  @property({ attribute: false }) onRun?: (request: SessionCleanupRequest) => void | Promise<void>;
-  @property({ attribute: false }) onClose?: () => void;
+	private readonly locale = new LocaleController(this);
 
-  @state() private draft: SessionCleanupDraft = { ...DEFAULT_SESSION_CLEANUP_DRAFT };
-  @state() private formError = "";
-  @state() private selectedProjectCwds: string[] | undefined;
+	@property({ type: Boolean }) canCleanup = true;
+	@property({ type: String }) unavailableMessage = t("cleanup.unavailable");
+	@property({ attribute: false }) preview?: SessionCleanupPreviewResponse;
+	@property({ attribute: false }) previewRequest?: SessionCleanupRequest;
+	@property({ attribute: false }) result?: SessionCleanupExecuteResponse;
+	@property({ type: Boolean }) loading = false;
+	@property({ type: Boolean }) running = false;
+	@property({ type: String }) error = "";
+	@property({ attribute: false }) onPreview?: (
+		request: SessionCleanupRequest,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onRun?: (
+		request: SessionCleanupRequest,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onClose?: () => void;
 
-  override willUpdate(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has("preview")) this.selectedProjectCwds = this.preview?.projects.map((project) => project.cwd);
-  }
+	@state() private draft: SessionCleanupDraft = {
+		...DEFAULT_SESSION_CLEANUP_DRAFT,
+	};
+	@state() private formError = "";
+	@state() private selectedProjectCwds: string[] | undefined;
 
-  override render(): TemplateResult {
-    const validation = validateSessionCleanupDraft(this.draft);
-    const selectedPreview = this.selectedPreview();
-    const runEnabled = canRunSessionCleanup({ canCleanup: this.canCleanup, draft: this.draft, preview: selectedPreview, previewRequest: this.previewRequest, loading: this.loading, running: this.running });
-    const runTitle = runEnabled ? "Run cleanup" : selectedPreview !== undefined && !sessionCleanupPreviewHasTargets(selectedPreview) ? "Select at least one project to run cleanup" : "Preview cleanup before running it";
-    return html`
-      <div class="backdrop" @mousedown=${() => { this.onClose?.(); }}>
-        <section role="dialog" aria-modal="true" aria-label="Clean up sessions" @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }} @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}>
+	override willUpdate(changedProperties: PropertyValues<this>): void {
+		if (changedProperties.has("preview"))
+			this.selectedProjectCwds = this.preview?.projects.map(
+				(project) => project.cwd,
+			);
+	}
+
+	override render(): TemplateResult {
+		void this.locale.locale;
+		const validation = validateSessionCleanupDraft(this.draft);
+		const selectedPreview = this.selectedPreview();
+		const runEnabled = canRunSessionCleanup({
+			canCleanup: this.canCleanup,
+			draft: this.draft,
+			preview: selectedPreview,
+			previewRequest: this.previewRequest,
+			loading: this.loading,
+			running: this.running,
+		});
+		const runTitle = runEnabled
+			? t("cleanup.runTitle")
+			: selectedPreview !== undefined &&
+					!sessionCleanupPreviewHasTargets(selectedPreview)
+				? t("cleanup.runNeedProject")
+				: t("cleanup.runNeedPreview");
+		return html`
+      <div class="backdrop" @mousedown=${() => {
+				this.onClose?.();
+			}}>
+        <section role="dialog" aria-modal="true" aria-label=${t("cleanup.title")} @mousedown=${(
+					event: MouseEvent,
+				) => {
+					event.stopPropagation();
+				}} @keydown=${(event: KeyboardEvent) => {
+					this.handleKeyDown(event);
+				}}>
           <header>
             <div>
-              <span class="eyebrow">Sessions</span>
-              <h1>Clean up sessions</h1>
+              <span class="eyebrow">${t("cleanup.eyebrow")}</span>
+              <h1>${t("cleanup.title")}</h1>
             </div>
-            <button class="close-button" title="Close cleanup" aria-label="Close cleanup" @click=${() => { this.onClose?.(); }}>×</button>
+            <button class="close-button" title=${t("cleanup.close")} aria-label=${t("cleanup.close")} @click=${() => {
+							this.onClose?.();
+						}}>×</button>
           </header>
           <div class="body">
-            <p class="intro">Preview manual cleanup for this machine before archiving idle sessions or permanently deleting old archived sessions.</p>
+            <p class="intro">${t("cleanup.intro")}</p>
             ${this.canCleanup ? this.renderForm(validation.ok ? "" : validation.error) : this.renderUnavailable()}
             ${this.renderMessage()}
             ${this.preview === undefined ? null : this.renderPreview(this.preview)}
             ${this.result === undefined ? null : this.renderResult(this.result)}
           </div>
           <footer>
-            <button @click=${() => { this.onClose?.(); }}>${this.result === undefined ? "Cancel" : "Close"}</button>
-            <button ?disabled=${!this.canCleanup || this.loading || this.running} @click=${() => { this.previewCleanup(); }}>${this.loading ? "Previewing…" : "Preview"}</button>
-            <button class="danger" ?disabled=${!runEnabled} title=${runTitle} @click=${() => { this.runCleanup(); }}>${this.running ? "Running…" : "Run cleanup"}</button>
+            <button @click=${() => {
+							this.onClose?.();
+						}}>${this.result === undefined ? t("common.cancel") : t("common.close")}</button>
+            <button ?disabled=${!this.canCleanup || this.loading || this.running} @click=${() => {
+							this.previewCleanup();
+						}}>${this.loading ? t("cleanup.previewing") : t("common.preview")}</button>
+            <button class="danger" ?disabled=${!runEnabled} title=${runTitle} @click=${() => {
+							this.runCleanup();
+						}}>${this.running ? t("cleanup.running") : t("cleanup.run")}</button>
           </footer>
         </section>
       </div>
     `;
-  }
+	}
 
-  private renderForm(validationError: string): TemplateResult {
-    const disabled = this.loading || this.running;
-    const validation = validateSessionCleanupDraft(this.draft);
-    const previewOutOfDate = this.preview !== undefined && validation.ok && sessionCleanupRequestKey(validation.request) !== sessionCleanupRequestKey(this.previewRequest) && sessionCleanupPreviewHasTargets(this.preview);
-    return html`
+	private renderForm(validationError: string): TemplateResult {
+		const disabled = this.loading || this.running;
+		const validation = validateSessionCleanupDraft(this.draft);
+		const previewOutOfDate =
+			this.preview !== undefined &&
+			validation.ok &&
+			sessionCleanupRequestKey(validation.request) !==
+				sessionCleanupRequestKey(this.previewRequest) &&
+			sessionCleanupPreviewHasTargets(this.preview);
+		return html`
       <fieldset ?disabled=${disabled}>
         <label class="toggle-row">
-          <input type="checkbox" .checked=${this.draft.archiveIdleEnabled} @change=${(event: Event) => { this.updateDraft({ archiveIdleEnabled: checkedValue(event) }); }}>
-          <span>Archive non-archived sessions idle for more than</span>
-          <input class="days" type="number" min="0" step="1" inputmode="numeric" .value=${this.draft.archiveIdleDays} ?disabled=${disabled || !this.draft.archiveIdleEnabled} @input=${(event: Event) => { this.updateDraft({ archiveIdleDays: inputValue(event) }); }}>
-          <span>days</span>
+          <input type="checkbox" .checked=${this.draft.archiveIdleEnabled} @change=${(
+						event: Event,
+					) => {
+						this.updateDraft({ archiveIdleEnabled: checkedValue(event) });
+					}}>
+          <span>${t("cleanup.archiveIdleLabel")}</span>
+          <input class="days" type="number" min="0" step="1" inputmode="numeric" .value=${this.draft.archiveIdleDays} ?disabled=${disabled || !this.draft.archiveIdleEnabled} @input=${(
+						event: Event,
+					) => {
+						this.updateDraft({ archiveIdleDays: inputValue(event) });
+					}}>
+          <span>${t("cleanup.days")}</span>
         </label>
         <label class="toggle-row delete-row">
-          <input type="checkbox" .checked=${this.draft.deleteArchivedEnabled} @change=${(event: Event) => { this.updateDraft({ deleteArchivedEnabled: checkedValue(event) }); }}>
-          <span>Delete archived sessions archived for more than</span>
-          <input class="days" type="number" min="0" step="1" inputmode="numeric" .value=${this.draft.deleteArchivedDays} ?disabled=${disabled || !this.draft.deleteArchivedEnabled} @input=${(event: Event) => { this.updateDraft({ deleteArchivedDays: inputValue(event) }); }}>
-          <span>days</span>
+          <input type="checkbox" .checked=${this.draft.deleteArchivedEnabled} @change=${(
+						event: Event,
+					) => {
+						this.updateDraft({ deleteArchivedEnabled: checkedValue(event) });
+					}}>
+          <span>${t("cleanup.deleteArchivedLabel")}</span>
+          <input class="days" type="number" min="0" step="1" inputmode="numeric" .value=${this.draft.deleteArchivedDays} ?disabled=${disabled || !this.draft.deleteArchivedEnabled} @input=${(
+						event: Event,
+					) => {
+						this.updateDraft({ deleteArchivedDays: inputValue(event) });
+					}}>
+          <span>${t("cleanup.days")}</span>
         </label>
       </fieldset>
-      <p class="warning"><strong>Deletion is permanent.</strong> Cleanup only deletes sessions that are already archived.</p>
+      <p class="warning"><strong>${t("cleanup.warningStrong")}</strong> ${t("cleanup.warningBody")}</p>
       ${validationError === "" ? null : html`<div class="dialog-error" role="alert">${validationError}</div>`}
-      ${previewOutOfDate ? html`<div class="hint" role="status">Thresholds changed. Preview again before running cleanup.</div>` : null}
+      ${previewOutOfDate ? html`<div class="hint" role="status">${t("cleanup.previewAgain")}</div>` : null}
     `;
-  }
+	}
 
-  private renderUnavailable(): TemplateResult {
-    return html`<div class="unavailable" role="status">${this.unavailableMessage}</div>`;
-  }
+	private renderUnavailable(): TemplateResult {
+		return html`<div class="unavailable" role="status">${this.unavailableMessage}</div>`;
+	}
 
-  private renderMessage(): TemplateResult | null {
-    const message = this.formError || this.error;
-    return message === "" ? null : html`<div class="dialog-error" role="alert">${message}</div>`;
-  }
+	private renderMessage(): TemplateResult | null {
+		const message = this.formError || this.error;
+		return message === ""
+			? null
+			: html`<div class="dialog-error" role="alert">${message}</div>`;
+	}
 
-  private renderPreview(preview: SessionCleanupPreviewResponse): TemplateResult {
-    const selectedCwds = this.selectedProjectCwdsForPreview();
-    const selected = new Set(selectedCwds);
-    const selectedPreview = sessionCleanupPreviewForSelectedProjects(preview, selectedCwds);
-    return html`
-      <section class="preview" aria-label="Cleanup preview">
-        <h2>Preview</h2>
-        ${preview.projects.length === 0 ? html`<p class="empty">No sessions match these thresholds.</p>` : html`
+	private renderPreview(
+		preview: SessionCleanupPreviewResponse,
+	): TemplateResult {
+		const selectedCwds = this.selectedProjectCwdsForPreview();
+		const selected = new Set(selectedCwds);
+		const selectedPreview = sessionCleanupPreviewForSelectedProjects(
+			preview,
+			selectedCwds,
+		);
+		return html`
+      <section class="preview" aria-label=${t("cleanup.preview")}>
+        <h2>${t("cleanup.preview")}</h2>
+        ${
+					preview.projects.length === 0
+						? html`<p class="empty">${t("cleanup.noMatch")}</p>`
+						: html`
           ${this.renderSelectionControls(preview, selectedCwds)}
-          <div class="table-scroll" tabindex="0" aria-label="Cleanup projects table">
+          <div class="table-scroll" tabindex="0" aria-label=${t("cleanup.previewTable")}>
             <table>
               <thead>
-                <tr><th>Clean up</th><th>Project/workspace path</th><th>Archive</th><th>Delete archived</th></tr>
+                <tr><th>${t("cleanup.colCleanUp")}</th><th>${t("cleanup.colPath")}</th><th>${t("cleanup.colArchive")}</th><th>${t("cleanup.colDeleteArchived")}</th></tr>
               </thead>
               <tbody>
                 ${preview.projects.map((project) => this.renderProjectRow(project, selected.has(project.cwd)))}
               </tbody>
               <tfoot>
-                <tr><th colspan="2">Selected totals</th><td>${selectedPreview.totals.archiveCount}</td><td>${selectedPreview.totals.deleteCount}</td></tr>
+                <tr><th colspan="2">${t("cleanup.selectedTotals")}</th><td>${selectedPreview.totals.archiveCount}</td><td>${selectedPreview.totals.deleteCount}</td></tr>
               </tfoot>
             </table>
           </div>
-        `}
-        ${preview.skippedBusySessionIds === undefined || preview.skippedBusySessionIds.length === 0 ? null : html`<p class="hint">${preview.skippedBusySessionIds.length} busy ${preview.skippedBusySessionIds.length === 1 ? "session was" : "sessions were"} skipped.</p>`}
+        `
+				}
+        ${preview.skippedBusySessionIds === undefined || preview.skippedBusySessionIds.length === 0 ? null : html`<p class="hint">${preview.skippedBusySessionIds.length === 1 ? t("cleanup.skippedBusyOne") : t("cleanup.skippedBusy", { count: preview.skippedBusySessionIds.length })}</p>`}
       </section>
     `;
-  }
+	}
 
-  private renderSelectionControls(preview: SessionCleanupPreviewResponse, selectedCwds: readonly string[]): TemplateResult {
-    const disabled = this.loading || this.running;
-    return html`
-      <div class="selection-controls" role="group" aria-label="Project selection">
-        <span>${selectedCwds.length} of ${preview.projects.length} projects selected</span>
-        <button ?disabled=${disabled || selectedCwds.length === preview.projects.length} @click=${() => { this.selectAllProjects(); }}>Select all</button>
-        <button ?disabled=${disabled || selectedCwds.length === 0} @click=${() => { this.deselectAllProjects(); }}>Deselect all</button>
+	private renderSelectionControls(
+		preview: SessionCleanupPreviewResponse,
+		selectedCwds: readonly string[],
+	): TemplateResult {
+		const disabled = this.loading || this.running;
+		return html`
+      <div class="selection-controls" role="group" aria-label=${t("cleanup.projectSelection")}>
+        <span>${t("cleanup.projectsSelected", { selected: selectedCwds.length, total: preview.projects.length })}</span>
+        <button ?disabled=${disabled || selectedCwds.length === preview.projects.length} @click=${() => {
+					this.selectAllProjects();
+				}}>${t("common.select")}</button>
+        <button ?disabled=${disabled || selectedCwds.length === 0} @click=${() => {
+					this.deselectAllProjects();
+				}}>${t("common.clear")}</button>
       </div>
-      ${selectedCwds.length === 0 ? html`<p class="hint" role="status">Select at least one project to run cleanup.</p>` : null}
+      ${selectedCwds.length === 0 ? html`<p class="hint" role="status">${t("cleanup.selectProject")}</p>` : null}
     `;
-  }
+	}
 
-  private renderProjectRow(project: SessionCleanupProjectSummary, selected: boolean): TemplateResult {
-    return html`
+	private renderProjectRow(
+		project: SessionCleanupProjectSummary,
+		selected: boolean,
+	): TemplateResult {
+		return html`
       <tr class=${selected ? "" : "unselected"}>
-        <td class="select-cell"><input type="checkbox" aria-label=${`Clean up ${project.cwd}`} .checked=${selected} ?disabled=${this.running} @change=${(event: Event) => { this.setProjectSelected(project.cwd, checkedValue(event)); }}></td>
+        <td class="select-cell"><input type="checkbox" aria-label=${t("cleanup.cleanUpAria", { path: project.cwd })} .checked=${selected} ?disabled=${this.running} @change=${(
+					event: Event,
+				) => {
+					this.setProjectSelected(project.cwd, checkedValue(event));
+				}}></td>
         <th title=${project.cwd} dir="auto">${project.cwd}</th>
         <td>${project.archiveCount}</td>
         <td>${project.deleteCount}</td>
       </tr>
     `;
-  }
+	}
 
-  private renderResult(result: SessionCleanupExecuteResponse): TemplateResult {
-    return html`
-      <section class="result" aria-label="Cleanup result">
-        <h2>Cleanup complete</h2>
-        <p>Archived ${result.archivedSessionIds.length} ${result.archivedSessionIds.length === 1 ? "session" : "sessions"}; permanently deleted ${result.deletedSessionIds.length} archived ${result.deletedSessionIds.length === 1 ? "session" : "sessions"}.</p>
+	private renderResult(result: SessionCleanupExecuteResponse): TemplateResult {
+		return html`
+      <section class="result" aria-label=${t("cleanup.result")}>
+        <h2>${t("cleanup.completeHeading")}</h2>
+        <p>${t("cleanup.resultSummary", { archived: result.archivedSessionIds.length, deleted: result.deletedSessionIds.length })}</p>
       </section>
     `;
-  }
+	}
 
-  private updateDraft(patch: Partial<SessionCleanupDraft>): void {
-    this.draft = { ...this.draft, ...patch };
-    this.formError = "";
-  }
+	private updateDraft(patch: Partial<SessionCleanupDraft>): void {
+		this.draft = { ...this.draft, ...patch };
+		this.formError = "";
+	}
 
-  private selectedPreview(): SessionCleanupPreviewResponse | undefined {
-    return this.preview === undefined ? undefined : sessionCleanupPreviewForSelectedProjects(this.preview, this.selectedProjectCwdsForPreview());
-  }
+	private selectedPreview(): SessionCleanupPreviewResponse | undefined {
+		return this.preview === undefined
+			? undefined
+			: sessionCleanupPreviewForSelectedProjects(
+					this.preview,
+					this.selectedProjectCwdsForPreview(),
+				);
+	}
 
-  private selectedProjectCwdsForPreview(): string[] {
-    return this.preview === undefined ? [] : selectedSessionCleanupProjectCwds(this.preview, this.selectedProjectCwds);
-  }
+	private selectedProjectCwdsForPreview(): string[] {
+		return this.preview === undefined
+			? []
+			: selectedSessionCleanupProjectCwds(
+					this.preview,
+					this.selectedProjectCwds,
+				);
+	}
 
-  private selectAllProjects(): void {
-    this.selectedProjectCwds = this.preview?.projects.map((project) => project.cwd) ?? [];
-    this.formError = "";
-  }
+	private selectAllProjects(): void {
+		this.selectedProjectCwds =
+			this.preview?.projects.map((project) => project.cwd) ?? [];
+		this.formError = "";
+	}
 
-  private deselectAllProjects(): void {
-    this.selectedProjectCwds = [];
-    this.formError = "";
-  }
+	private deselectAllProjects(): void {
+		this.selectedProjectCwds = [];
+		this.formError = "";
+	}
 
-  private setProjectSelected(cwd: string, selected: boolean): void {
-    const preview = this.preview;
-    if (preview === undefined) return;
-    const selectedCwds = new Set(this.selectedProjectCwdsForPreview());
-    if (selected) selectedCwds.add(cwd);
-    else selectedCwds.delete(cwd);
-    this.selectedProjectCwds = preview.projects.map((project) => project.cwd).filter((projectCwd) => selectedCwds.has(projectCwd));
-    this.formError = "";
-  }
+	private setProjectSelected(cwd: string, selected: boolean): void {
+		const preview = this.preview;
+		if (preview === undefined) return;
+		const selectedCwds = new Set(this.selectedProjectCwdsForPreview());
+		if (selected) selectedCwds.add(cwd);
+		else selectedCwds.delete(cwd);
+		this.selectedProjectCwds = preview.projects
+			.map((project) => project.cwd)
+			.filter((projectCwd) => selectedCwds.has(projectCwd));
+		this.formError = "";
+	}
 
-  private previewCleanup(): void {
-    const validation = validateSessionCleanupDraft(this.draft);
-    if (!validation.ok) {
-      this.formError = validation.error;
-      return;
-    }
-    this.formError = "";
-    void this.onPreview?.(validation.request);
-  }
+	private previewCleanup(): void {
+		const validation = validateSessionCleanupDraft(this.draft);
+		if (!validation.ok) {
+			this.formError = validation.error;
+			return;
+		}
+		this.formError = "";
+		void this.onPreview?.(validation.request);
+	}
 
-  private runCleanup(): void {
-    const validation = validateSessionCleanupDraft(this.draft);
-    if (!validation.ok) {
-      this.formError = validation.error;
-      return;
-    }
-    const selectedPreview = this.selectedPreview();
-    const selectedProjectCwds = this.selectedProjectCwdsForPreview();
-    if (!canRunSessionCleanup({ canCleanup: this.canCleanup, draft: this.draft, preview: selectedPreview, previewRequest: this.previewRequest })) {
-      this.formError = selectedPreview !== undefined && !sessionCleanupPreviewHasTargets(selectedPreview) ? "Select at least one project to run cleanup." : "Preview cleanup before running it.";
-      return;
-    }
-    if (selectedPreview === undefined || !confirmSessionCleanup(selectedPreview, (message) => confirm(message))) return;
-    this.formError = "";
-    void this.onRun?.({ ...validation.request, projectCwds: selectedProjectCwds });
-  }
+	private runCleanup(): void {
+		const validation = validateSessionCleanupDraft(this.draft);
+		if (!validation.ok) {
+			this.formError = validation.error;
+			return;
+		}
+		const selectedPreview = this.selectedPreview();
+		const selectedProjectCwds = this.selectedProjectCwdsForPreview();
+		if (
+			!canRunSessionCleanup({
+				canCleanup: this.canCleanup,
+				draft: this.draft,
+				preview: selectedPreview,
+				previewRequest: this.previewRequest,
+			})
+		) {
+			this.formError =
+				selectedPreview !== undefined &&
+				!sessionCleanupPreviewHasTargets(selectedPreview)
+					? t("cleanup.selectProject")
+					: t("cleanup.runNeedPreview");
+			return;
+		}
+		if (
+			selectedPreview === undefined ||
+			!confirmSessionCleanup(selectedPreview, (message) => confirm(message))
+		)
+			return;
+		this.formError = "";
+		void this.onRun?.({
+			...validation.request,
+			projectCwds: selectedProjectCwds,
+		});
+	}
 
-  private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.onClose?.();
-  }
+	private handleKeyDown(event: KeyboardEvent): void {
+		if (event.key !== "Escape") return;
+		event.preventDefault();
+		event.stopPropagation();
+		this.onClose?.();
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .backdrop { box-sizing: border-box; width: 100%; height: 100dvh; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: var(--pi-overlay); overflow: hidden; }
     section[role="dialog"] { width: min(760px, 100%); max-height: min(760px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border: 1px solid var(--pi-border); border-radius: 14px; background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
@@ -272,9 +411,11 @@ export class SessionCleanupDialog extends LitElement {
 }
 
 function checkedValue(event: Event): boolean {
-  return event.target instanceof HTMLInputElement ? event.target.checked : false;
+	return event.target instanceof HTMLInputElement
+		? event.target.checked
+		: false;
 }
 
 function inputValue(event: Event): string {
-  return event.target instanceof HTMLInputElement ? event.target.value : "";
+	return event.target instanceof HTMLInputElement ? event.target.value : "";
 }

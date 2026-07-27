@@ -1,110 +1,164 @@
-import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
+import {
+	LitElement,
+	css,
+	html,
+	nothing,
+	type PropertyValues,
+	type TemplateResult,
+} from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { SessionTreeNavigateResult, SessionTreeNodeKind, SessionTreeSnapshot, SessionTreeSummaryChoice } from "../api";
+import type {
+	SessionTreeNavigateResult,
+	SessionTreeNodeKind,
+	SessionTreeSnapshot,
+	SessionTreeSummaryChoice,
+} from "../api";
 import { SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH } from "../../../shared/apiTypes";
-import { buildSessionTreeModel, initialSessionTreeSelection, toggleSessionTreeFold, transitionSessionTreeKey, validateSessionTreeSummaryChoice, visibleSessionTreeRows, type SessionTreeModel, type SessionTreeRow } from "../sessionTreeModel";
+import {
+	buildSessionTreeModel,
+	initialSessionTreeSelection,
+	toggleSessionTreeFold,
+	transitionSessionTreeKey,
+	validateSessionTreeSummaryChoice,
+	visibleSessionTreeRows,
+	type SessionTreeModel,
+	type SessionTreeRow,
+} from "../sessionTreeModel";
+import { LocaleController, t } from "../i18n";
 
-const EMPTY_TREE: SessionTreeSnapshot = { nodes: [], activeLeafId: null, activePathIds: [] };
+const EMPTY_TREE: SessionTreeSnapshot = {
+	nodes: [],
+	activeLeafId: null,
+	activePathIds: [],
+};
 const MAX_SESSION_TREE_VISUAL_DEPTH = 8;
 type NavigatorStep = "tree" | "confirm";
 type PendingFocus = "tree" | "summary" | "custom";
 
 @customElement("session-tree-navigator")
 export class SessionTreeNavigator extends LitElement {
-  @property({ attribute: false }) tree: SessionTreeSnapshot = EMPTY_TREE;
-  @property({ attribute: false }) onNavigate?: (targetId: string, summaryChoice: SessionTreeSummaryChoice) => Promise<SessionTreeNavigateResult>;
-  @property({ attribute: false }) onAbort?: () => Promise<void>;
-  @property({ attribute: false }) onCancel?: () => void;
+	private readonly locale = new LocaleController(this);
+	@property({ attribute: false }) tree: SessionTreeSnapshot = EMPTY_TREE;
+	@property({ attribute: false }) onNavigate?: (
+		targetId: string,
+		summaryChoice: SessionTreeSummaryChoice,
+	) => Promise<SessionTreeNavigateResult>;
+	@property({ attribute: false }) onAbort?: () => Promise<void>;
+	@property({ attribute: false }) onCancel?: () => void;
 
-  @state() private selectedId: string | undefined;
-  @state() private foldedIds: ReadonlySet<string> = new Set();
-  @state() private step: NavigatorStep = "tree";
-  @state() private summaryMode: SessionTreeSummaryChoice["mode"] = "none";
-  @state() private customInstructions = "";
-  @state() private busy = false;
-  @state() private aborting = false;
-  @state() private error = "";
-  @state() private statusMessage = "";
+	@state() private selectedId: string | undefined;
+	@state() private foldedIds: ReadonlySet<string> = new Set();
+	@state() private step: NavigatorStep = "tree";
+	@state() private summaryMode: SessionTreeSummaryChoice["mode"] = "none";
+	@state() private customInstructions = "";
+	@state() private busy = false;
+	@state() private aborting = false;
+	@state() private error = "";
+	@state() private statusMessage = "";
 
-  private model: SessionTreeModel = buildSessionTreeModel(EMPTY_TREE);
-  private pendingFocus: PendingFocus | undefined;
-  private operationGeneration = 0;
+	private model: SessionTreeModel = buildSessionTreeModel(EMPTY_TREE);
+	private pendingFocus: PendingFocus | undefined;
+	private operationGeneration = 0;
 
-  protected override willUpdate(changedProperties: PropertyValues<this>): void {
-    if (changedProperties.has("tree")) this.resetTree();
-  }
+	protected override willUpdate(changedProperties: PropertyValues<this>): void {
+		if (changedProperties.has("tree")) this.resetTree();
+	}
 
-  protected override updated(): void {
-    const pendingFocus = this.pendingFocus;
-    if (pendingFocus === undefined) return;
-    this.pendingFocus = undefined;
-    if (pendingFocus === "tree") this.focusSelectedTreeItem();
-    else if (pendingFocus === "custom") this.renderRoot.querySelector<HTMLTextAreaElement>("#session-tree-custom-focus")?.focus();
-    else this.renderRoot.querySelector<HTMLInputElement>("input[name='session-tree-summary']:checked")?.focus();
-  }
+	protected override updated(): void {
+		const pendingFocus = this.pendingFocus;
+		if (pendingFocus === undefined) return;
+		this.pendingFocus = undefined;
+		if (pendingFocus === "tree") this.focusSelectedTreeItem();
+		else if (pendingFocus === "custom")
+			this.renderRoot
+				.querySelector<HTMLTextAreaElement>("#session-tree-custom-focus")
+				?.focus();
+		else
+			this.renderRoot
+				.querySelector<HTMLInputElement>(
+					"input[name='session-tree-summary']:checked",
+				)
+				?.focus();
+	}
 
-  override render(): TemplateResult {
-    return html`
-      <div class="backdrop" @mousedown=${(event: MouseEvent) => { this.handleBackdropMouseDown(event); }}>
+	override render(): TemplateResult {
+		void this.locale.locale;
+		return html`
+      <div class="backdrop" @mousedown=${(event: MouseEvent) => {
+				this.handleBackdropMouseDown(event);
+			}}>
         <section
           role="dialog"
           aria-modal="true"
           aria-labelledby="session-tree-heading"
           aria-busy=${this.busy ? "true" : "false"}
           tabindex="-1"
-          @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }}
-          @keydown=${(event: KeyboardEvent) => { this.handleDialogKeyDown(event); }}
+          @mousedown=${(event: MouseEvent) => {
+						event.stopPropagation();
+					}}
+          @keydown=${(event: KeyboardEvent) => {
+						this.handleDialogKeyDown(event);
+					}}
         >
           <header>
             <div>
-              <span class="eyebrow">Conversation history</span>
-              <h1 id="session-tree-heading">Navigate session tree</h1>
+              <span class="eyebrow">${t("tree.eyebrow")}</span>
+              <h1 id="session-tree-heading">${t("tree.heading")}</h1>
             </div>
-            <button class="close-button" ?disabled=${this.busy} title="Close session tree" aria-label="Close session tree" @click=${() => { this.onCancel?.(); }}>×</button>
+            <button class="close-button" ?disabled=${this.busy} title=${t("tree.closeTitle")} aria-label=${t("tree.closeTitle")} @click=${() => {
+							this.onCancel?.();
+						}}>×</button>
           </header>
           ${this.step === "tree" ? this.renderTreeStep() : this.renderConfirmationStep()}
           ${this.renderFooter()}
         </section>
       </div>
     `;
-  }
+	}
 
-  private renderTreeStep(): TemplateResult {
-    const rows = visibleSessionTreeRows(this.model, this.foldedIds);
-    return html`
+	private renderTreeStep(): TemplateResult {
+		const rows = visibleSessionTreeRows(this.model, this.foldedIds);
+		return html`
       <div class="body tree-step">
         <div class="tree-intro">
-          <p>Select where conversation context should continue. All retained branches stay in this session file.</p>
-          <div class="legend" aria-label="Session tree markers">
-            <span><span class="marker active-path-marker" aria-hidden="true"></span>Active path</span>
-            <span><span class="marker active-leaf-marker" aria-hidden="true"></span>Active leaf</span>
+          <p>${t("tree.intro")}</p>
+          <div class="legend" aria-label=${t("tree.markers")}>
+            <span><span class="marker active-path-marker" aria-hidden="true"></span>${t("tree.activePath")}</span>
+            <span><span class="marker active-leaf-marker" aria-hidden="true"></span>${t("tree.activeLeaf")}</span>
           </div>
         </div>
         ${this.statusMessage === "" ? null : html`<div class="dialog-status" role="status">${this.statusMessage}</div>`}
         ${this.error === "" ? null : html`<div class="dialog-error" role="alert">${this.error}</div>`}
-        ${rows.length === 0 ? html`
-          <div class="empty" role="status">This session does not contain any selectable history entries.</div>
-        ` : html`
-          <div class="tree" role="tree" aria-label="Complete session history">
+        ${
+					rows.length === 0
+						? html`
+          <div class="empty" role="status">${t("tree.empty")}</div>
+        `
+						: html`
+          <div class="tree" role="tree" aria-label=${t("tree.completeHistory")}>
             ${rows.map((row) => this.renderTreeRow(row))}
           </div>
-        `}
+        `
+				}
       </div>
     `;
-  }
+	}
 
-  private renderTreeRow(row: SessionTreeRow): TemplateResult {
-    const selected = row.node.id === this.selectedId;
-    const expanded = row.childIds.length > 0 && !this.foldedIds.has(row.node.id);
-    const classes = [
-      "tree-row",
-      selected ? "selected" : "",
-      row.activePath ? "active-path" : "",
-      row.activeLeaf ? "active-leaf" : "",
-      isBookkeepingKind(row.node.kind) ? "bookkeeping" : "",
-    ].filter((value) => value !== "").join(" ");
-    const visualDepth = sessionTreeVisualDepth(row.branchDepth);
-    return html`
+	private renderTreeRow(row: SessionTreeRow): TemplateResult {
+		const selected = row.node.id === this.selectedId;
+		const expanded =
+			row.childIds.length > 0 && !this.foldedIds.has(row.node.id);
+		const classes = [
+			"tree-row",
+			selected ? "selected" : "",
+			row.activePath ? "active-path" : "",
+			row.activeLeaf ? "active-leaf" : "",
+			isBookkeepingKind(row.node.kind) ? "bookkeeping" : "",
+		]
+			.filter((value) => value !== "")
+			.join(" ");
+		const visualDepth = sessionTreeVisualDepth(row.branchDepth);
+		return html`
       <div
         class=${classes}
         style=${`--tree-indent: ${String(visualDepth * 16)}px; --tree-indent-mobile: ${String(visualDepth * 12)}px;`}
@@ -115,20 +169,26 @@ export class SessionTreeNavigator extends LitElement {
         aria-current=${row.activeLeaf ? "true" : nothing}
         tabindex=${selected ? "0" : "-1"}
         data-tree-node-id=${row.node.id}
-        @click=${() => { this.selectNode(row.node.id); }}
-        @keydown=${(event: KeyboardEvent) => { this.handleTreeKeyDown(event); }}
+        @click=${() => {
+					this.selectNode(row.node.id);
+				}}
+        @keydown=${(event: KeyboardEvent) => {
+					this.handleTreeKeyDown(event);
+				}}
       >
         <span
           class=${`disclosure${row.childIds.length === 0 ? " leaf" : ""}`}
-          title=${row.childIds.length === 0 ? "No child entries" : expanded ? "Collapse branch" : "Expand branch"}
+          title=${row.childIds.length === 0 ? t("tree.noChild") : expanded ? t("tree.collapseBranch") : t("tree.expandBranch")}
           aria-hidden="true"
-          @click=${(event: MouseEvent) => { this.toggleNode(row.node.id, event); }}
+          @click=${(event: MouseEvent) => {
+						this.toggleNode(row.node.id, event);
+					}}
         >${row.childIds.length === 0 ? "·" : expanded ? "▾" : "▸"}</span>
         <span class="metadata">
           <span class="kind">${sessionTreeKindLabel(row.node.kind)}</span>
           <span class="badges">
-            ${row.activePath && !row.activeLeaf ? html`<span class="badge path">Active path</span>` : null}
-            ${row.activeLeaf ? html`<span class="badge leaf">Active leaf</span>` : null}
+            ${row.activePath && !row.activeLeaf ? html`<span class="badge path">${t("tree.activePath")}</span>` : null}
+            ${row.activeLeaf ? html`<span class="badge leaf">${t("tree.activeLeaf")}</span>` : null}
           </span>
         </span>
         <span class="entry">
@@ -138,299 +198,370 @@ export class SessionTreeNavigator extends LitElement {
         </span>
       </div>
     `;
-  }
+	}
 
-  private renderConfirmationStep(): TemplateResult {
-    const selectedNode = this.selectedId === undefined ? undefined : this.model.nodesById.get(this.selectedId);
-    const validation = validateSessionTreeSummaryChoice(this.summaryMode, this.customInstructions);
-    return html`
+	private renderConfirmationStep(): TemplateResult {
+		const selectedNode =
+			this.selectedId === undefined
+				? undefined
+				: this.model.nodesById.get(this.selectedId);
+		const validation = validateSessionTreeSummaryChoice(
+			this.summaryMode,
+			this.customInstructions,
+		);
+		return html`
       <div class="body confirmation-step">
         <div class="confirmation-card">
           <div>
-            <span class="eyebrow">Selected entry</span>
-            <h2>Confirm navigation</h2>
+            <span class="eyebrow">${t("tree.selectedEyebrow")}</span>
+            <h2>${t("tree.confirmHeading")}</h2>
           </div>
-          ${selectedNode === undefined ? html`<div class="empty">The selected history entry is no longer available.</div>` : html`
+          ${
+						selectedNode === undefined
+							? html`<div class="empty">${t("tree.selectedGone")}</div>`
+							: html`
             <div class="selected-entry">
               <span class="kind">${sessionTreeKindLabel(selectedNode.kind)}</span>
               <strong dir="auto">${selectedNode.summary}</strong>
-              ${sessionTreeEntryReturnsToEditor(selectedNode.kind)
-                ? html`<p>This message’s text will return to the prompt editor for optional editing and resubmission.</p>`
-                : html`<p>The prompt editor will be empty after navigating to this entry.</p>`}
+              ${
+								sessionTreeEntryReturnsToEditor(selectedNode.kind)
+									? html`<p>${t("tree.resubmitHint")}</p>`
+									: html`<p>${t("tree.returnsEmpty")}</p>`
+							}
             </div>
-          `}
+          `
+					}
           <fieldset ?disabled=${this.busy}>
-            <legend>Abandoned branch summary</legend>
-            ${this.renderSummaryOption("none", "No summary", "Switch branches without adding a summary entry.")}
-            ${this.renderSummaryOption("default", "Summarize", "Ask Pi to summarize the context being left behind.")}
-            ${this.renderSummaryOption("custom", "Summarize with custom focus", "Guide Pi toward the details that matter for the new branch.")}
-            ${this.summaryMode === "custom" ? html`
+            <legend>${t("tree.abandonedLegend")}</legend>
+            ${this.renderSummaryOption("none", t("tree.summaryNone"), t("tree.summaryNoneDesc"))}
+            ${this.renderSummaryOption("default", t("tree.summaryDefault"), t("tree.summaryDefaultDesc"))}
+            ${this.renderSummaryOption("custom", t("tree.summaryCustom"), t("tree.summaryCustomDesc"))}
+            ${
+							this.summaryMode === "custom"
+								? html`
               <label class="custom-focus" for="session-tree-custom-focus">
-                <span>Custom summary focus</span>
+                <span>${t("tree.customFocus")}</span>
                 <textarea
                   id="session-tree-custom-focus"
                   rows="5"
+                  placeholder=${t("tree.customFocusPlaceholder")}
                   maxlength=${String(SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH)}
                   .value=${this.customInstructions}
-                  @input=${(event: InputEvent) => { this.handleCustomInstructionsInput(event); }}
+                  @input=${(event: InputEvent) => {
+										this.handleCustomInstructionsInput(event);
+									}}
                 ></textarea>
                 <span class="character-count">${this.customInstructions.length} / ${SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH}</span>
               </label>
               ${validation.ok ? null : html`<div class="validation-error" role="alert">${validation.error}</div>`}
-            ` : null}
+            `
+								: null
+						}
           </fieldset>
           <div class="side-effects-note" role="note">
-            <strong>Conversation context only.</strong> Navigation changes the active conversation branch. It does not undo filesystem changes, shell commands, tool calls, or other side effects.
+            <strong>${t("tree.noticeStrong")}</strong> ${t("tree.noticeBody")}
           </div>
           ${this.statusMessage === "" ? null : html`<div class="dialog-status" role="status">${this.statusMessage}</div>`}
           ${this.error === "" ? null : html`<div class="dialog-error" role="alert">${this.error}</div>`}
         </div>
       </div>
     `;
-  }
+	}
 
-  private renderSummaryOption(mode: SessionTreeSummaryChoice["mode"], label: string, description: string): TemplateResult {
-    return html`
+	private renderSummaryOption(
+		mode: SessionTreeSummaryChoice["mode"],
+		label: string,
+		description: string,
+	): TemplateResult {
+		return html`
       <label class=${`summary-option${this.summaryMode === mode ? " selected" : ""}`}>
         <input
           type="radio"
           name="session-tree-summary"
           value=${mode}
           .checked=${this.summaryMode === mode}
-          @change=${() => { this.selectSummaryMode(mode); }}
+          @change=${() => {
+						this.selectSummaryMode(mode);
+					}}
         >
         <span><strong>${label}</strong><small>${description}</small></span>
       </label>
     `;
-  }
+	}
 
-  private renderFooter(): TemplateResult {
-    if (this.step === "tree") {
-      return html`
+	private renderFooter(): TemplateResult {
+		if (this.step === "tree") {
+			return html`
         <footer>
-          <button @click=${() => { this.onCancel?.(); }}>Cancel</button>
-          <button class="primary" ?disabled=${this.selectedId === undefined} @click=${() => { this.continueToConfirmation(); }}>Navigate</button>
+          <button @click=${() => {
+						this.onCancel?.();
+					}}>${t("common.cancel")}</button>
+          <button class="primary" ?disabled=${this.selectedId === undefined} @click=${() => {
+						this.continueToConfirmation();
+					}}>${t("tree.navigate")}</button>
         </footer>
       `;
-    }
+		}
 
-    const summarizing = this.summaryMode !== "none";
-    return html`
+		const summarizing = this.summaryMode !== "none";
+		return html`
       <footer>
-        <button ?disabled=${this.busy} @click=${() => { this.returnToTree(); }}>Back</button>
+        <button ?disabled=${this.busy} @click=${() => {
+					this.returnToTree();
+				}}>${t("tree.back")}</button>
         <span class="footer-spacer"></span>
-        ${this.busy && summarizing ? html`
-          <button class="danger" ?disabled=${this.aborting} @click=${() => { void this.abortNavigation(); }}>${this.aborting ? "Cancelling…" : "Cancel summarization"}</button>
-        ` : null}
-        <button class="primary" ?disabled=${this.busy || this.selectedId === undefined} @click=${() => { void this.submitNavigation(); }}>
-          ${this.busy ? summarizing ? "Summarizing…" : "Navigating…" : summarizing ? "Summarize and navigate" : "Navigate"}
+        ${
+					this.busy && summarizing
+						? html`
+          <button class="danger" ?disabled=${this.aborting} @click=${() => {
+						void this.abortNavigation();
+					}}>${this.aborting ? t("tree.cancelling") : t("tree.cancelSummarization")}</button>
+        `
+						: null
+				}
+        <button class="primary" ?disabled=${this.busy || this.selectedId === undefined} @click=${() => {
+					void this.submitNavigation();
+				}}>
+          ${this.busy ? (summarizing ? t("tree.summarizing") : t("tree.navigating")) : summarizing ? t("tree.summarizeAndNavigate") : t("tree.navigate")}
         </button>
       </footer>
     `;
-  }
+	}
 
-  private resetTree(): void {
-    this.operationGeneration += 1;
-    this.model = buildSessionTreeModel(this.tree);
-    this.selectedId = initialSessionTreeSelection(this.model);
-    this.foldedIds = new Set();
-    this.step = "tree";
-    this.summaryMode = "none";
-    this.customInstructions = "";
-    this.busy = false;
-    this.aborting = false;
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = "tree";
-  }
+	private resetTree(): void {
+		this.operationGeneration += 1;
+		this.model = buildSessionTreeModel(this.tree);
+		this.selectedId = initialSessionTreeSelection(this.model);
+		this.foldedIds = new Set();
+		this.step = "tree";
+		this.summaryMode = "none";
+		this.customInstructions = "";
+		this.busy = false;
+		this.aborting = false;
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = "tree";
+	}
 
-  private selectNode(id: string): void {
-    if (!this.model.nodesById.has(id)) return;
-    this.selectedId = id;
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = "tree";
-  }
+	private selectNode(id: string): void {
+		if (!this.model.nodesById.has(id)) return;
+		this.selectedId = id;
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = "tree";
+	}
 
-  private toggleNode(id: string, event: MouseEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    const next = toggleSessionTreeFold(this.model, { selectedId: this.selectedId, foldedIds: this.foldedIds }, id);
-    this.selectedId = next.selectedId;
-    this.foldedIds = next.foldedIds;
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = "tree";
-  }
+	private toggleNode(id: string, event: MouseEvent): void {
+		event.preventDefault();
+		event.stopPropagation();
+		const next = toggleSessionTreeFold(
+			this.model,
+			{ selectedId: this.selectedId, foldedIds: this.foldedIds },
+			id,
+		);
+		this.selectedId = next.selectedId;
+		this.foldedIds = next.foldedIds;
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = "tree";
+	}
 
-  private handleTreeKeyDown(event: KeyboardEvent): void {
-    const next = transitionSessionTreeKey(this.model, { selectedId: this.selectedId, foldedIds: this.foldedIds }, event.key);
-    if (!next.handled) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (next.action === "cancel") {
-      this.onCancel?.();
-      return;
-    }
-    if (next.action === "confirm") {
-      this.continueToConfirmation();
-      return;
-    }
-    this.selectedId = next.selectedId;
-    this.foldedIds = next.foldedIds;
-    this.pendingFocus = "tree";
-  }
+	private handleTreeKeyDown(event: KeyboardEvent): void {
+		const next = transitionSessionTreeKey(
+			this.model,
+			{ selectedId: this.selectedId, foldedIds: this.foldedIds },
+			event.key,
+		);
+		if (!next.handled) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (next.action === "cancel") {
+			this.onCancel?.();
+			return;
+		}
+		if (next.action === "confirm") {
+			this.continueToConfirmation();
+			return;
+		}
+		this.selectedId = next.selectedId;
+		this.foldedIds = next.foldedIds;
+		this.pendingFocus = "tree";
+	}
 
-  private continueToConfirmation(): void {
-    if (this.selectedId === undefined || !this.model.nodesById.has(this.selectedId)) return;
-    if (!validateSessionTreeSummaryChoice(this.summaryMode, this.customInstructions).ok) {
-      this.summaryMode = "none";
-      this.customInstructions = "";
-    }
-    this.step = "confirm";
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = "summary";
-  }
+	private continueToConfirmation(): void {
+		if (
+			this.selectedId === undefined ||
+			!this.model.nodesById.has(this.selectedId)
+		)
+			return;
+		if (
+			!validateSessionTreeSummaryChoice(
+				this.summaryMode,
+				this.customInstructions,
+			).ok
+		) {
+			this.summaryMode = "none";
+			this.customInstructions = "";
+		}
+		this.step = "confirm";
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = "summary";
+	}
 
-  private returnToTree(): void {
-    if (this.busy) return;
-    this.step = "tree";
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = "tree";
-  }
+	private returnToTree(): void {
+		if (this.busy) return;
+		this.step = "tree";
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = "tree";
+	}
 
-  private selectSummaryMode(mode: SessionTreeSummaryChoice["mode"]): void {
-    if (this.busy) return;
-    this.summaryMode = mode;
-    this.error = "";
-    this.statusMessage = "";
-    this.pendingFocus = mode === "custom" ? "custom" : "summary";
-  }
+	private selectSummaryMode(mode: SessionTreeSummaryChoice["mode"]): void {
+		if (this.busy) return;
+		this.summaryMode = mode;
+		this.error = "";
+		this.statusMessage = "";
+		this.pendingFocus = mode === "custom" ? "custom" : "summary";
+	}
 
-  private handleCustomInstructionsInput(event: InputEvent): void {
-    if (!(event.currentTarget instanceof HTMLTextAreaElement)) return;
-    this.customInstructions = event.currentTarget.value;
-    this.error = "";
-    this.statusMessage = "";
-  }
+	private handleCustomInstructionsInput(event: InputEvent): void {
+		if (!(event.currentTarget instanceof HTMLTextAreaElement)) return;
+		this.customInstructions = event.currentTarget.value;
+		this.error = "";
+		this.statusMessage = "";
+	}
 
-  private async submitNavigation(): Promise<void> {
-    if (this.busy || this.selectedId === undefined) return;
-    const validation = validateSessionTreeSummaryChoice(this.summaryMode, this.customInstructions);
-    if (!validation.ok) {
-      this.error = "";
-      this.statusMessage = "";
-      this.pendingFocus = "custom";
-      this.requestUpdate();
-      return;
-    }
-    const navigate = this.onNavigate;
-    if (navigate === undefined) {
-      this.error = "Session tree navigation is unavailable. Close and reopen /tree, then try again.";
-      return;
-    }
+	private async submitNavigation(): Promise<void> {
+		if (this.busy || this.selectedId === undefined) return;
+		const validation = validateSessionTreeSummaryChoice(
+			this.summaryMode,
+			this.customInstructions,
+		);
+		if (!validation.ok) {
+			this.error = "";
+			this.statusMessage = "";
+			this.pendingFocus = "custom";
+			this.requestUpdate();
+			return;
+		}
+		const navigate = this.onNavigate;
+		if (navigate === undefined) {
+			this.error = t("tree.unavailable");
+			return;
+		}
 
-    const targetId = this.selectedId;
-    const generation = ++this.operationGeneration;
-    this.busy = true;
-    this.aborting = false;
-    this.error = "";
-    this.statusMessage = "";
-    try {
-      const result = await navigate(targetId, validation.choice);
-      if (generation !== this.operationGeneration) return;
-      this.busy = false;
-      this.aborting = false;
-      if (!result.cancelled) return;
-      this.step = "tree";
-      this.statusMessage = result.aborted === true
-        ? "Summarization cancelled. Your selected history entry is unchanged."
-        : "Navigation cancelled. Your selected history entry is unchanged.";
-      this.pendingFocus = "tree";
-    } catch (error: unknown) {
-      if (generation !== this.operationGeneration) return;
-      this.busy = false;
-      this.aborting = false;
-      this.statusMessage = "";
-      this.error = `Could not navigate session history: ${errorMessage(error)}`;
-    }
-  }
+		const targetId = this.selectedId;
+		const generation = ++this.operationGeneration;
+		this.busy = true;
+		this.aborting = false;
+		this.error = "";
+		this.statusMessage = "";
+		try {
+			const result = await navigate(targetId, validation.choice);
+			if (generation !== this.operationGeneration) return;
+			this.busy = false;
+			this.aborting = false;
+			if (!result.cancelled) return;
+			this.step = "tree";
+			this.statusMessage =
+				result.aborted === true
+					? t("tree.cancelledSummary")
+					: t("tree.cancelledNav");
+			this.pendingFocus = "tree";
+		} catch (error: unknown) {
+			if (generation !== this.operationGeneration) return;
+			this.busy = false;
+			this.aborting = false;
+			this.statusMessage = "";
+			this.error = t("tree.navError", { message: errorMessage(error) });
+		}
+	}
 
-  private async abortNavigation(): Promise<void> {
-    if (!this.busy || this.summaryMode === "none" || this.aborting) return;
-    const abort = this.onAbort;
-    if (abort === undefined) {
-      this.error = "Summarization cannot be cancelled from this client.";
-      return;
-    }
-    const generation = this.operationGeneration;
-    this.aborting = true;
-    this.error = "";
-    this.statusMessage = "Cancelling summarization…";
-    try {
-      await abort();
-    } catch (error: unknown) {
-      if (generation !== this.operationGeneration) return;
-      this.aborting = false;
-      this.statusMessage = "";
-      this.error = `Could not cancel summarization: ${errorMessage(error)}`;
-    }
-  }
+	private async abortNavigation(): Promise<void> {
+		if (!this.busy || this.summaryMode === "none" || this.aborting) return;
+		const abort = this.onAbort;
+		if (abort === undefined) {
+			this.error = t("tree.cancelSummaryUnavailable");
+			return;
+		}
+		const generation = this.operationGeneration;
+		this.aborting = true;
+		this.error = "";
+		this.statusMessage = t("tree.cancellingSummary");
+		try {
+			await abort();
+		} catch (error: unknown) {
+			if (generation !== this.operationGeneration) return;
+			this.aborting = false;
+			this.statusMessage = "";
+			this.error = t("tree.cancelSummaryError", {
+				message: errorMessage(error),
+			});
+		}
+	}
 
-  private handleBackdropMouseDown(event: MouseEvent): void {
-    if (event.target === event.currentTarget && !this.busy) this.onCancel?.();
-  }
+	private handleBackdropMouseDown(event: MouseEvent): void {
+		if (event.target === event.currentTarget && !this.busy) this.onCancel?.();
+	}
 
-  private handleDialogKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Tab") {
-      this.trapTabFocus(event);
-      return;
-    }
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (this.busy) {
-      if (this.summaryMode !== "none") void this.abortNavigation();
-      return;
-    }
-    if (this.step === "confirm") this.returnToTree();
-    else this.onCancel?.();
-  }
+	private handleDialogKeyDown(event: KeyboardEvent): void {
+		if (event.key === "Tab") {
+			this.trapTabFocus(event);
+			return;
+		}
+		if (event.key !== "Escape") return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (this.busy) {
+			if (this.summaryMode !== "none") void this.abortNavigation();
+			return;
+		}
+		if (this.step === "confirm") this.returnToTree();
+		else this.onCancel?.();
+	}
 
-  private trapTabFocus(event: KeyboardEvent): void {
-    const focusable = [...this.renderRoot.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex='0']")];
-    if (focusable.length === 0) {
-      event.preventDefault();
-      this.renderRoot.querySelector<HTMLElement>("section[role='dialog']")?.focus();
-      return;
-    }
-    const active = this.shadowRoot?.activeElement;
-    const activeIndex = focusable.findIndex((element) => element === active);
-    const movingPastEnd = !event.shiftKey && activeIndex === focusable.length - 1;
-    const movingBeforeStart = event.shiftKey && (activeIndex <= 0);
-    if (!movingPastEnd && !movingBeforeStart) return;
-    event.preventDefault();
-    (event.shiftKey ? focusable.at(-1) : focusable[0])?.focus();
-  }
+	private trapTabFocus(event: KeyboardEvent): void {
+		const focusable = [
+			...this.renderRoot.querySelectorAll<HTMLElement>(
+				"button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex='0']",
+			),
+		];
+		if (focusable.length === 0) {
+			event.preventDefault();
+			this.renderRoot
+				.querySelector<HTMLElement>("section[role='dialog']")
+				?.focus();
+			return;
+		}
+		const active = this.shadowRoot?.activeElement;
+		const activeIndex = focusable.findIndex((element) => element === active);
+		const movingPastEnd =
+			!event.shiftKey && activeIndex === focusable.length - 1;
+		const movingBeforeStart = event.shiftKey && activeIndex <= 0;
+		if (!movingPastEnd && !movingBeforeStart) return;
+		event.preventDefault();
+		(event.shiftKey ? focusable.at(-1) : focusable[0])?.focus();
+	}
 
-  private focusSelectedTreeItem(): void {
-    const selectedId = this.selectedId;
-    if (selectedId === undefined) {
-      this.renderRoot.querySelector<HTMLElement>(".close-button")?.focus();
-      return;
-    }
-    const rows = this.renderRoot.querySelectorAll<HTMLElement>("[data-tree-node-id]");
-    for (const row of rows) {
-      if (row.dataset["treeNodeId"] !== selectedId) continue;
-      row.focus();
-      row.scrollIntoView({ block: "nearest" });
-      return;
-    }
-  }
+	private focusSelectedTreeItem(): void {
+		const selectedId = this.selectedId;
+		if (selectedId === undefined) {
+			this.renderRoot.querySelector<HTMLElement>(".close-button")?.focus();
+			return;
+		}
+		const rows = this.renderRoot.querySelectorAll<HTMLElement>(
+			"[data-tree-node-id]",
+		);
+		for (const row of rows) {
+			if (row.dataset["treeNodeId"] !== selectedId) continue;
+			row.focus();
+			row.scrollIntoView({ block: "nearest" });
+			return;
+		}
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { position: fixed; inset: 0; z-index: 40; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     * { box-sizing: border-box; }
     .backdrop { width: 100%; height: 100dvh; background: var(--pi-overlay); overflow: hidden; }
@@ -527,40 +658,57 @@ export class SessionTreeNavigator extends LitElement {
 }
 
 export function sessionTreeVisualDepth(depth: number): number {
-  return Math.min(Math.max(0, depth), MAX_SESSION_TREE_VISUAL_DEPTH);
+	return Math.min(Math.max(0, depth), MAX_SESSION_TREE_VISUAL_DEPTH);
 }
 
-export function sessionTreeEntryReturnsToEditor(kind: SessionTreeNodeKind): boolean {
-  return kind === "user" || kind === "custom-message";
+export function sessionTreeEntryReturnsToEditor(
+	kind: SessionTreeNodeKind,
+): boolean {
+	return kind === "user" || kind === "custom-message";
 }
 
 export function sessionTreeKindLabel(kind: SessionTreeNodeKind): string {
-  switch (kind) {
-    case "user": return "User";
-    case "assistant": return "Assistant";
-    case "tool-result": return "Tool result";
-    case "bash": return "Shell";
-    case "custom-message": return "Custom message";
-    case "compaction": return "Compaction";
-    case "branch-summary": return "Branch summary";
-    case "model-change": return "Model";
-    case "thinking-level-change": return "Thinking";
-    case "session-info": return "Session info";
-    case "label": return "Label";
-    case "custom": return "Custom";
-    case "other": return "Other";
-  }
+	switch (kind) {
+		case "user":
+			return t("tree.kindUser");
+		case "assistant":
+			return t("tree.kindAssistant");
+		case "tool-result":
+			return t("tree.kindToolResult");
+		case "bash":
+			return t("tree.kindBash");
+		case "custom-message":
+			return t("tree.kindCustomMessage");
+		case "compaction":
+			return t("tree.kindCompaction");
+		case "branch-summary":
+			return t("tree.kindBranchSummary");
+		case "model-change":
+			return t("tree.kindModel");
+		case "thinking-level-change":
+			return t("tree.kindThinking");
+		case "session-info":
+			return t("tree.kindSessionInfo");
+		case "label":
+			return t("tree.kindLabel");
+		case "custom":
+			return t("tree.kindCustom");
+		case "other":
+			return t("tree.kindOther");
+	}
 }
 
 function isBookkeepingKind(kind: SessionTreeNodeKind): boolean {
-  return kind === "model-change"
-    || kind === "thinking-level-change"
-    || kind === "session-info"
-    || kind === "label"
-    || kind === "custom"
-    || kind === "other";
+	return (
+		kind === "model-change" ||
+		kind === "thinking-level-change" ||
+		kind === "session-info" ||
+		kind === "label" ||
+		kind === "custom" ||
+		kind === "other"
+	);
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+	return error instanceof Error ? error.message : String(error);
 }

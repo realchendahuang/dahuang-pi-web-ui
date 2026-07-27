@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { machineBaseUrlValidationMessage, suggestedMachineNameFromUrl } from "./MachineDialog";
+import { setLocale } from "../i18n";
 
 describe("suggestedMachineNameFromUrl", () => {
   it("suggests the host without protocol or port", () => {
@@ -11,6 +12,8 @@ describe("suggestedMachineNameFromUrl", () => {
     expect(suggestedMachineNameFromUrl("devbox.local:31415")).toBe("devbox.local");
   });
 });
+
+setLocale("en", { persist: false });
 
 describe("machineBaseUrlValidationMessage", () => {
   it("accepts http and https base URLs", () => {

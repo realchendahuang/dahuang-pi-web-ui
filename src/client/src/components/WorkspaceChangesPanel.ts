@@ -2,6 +2,7 @@ import { LitElement, css, html, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { GitDiffResponse, GitStatusFile, GitStatusResponse } from "../api";
 import type { WorkspacePanelContext } from "../plugins/types";
+import { LocaleController, t } from "../i18n";
 
 /**
  * Changes panel: review the working-tree changes produced while working in
@@ -11,9 +12,12 @@ import type { WorkspacePanelContext } from "../plugins/types";
  */
 @customElement("workspace-changes-panel")
 export class WorkspaceChangesPanel extends LitElement {
+	private readonly locale = new LocaleController(this);
+
 	@property({ attribute: false }) context: WorkspacePanelContext | undefined;
 
 	override render() {
+		void this.locale.locale;
 		const context = this.context;
 		if (context === undefined) return html`<p class="muted">Loading…</p>`;
 		const status = context.gitStatus;
@@ -23,7 +27,7 @@ export class WorkspaceChangesPanel extends LitElement {
         ${context.gitStale ? html`<span class="stale">stale</span>` : null}
         <button type="button" @click=${() => {
 					context.onRefreshGit();
-				}}>Refresh</button>
+				}}>${t("files.refresh")}</button>
       </div>
       ${this.renderBody(context, status)}
     `;
@@ -40,8 +44,8 @@ export class WorkspaceChangesPanel extends LitElement {
 		if (status.files.length === 0) {
 			return html`
         <div class="empty-state">
-          <h2>No changes</h2>
-          <p>Files the agent edits in this workspace will show up here for review.</p>
+          <h2>${t("changes.noChanges")}</h2>
+          <p>${t("changes.emptyBody")}</p>
         </div>
       `;
 		}
@@ -133,24 +137,28 @@ export function groupChangedFiles(
 	}
 	const groups: ChangedFileGroup[] = [];
 	if (staged.length > 0)
-		groups.push({ id: "staged", label: "Staged", files: staged });
+		groups.push({ id: "staged", label: t("git.staged"), files: staged });
 	if (modified.length > 0)
-		groups.push({ id: "modified", label: "Modified", files: modified });
+		groups.push({ id: "modified", label: t("git.modified"), files: modified });
 	if (untracked.length > 0)
-		groups.push({ id: "untracked", label: "Untracked", files: untracked });
+		groups.push({
+			id: "untracked",
+			label: t("git.untracked"),
+			files: untracked,
+		});
 	return groups;
 }
 
 function renderDiffViewer(context: WorkspacePanelContext): TemplateResult {
 	if (context.selectedDiffPath === undefined || context.selectedDiffPath === "")
-		return html`<p class="muted">Select a changed file to review its diff.</p>`;
+		return html`<p class="muted">${t("changes.selectDiff")}</p>`;
 	const unstaged = context.selectedDiff;
 	const staged = context.selectedStagedDiff;
 	if (unstaged === undefined || staged === undefined)
-		return html`<p class="muted">Loading diff…</p>`;
+		return html`<p class="muted">${t("changes.loadingDiff")}</p>`;
 	const diffs = [staged, unstaged].filter((diff) => diff.diff !== "");
 	if (diffs.length === 0)
-		return html`<p class="muted">No staged or unstaged diff.</p>`;
+		return html`<p class="muted">${t("changes.noDiff")}</p>`;
 	return html`
     <div class=${diffs.length === 1 ? "diffs single" : "diffs"}>
       ${diffs.map((diff) => renderDiffSection(diff))}
@@ -161,11 +169,11 @@ function renderDiffViewer(context: WorkspacePanelContext): TemplateResult {
 function renderDiffSection(diff: GitDiffResponse): TemplateResult {
 	loadUnifiedDiffViewer();
 	return html`
-    <section class="diff-section">
-      <div class="viewer-header"><strong>${diff.path ?? "diff"}</strong><small>${diff.staged ? "staged" : "unstaged"}${diff.truncated ? " · truncated" : ""}</small></div>
-      <unified-diff-viewer .diff=${diff.diff}></unified-diff-viewer>
-    </section>
-  `;
+		<section class="diff-section">
+			<div class="viewer-header"><strong>${diff.path ?? t("git.diffFallback")}</strong><small>${diff.staged ? t("git.staged") : t("git.unstaged")}${diff.truncated ? ` · ${t("git.truncated")}` : ""}</small></div>
+			<unified-diff-viewer .diff=${diff.diff}></unified-diff-viewer>
+		</section>
+	`;
 }
 
 function loadUnifiedDiffViewer(): void {
@@ -173,8 +181,8 @@ function loadUnifiedDiffViewer(): void {
 }
 
 function branchLabel(status: GitStatusResponse | undefined): string {
-	if (status?.isGitRepo !== true) return "Changes";
-	const branch = status.branch ?? "detached";
+	if (status?.isGitRepo !== true) return t("panel.changes");
+	const branch = status.branch ?? t("git.detached");
 	const ahead = status.ahead ?? 0;
 	const behind = status.behind ?? 0;
 	return ahead === 0 && behind === 0

@@ -1,134 +1,183 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
+import { LocaleController, t } from "../i18n";
 
 export interface MachineDialogSubmit {
-  name: string;
-  baseUrl: string;
-  token?: string;
+	name: string;
+	baseUrl: string;
+	token?: string;
 }
 
 @customElement("machine-dialog")
 export class MachineDialog extends LitElement {
-  @property({ attribute: false }) onSubmit?: (input: MachineDialogSubmit) => void | Promise<void>;
-  @property({ attribute: false }) onCancel?: () => void;
-  @property() error = "";
+	private readonly locale = new LocaleController(this);
 
-  @state() private url = "";
-  @state() private name = "";
-  @state() private token = "";
-  @state() private submitting = false;
-  @query("input[name='baseUrl']") private urlInput?: HTMLInputElement;
-  @query("input[name='name']") private nameInput?: HTMLInputElement;
+	@property({ attribute: false }) onSubmit?: (
+		input: MachineDialogSubmit,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onCancel?: () => void;
+	@property() error = "";
 
-  private nameEdited = false;
-  private previousSuggestedName = "";
+	@state() private url = "";
+	@state() private name = "";
+	@state() private token = "";
+	@state() private submitting = false;
+	@query("input[name='baseUrl']") private urlInput?: HTMLInputElement;
+	@query("input[name='name']") private nameInput?: HTMLInputElement;
 
-  override firstUpdated(): void {
-    this.urlInput?.focus();
-  }
+	private nameEdited = false;
+	private previousSuggestedName = "";
 
-  private handleUrlInput(event: InputEvent): void {
-    if (!(event.target instanceof HTMLInputElement)) return;
-    const url = event.target.value;
-    const suggestedName = suggestedMachineNameFromUrl(url);
-    if (!this.nameEdited || this.name.trim() === "" || this.name === this.previousSuggestedName) this.name = suggestedName;
-    this.previousSuggestedName = suggestedName;
-    this.url = url;
-  }
+	override firstUpdated(): void {
+		this.urlInput?.focus();
+	}
 
-  private handleNameInput(event: InputEvent): void {
-    if (!(event.target instanceof HTMLInputElement)) return;
-    this.nameEdited = true;
-    this.name = event.target.value;
-  }
+	private handleUrlInput(event: InputEvent): void {
+		if (!(event.target instanceof HTMLInputElement)) return;
+		const url = event.target.value;
+		const suggestedName = suggestedMachineNameFromUrl(url);
+		if (
+			!this.nameEdited ||
+			this.name.trim() === "" ||
+			this.name === this.previousSuggestedName
+		)
+			this.name = suggestedName;
+		this.previousSuggestedName = suggestedName;
+		this.url = url;
+	}
 
-  private handleTokenInput(event: InputEvent): void {
-    if (!(event.target instanceof HTMLInputElement)) return;
-    this.token = event.target.value;
-  }
+	private handleNameInput(event: InputEvent): void {
+		if (!(event.target instanceof HTMLInputElement)) return;
+		this.nameEdited = true;
+		this.name = event.target.value;
+	}
 
-  private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      this.onCancel?.();
-      return;
-    }
-    if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.name === "baseUrl" && machineBaseUrlValidationMessage(this.url) === undefined) {
-      event.preventDefault();
-      void this.updateComplete.then(() => {
-        this.nameInput?.focus();
-        this.nameInput?.select();
-      });
-    }
-  }
+	private handleTokenInput(event: InputEvent): void {
+		if (!(event.target instanceof HTMLInputElement)) return;
+		this.token = event.target.value;
+	}
 
-  private handleSubmit(event: SubmitEvent): void {
-    event.preventDefault();
-    void this.submit();
-  }
+	private handleKeyDown(event: KeyboardEvent): void {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			this.onCancel?.();
+			return;
+		}
+		if (
+			event.key === "Enter" &&
+			event.target instanceof HTMLInputElement &&
+			event.target.name === "baseUrl" &&
+			machineBaseUrlValidationMessage(this.url) === undefined
+		) {
+			event.preventDefault();
+			void this.updateComplete.then(() => {
+				this.nameInput?.focus();
+				this.nameInput?.select();
+			});
+		}
+	}
 
-  private async submit(): Promise<void> {
-    const input = this.validInput();
-    if (input === undefined || this.submitting) return;
-    this.submitting = true;
-    try {
-      await this.onSubmit?.(input);
-    } finally {
-      if (this.isConnected) this.submitting = false;
-    }
-  }
+	private handleSubmit(event: SubmitEvent): void {
+		event.preventDefault();
+		void this.submit();
+	}
 
-  private validInput(): MachineDialogSubmit | undefined {
-    const baseUrl = this.url.trim();
-    const name = this.name.trim();
-    if (baseUrl === "" || name === "" || machineBaseUrlValidationMessage(baseUrl) !== undefined) return undefined;
-    const token = this.token.trim();
-    return { name, baseUrl, ...(token === "" ? {} : { token }) };
-  }
+	private async submit(): Promise<void> {
+		const input = this.validInput();
+		if (input === undefined || this.submitting) return;
+		this.submitting = true;
+		try {
+			await this.onSubmit?.(input);
+		} finally {
+			if (this.isConnected) this.submitting = false;
+		}
+	}
 
-  override render() {
-    const hasUrl = this.url.trim() !== "";
-    const urlError = hasUrl ? machineBaseUrlValidationMessage(this.url) : undefined;
-    const canSubmit = this.validInput() !== undefined && !this.submitting;
-    return html`
+	private validInput(): MachineDialogSubmit | undefined {
+		const baseUrl = this.url.trim();
+		const name = this.name.trim();
+		if (
+			baseUrl === "" ||
+			name === "" ||
+			machineBaseUrlValidationMessage(baseUrl) !== undefined
+		)
+			return undefined;
+		const token = this.token.trim();
+		return { name, baseUrl, ...(token === "" ? {} : { token }) };
+	}
+
+	override render() {
+		void this.locale.locale;
+		const hasUrl = this.url.trim() !== "";
+		const urlError = hasUrl
+			? machineBaseUrlValidationMessage(this.url)
+			: undefined;
+		const canSubmit = this.validInput() !== undefined && !this.submitting;
+		return html`
       <div class="backdrop" @click=${() => this.onCancel?.()}>
-        <section @click=${(event: Event) => { event.stopPropagation(); }}>
-          <form @submit=${(event: SubmitEvent) => { this.handleSubmit(event); }} @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}>
+        <section @click=${(event: Event) => {
+					event.stopPropagation();
+				}}>
+          <form @submit=${(event: SubmitEvent) => {
+						this.handleSubmit(event);
+					}} @keydown=${(event: KeyboardEvent) => {
+						this.handleKeyDown(event);
+					}}>
             <header>
-              <strong>Add machine</strong>
-              <button type="button" @click=${() => { this.onCancel?.(); }} aria-label="Close">×</button>
+              <strong>${t("machineDialog.title")}</strong>
+              <button type="button" @click=${() => {
+								this.onCancel?.();
+							}} aria-label=${t("machineDialog.close")}>×</button>
             </header>
             <div class="body">
               ${this.error === "" ? null : html`<div class="dialog-error" role="alert">${this.error}</div>`}
               <label>
-                Remote PI WEB URL
-                <input name="baseUrl" type="url" .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:31415" autocomplete="url" inputmode="url" autofocus />
+                ${t("machineDialog.urlLabel")}
+                <input name="baseUrl" type="url" .value=${this.url} @input=${(
+									event: InputEvent,
+								) => {
+									this.handleUrlInput(event);
+								}} placeholder=${t("machineDialog.urlPlaceholder")} autocomplete="url" inputmode="url" autofocus />
               </label>
-              <small class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? "Enter the reachable base URL first, including http:// or https://."}</small>
-              ${hasUrl ? html`
+              <small class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? t("machineDialog.urlHint")}</small>
+              ${
+								hasUrl
+									? html`
                 <label>
-                  Machine name
-                  <input name="name" type="text" .value=${this.name} @input=${(event: InputEvent) => { this.handleNameInput(event); }} placeholder=${this.previousSuggestedName || "Dev Box"} autocomplete="off" />
+                  ${t("machineDialog.name")}
+                  <input name="name" type="text" .value=${this.name} @input=${(
+										event: InputEvent,
+									) => {
+										this.handleNameInput(event);
+									}} placeholder=${this.previousSuggestedName || t("machineDialog.namePlaceholder")} autocomplete="off" />
                 </label>
-                <small class="hint">Suggested from the URL. Edit it to use a friendlier sidebar label.</small>
+                <small class="hint">${t("machineDialog.nameHint")}</small>
                 <label>
-                  Bearer token <span class="optional">optional</span>
-                  <input name="token" type="password" .value=${this.token} @input=${(event: InputEvent) => { this.handleTokenInput(event); }} placeholder="Leave blank if the remote machine does not require one" autocomplete="off" />
+                  ${t("machineDialog.token")}
+                  <input name="token" type="password" .value=${this.token} @input=${(
+										event: InputEvent,
+									) => {
+										this.handleTokenInput(event);
+									}} placeholder=${t("machineDialog.tokenPlaceholder")} autocomplete="off" />
                 </label>
-                <small class="hint">Paste only the token value; PI WEB sends it as an Authorization: Bearer header.</small>
-              ` : html`<p class="hint intro">After you enter a URL, PI WEB will suggest a machine name and let you add an optional bearer token.</p>`}
+                <small class="hint">${t("machineDialog.tokenHint")}</small>
+              `
+									: html`<p class="hint intro">${t("machineDialog.intro")}</p>`
+							}
             </div>
             <footer>
-              <button type="button" @click=${() => { this.onCancel?.(); }}>Cancel</button>
-              <button class="primary" type="submit" ?disabled=${!canSubmit}>${this.submitting ? "Adding…" : "Add machine"}</button>
+              <button type="button" @click=${() => {
+								this.onCancel?.();
+							}}>${t("machineDialog.cancel")}</button>
+              <button class="primary" type="submit" ?disabled=${!canSubmit}>${this.submitting ? t("common.loading") : t("machineDialog.add")}</button>
             </footer>
           </form>
         </section>
       </div>
     `;
-  }
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px system-ui, sans-serif; }
     .backdrop { display: grid; place-items: start center; width: 100%; height: 100%; padding-top: min(12vh, 90px); box-sizing: border-box; background: var(--pi-overlay); }
     section { width: min(560px, calc(100vw - 40px)); max-height: min(640px, calc(100vh - 40px)); border: 1px solid var(--pi-border); border-radius: 12px; background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
@@ -152,41 +201,53 @@ export class MachineDialog extends LitElement {
 }
 
 export function suggestedMachineNameFromUrl(value: string): string {
-  const raw = value.trim();
-  if (raw === "") return "";
-  const parsed = parseUrlForSuggestion(raw) ?? parseUrlForSuggestion(`http://${raw.replace(/^\/+/u, "")}`);
-  if (parsed !== undefined && parsed.hostname !== "") return parsed.hostname.replace(/^\[(.*)\]$/u, "$1");
-  return fallbackSuggestedName(raw);
+	const raw = value.trim();
+	if (raw === "") return "";
+	const parsed =
+		parseUrlForSuggestion(raw) ??
+		parseUrlForSuggestion(`http://${raw.replace(/^\/+/u, "")}`);
+	if (parsed !== undefined && parsed.hostname !== "")
+		return parsed.hostname.replace(/^\[(.*)\]$/u, "$1");
+	return fallbackSuggestedName(raw);
 }
 
-export function machineBaseUrlValidationMessage(value: string): string | undefined {
-  const raw = value.trim();
-  if (raw === "") return "Remote PI WEB URL is required.";
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return "Enter a valid URL including http:// or https://.";
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return "Use an http:// or https:// URL.";
-  if (url.username !== "" || url.password !== "") return "Do not include credentials in the machine URL.";
-  if (url.search !== "" || url.hash !== "") return "Do not include a query string or fragment.";
-  return undefined;
+export function machineBaseUrlValidationMessage(
+	value: string,
+): string | undefined {
+	const raw = value.trim();
+	if (raw === "") return t("machineDialog.urlRequired");
+	let url: URL;
+	try {
+		url = new URL(raw);
+	} catch {
+		return t("machineDialog.malformedUrl");
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:")
+		return t("machineDialog.invalidUrl");
+	if (url.username !== "" || url.password !== "")
+		return t("machineDialog.noCredentials");
+	if (url.search !== "" || url.hash !== "") return t("machineDialog.noQuery");
+	return undefined;
 }
 
 function parseUrlForSuggestion(value: string): URL | undefined {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
-  } catch {
-    return undefined;
-  }
+	try {
+		const url = new URL(value);
+		return url.protocol === "http:" || url.protocol === "https:"
+			? url
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function fallbackSuggestedName(value: string): string {
-  const withoutProtocol = value.replace(/^[a-z][a-z\d+.-]*:\/\//iu, "");
-  const withoutCredentials = withoutProtocol.slice(withoutProtocol.lastIndexOf("@") + 1);
-  const host = withoutCredentials.split(/[/?#]/u)[0] ?? "";
-  if (host.startsWith("[") && host.includes("]")) return host.slice(1, host.indexOf("]"));
-  return host.replace(/:\d+$/u, "");
+	const withoutProtocol = value.replace(/^[a-z][a-z\d+.-]*:\/\//iu, "");
+	const withoutCredentials = withoutProtocol.slice(
+		withoutProtocol.lastIndexOf("@") + 1,
+	);
+	const host = withoutCredentials.split(/[/?#]/u)[0] ?? "";
+	if (host.startsWith("[") && host.includes("]"))
+		return host.slice(1, host.indexOf("]"));
+	return host.replace(/:\d+$/u, "");
 }

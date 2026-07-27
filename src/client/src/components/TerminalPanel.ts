@@ -11,6 +11,7 @@ import { createTerminalCopySnapshot, DEFAULT_TERMINAL_ANSI_THEME, type TerminalC
 import { createTerminalSoftKeysDefaultEnvironmentMedia, hasTerminalSoftKeysPreference, initialTerminalSoftKeysEnabled, isTerminalSoftKeysDefaultEnvironment, writeTerminalSoftKeysPreference } from "../terminalSoftKeysPreference";
 import "./TerminalSoftKeys";
 import type { TerminalSoftKeyInputOptions } from "./TerminalSoftKeys";
+import { LocaleController, t } from "../i18n";
 
 const TERMINAL_OPTIONS_BASE: ITerminalOptions = {
   cursorBlink: true,
@@ -24,6 +25,8 @@ const COMMAND_RUN_POLL_INTERVAL_MS = 1000;
 
 @customElement("terminal-panel")
 export class TerminalPanel extends LitElement {
+  private readonly locale = new LocaleController(this);
+
   @property({ attribute: false }) workspace: Workspace | undefined;
   @property() machineId = "local";
   @property({ attribute: false }) selectedTerminalId: string | undefined;
@@ -454,7 +457,7 @@ export class TerminalPanel extends LitElement {
             <p>Command is running. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> or use the button to cancel.</p>
             <code>${run.command}</code>
           </div>
-          <button class="danger" ?disabled=${cancelling} @click=${() => { void this.cancelCommandRun(run); }}>${cancelling ? "Cancel sent…" : "Cancel command"}</button>
+          <button class="danger" ?disabled=${cancelling} @click=${() => { void this.cancelCommandRun(run); }}>${cancelling ? t("common.loading") : t("common.cancel")}</button>
         </section>
       `;
     }
@@ -544,7 +547,7 @@ export class TerminalPanel extends LitElement {
         type="button"
         class=${active ? "copy-mode-toggle selected" : "copy-mode-toggle"}
         title=${active ? "Return to the interactive terminal" : "Select and copy terminal output"}
-        aria-label=${active ? "Close terminal copy mode" : "Open terminal copy mode"}
+        aria-label=${active ? t("common.close") : t("common.copy")}
         aria-pressed=${String(active)}
         @click=${() => { if (active) this.exitCopyMode(); else this.enterCopyMode(); }}
       >
@@ -560,8 +563,8 @@ export class TerminalPanel extends LitElement {
       <div class="terminal-copy-toolbar" role="toolbar" aria-label="Terminal copy controls">
         <span aria-live="polite">${this.copyStatus ?? "Snapshot · long-press and select text"}</span>
         <small>${snapshot.physicalLineCount} ${snapshot.physicalLineCount === 1 ? "row" : "rows"}</small>
-        <button type="button" @click=${() => { this.refreshCopyMode(); }}>Refresh</button>
-        <button type="button" @click=${() => { void this.copyAllSnapshotText(); }}>Copy all</button>
+        <button type="button" @click=${() => { this.refreshCopyMode(); }}>${t("common.refresh")}</button>
+        <button type="button" @click=${() => { void this.copyAllSnapshotText(); }}>${t("common.copy")}</button>
       </div>
     `;
   }
@@ -652,6 +655,7 @@ export class TerminalPanel extends LitElement {
   }
 
   override render() {
+    void this.locale.locale;
     return html`
       <section class="terminal-shell">
         <div class="terminal-tabs">
@@ -663,7 +667,7 @@ export class TerminalPanel extends LitElement {
               <small @click=${(event: Event) => { void this.closeTerminal(terminal.id, event); }}>×</small>
             </button>
           `)}
-          <button class="new" ?disabled=${this.workspace === undefined} @click=${() => { void this.startTerminal(); }}>+ Shell</button>
+          <button class="new" ?disabled=${this.workspace === undefined} @click=${() => { void this.startTerminal(); }}>${t("terminal.newShell")}</button>
         </div>
         ${this.error === undefined ? null : html`<p class="error">${this.error}</p>`}
         ${this.renderCommandRunNotice()}

@@ -174,6 +174,7 @@ import {
 } from "./appShell/AppNavigationPanel";
 import "./appShell/AppPanelEdgeControl";
 import "./appShell/AppRefreshControl";
+import { LocaleController, t } from "../i18n";
 import { appStyles } from "./shared";
 
 const PI_WEB_STATUS_REFRESH_MS = 15 * 60 * 1000;
@@ -378,6 +379,7 @@ export class PiWebApp extends LitElement {
 	private readonly terminalSelection =
 		new SessionStorageTerminalSelectionMemory();
 	private readonly appShell = new AppShellController(this);
+	private readonly locale = new LocaleController(this);
 	private readonly browserResume = new BrowserResumeController({
 		onResumeSignal: () => {
 			this.handleBrowserResumeSignal();
@@ -2190,11 +2192,11 @@ export class PiWebApp extends LitElement {
 			return this.state.projects.length === 0
 				? {
 						title: "No projects yet",
-						body: "Use Actions → Add Project to add a folder. Workspace tools will appear here after you choose a workspace.",
+						body: t("empty.noProject"),
 					}
 				: {
 						title: "Select a project",
-						body: "Choose a project from the sidebar, then select a workspace to inspect files, Git, or terminals.",
+						body: t("empty.chooseProject"),
 					};
 		}
 		if (this.state.isLoadingWorkspaces) {
@@ -2211,7 +2213,7 @@ export class PiWebApp extends LitElement {
 		}
 		return {
 			title: "Select a workspace",
-			body: `Choose a workspace in ${project.name} to inspect files, Git, or terminals.`,
+			body: t("empty.chooseWorkspace", { project: project.name }),
 		};
 	}
 
@@ -3242,6 +3244,7 @@ export class PiWebApp extends LitElement {
 	}
 
 	override render() {
+		void this.locale.locale;
 		const state = this.state;
 		return html`
       <div class=${this.panelCollapse.shellClass(state.mainView)} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>

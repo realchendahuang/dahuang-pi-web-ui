@@ -3,161 +3,270 @@ import { customElement, property, query } from "lit/decorators.js";
 import type { AuthDialogState } from "../appState";
 import type { AuthProviderOption, OAuthFlowState } from "../api";
 import { commandPickerStyles } from "./shared";
+import { LocaleController, t } from "../i18n";
 
 @customElement("auth-dialog")
 export class AuthDialog extends LitElement {
-  @property({ attribute: false }) state?: AuthDialogState;
-  @property({ attribute: false }) onChooseMethod?: (authType: "oauth" | "api_key") => void;
-  @property({ attribute: false }) onSelectProvider?: (providerId: string, authType: "oauth" | "api_key") => void;
-  @property({ attribute: false }) onApiKeyInput?: (value: string) => void;
-  @property({ attribute: false }) onSaveApiKey?: () => void;
-  @property({ attribute: false }) onLogoutProvider?: (providerId: string) => void;
-  @property({ attribute: false }) onOAuthInput?: (value: string) => void;
-  @property({ attribute: false }) onOAuthRespond?: (value?: string) => void;
-  @property({ attribute: false }) onOAuthCancel?: () => void;
-  @property({ attribute: false }) onCancel?: () => void;
-  @query("input") private input?: HTMLInputElement;
-  private lastFocusedInputKey: string | undefined;
+	private readonly locale = new LocaleController(this);
 
-  override render() {
-    const state = this.state;
-    if (state === undefined) return null;
-    return html`
-      <div class="backdrop" @mousedown=${() => { this.cancel(); }}>
-        <section @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }} @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}>
+	@property({ attribute: false }) state?: AuthDialogState;
+	@property({ attribute: false }) onChooseMethod?: (
+		authType: "oauth" | "api_key",
+	) => void;
+	@property({ attribute: false }) onSelectProvider?: (
+		providerId: string,
+		authType: "oauth" | "api_key",
+	) => void;
+	@property({ attribute: false }) onApiKeyInput?: (value: string) => void;
+	@property({ attribute: false }) onSaveApiKey?: () => void;
+	@property({ attribute: false }) onLogoutProvider?: (
+		providerId: string,
+	) => void;
+	@property({ attribute: false }) onOAuthInput?: (value: string) => void;
+	@property({ attribute: false }) onOAuthRespond?: (value?: string) => void;
+	@property({ attribute: false }) onOAuthCancel?: () => void;
+	@property({ attribute: false }) onCancel?: () => void;
+	@query("input") private input?: HTMLInputElement;
+	private lastFocusedInputKey: string | undefined;
+
+	override render() {
+		void this.locale.locale;
+		const state = this.state;
+		if (state === undefined) return null;
+		return html`
+      <div class="backdrop" @mousedown=${() => {
+				this.cancel();
+			}}>
+        <section @mousedown=${(event: MouseEvent) => {
+					event.stopPropagation();
+				}} @keydown=${(event: KeyboardEvent) => {
+					this.handleKeyDown(event);
+				}}>
           <header>
             <strong>${this.dialogTitle(state)}</strong>
-            <button title="Close" @click=${() => { this.cancel(); }}>×</button>
+            <button title=${t("auth.close")} @click=${() => {
+							this.cancel();
+						}}>×</button>
           </header>
           ${this.renderBody(state)}
         </section>
       </div>
     `;
-  }
+	}
 
-  protected override updated(): void {
-    this.focusInputIfNeeded();
-  }
+	protected override updated(): void {
+		this.focusInputIfNeeded();
+	}
 
-  private dialogTitle(state: AuthDialogState): string {
-    switch (state.step) {
-      case "method": return "Configure provider authentication";
-      case "providers": return state.authType === undefined ? "Select provider authentication" : state.authType === "oauth" ? "Select subscription provider" : "Select credential provider";
-      case "apiKey": return `API key for ${state.provider.name}`;
-      case "oauth": return `Login to ${state.flow.providerName}`;
-      case "logout": return "Remove stored provider authentication";
-    }
-  }
+	private dialogTitle(state: AuthDialogState): string {
+		switch (state.step) {
+			case "method":
+				return t("auth.configureMethod");
+			case "providers":
+				return state.authType === undefined
+					? t("auth.selectMethod")
+					: state.authType === "oauth"
+						? t("auth.selectSubscription")
+						: t("auth.selectCredential");
+			case "apiKey":
+				return t("auth.apiKeyFor", { name: state.provider.name });
+			case "oauth":
+				return t("auth.loginTo", { name: state.flow.providerName });
+			case "logout":
+				return t("auth.logoutTitle");
+		}
+	}
 
-  private renderBody(state: AuthDialogState) {
-    switch (state.step) {
-      case "method": return html`
+	private renderBody(state: AuthDialogState) {
+		switch (state.step) {
+			case "method":
+				return html`
         <div class="options">
-          <button @click=${() => { this.onChooseMethod?.("oauth"); }}><span>Use a subscription</span><small>ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot</small></button>
-          <button @click=${() => { this.onChooseMethod?.("api_key"); }}><span>Use provider credentials</span><small>Configure an API key or provider-specific credentials in the active Pi-compatible profile's auth.json</small></button>
+          <button @click=${() => {
+						this.onChooseMethod?.("oauth");
+					}}><span>${t("auth.subscription")}</span><small>${t("auth.subscriptionHint")}</small></button>
+          <button @click=${() => {
+						this.onChooseMethod?.("api_key");
+					}}><span>${t("auth.apiKey")}</span><small>${t("auth.apiKeyHint")}</small></button>
         </div>
       `;
-      case "providers": return html`<div class="options">${state.providers.length === 0 ? html`<div class="empty">No providers available.</div>` : state.providers.map((provider) => this.renderProviderButton(provider))}</div>`;
-      case "apiKey": return html`
+			case "providers":
+				return html`<div class="options">${state.providers.length === 0 ? html`<div class="empty">${t("auth.noProviders")}</div>` : state.providers.map((provider) => this.renderProviderButton(provider))}</div>`;
+			case "apiKey":
+				return html`
         <div class="form">
-          <p>Enter the API key for <strong>${state.provider.name}</strong>. It will be stored in the active Pi-compatible profile's <code>auth.json</code>.</p>
-          <input type="password" autocomplete="off" placeholder="API key" .value=${state.value} @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.onApiKeyInput?.(event.target.value); }}>
+          <p>${t("auth.apiKeyPrefix")}<strong>${state.provider.name}</strong>${t("auth.apiKeySuffix")}</p>
+          <input type="password" autocomplete="off" placeholder=${t("auth.apiKeyPlaceholder")} .value=${state.value} @input=${(
+						event: Event,
+					) => {
+						if (event.target instanceof HTMLInputElement)
+							this.onApiKeyInput?.(event.target.value);
+					}}>
           ${state.error !== undefined && state.error !== "" ? html`<div class="error-text">${state.error}</div>` : null}
-          <div class="actions"><button @click=${() => { this.cancel(); }}>Cancel</button><button class="primary" ?disabled=${state.saving === true} @click=${() => { this.onSaveApiKey?.(); }}>${state.saving === true ? "Saving…" : "Save API key"}</button></div>
+          <div class="actions"><button @click=${() => {
+						this.cancel();
+					}}>${t("common.cancel")}</button><button class="primary" ?disabled=${state.saving === true} @click=${() => {
+						this.onSaveApiKey?.();
+					}}>${state.saving === true ? t("common.saving") : t("auth.save")}</button></div>
         </div>
       `;
-      case "oauth": return this.renderOAuth(state);
-      case "logout": return html`<div class="options">${state.providers.length === 0 ? html`<div class="empty">No stored credentials. Environment variables and models.json settings are unchanged.</div>` : state.providers.map((provider) => html`
-        <button @click=${() => { this.onLogoutProvider?.(provider.id); }}><span>${provider.name}</span><small>${provider.id} · ${authTypeLabel(provider.authType)}</small></button>
-      `)}</div>`;
-    }
-  }
+			case "oauth":
+				return this.renderOAuth(state);
+			case "logout":
+				return html`<div class="options">${
+					state.providers.length === 0
+						? html`<div class="empty">${t("auth.noStored")}</div>`
+						: state.providers.map(
+								(provider) => html`
+        <button @click=${() => {
+					this.onLogoutProvider?.(provider.id);
+				}}><span>${provider.name}</span><small>${provider.id} · ${authTypeLabel(provider.authType)}</small></button>
+      `,
+							)
+				}</div>`;
+		}
+	}
 
-  private renderProviderButton(provider: AuthProviderOption) {
-    return html`
-      <button @click=${() => { this.onSelectProvider?.(provider.id, provider.authType); }}>
+	private renderProviderButton(provider: AuthProviderOption) {
+		return html`
+      <button @click=${() => {
+				this.onSelectProvider?.(provider.id, provider.authType);
+			}}>
         <span>${provider.name}${provider.status.source !== undefined ? html` <em>${statusLabel(provider)}</em>` : null}</span>
         <small>${provider.id} · ${authTypeLabel(provider.authType)}</small>
       </button>
     `;
-  }
+	}
 
-  private renderOAuth(state: Extract<AuthDialogState, { step: "oauth" }>) {
-    const flow = state.flow;
-    const prompt = flow.prompt;
-    const select = flow.select;
-    const promptInputType = oauthPromptInputType(prompt?.promptType);
-    return html`
+	private renderOAuth(state: Extract<AuthDialogState, { step: "oauth" }>) {
+		const flow = state.flow;
+		const prompt = flow.prompt;
+		const select = flow.select;
+		const promptInputType = oauthPromptInputType(prompt?.promptType);
+		return html`
       <div class="form">
-        ${flow.auth !== undefined ? html`
-          <p>Open this authorization link:</p>
+        ${
+					flow.auth !== undefined
+						? html`
+          <p>${t("auth.openLink")}</p>
           <p><a href=${flow.auth.url} target="_blank" rel="noreferrer">${flow.auth.url}</a></p>
-          ${flow.auth.deviceCode !== undefined ? html`
-            <p class="warning">Enter code: <code>${flow.auth.deviceCode.userCode}</code></p>
-          ` : flow.auth.instructions !== undefined ? html`<p class="warning">${flow.auth.instructions}</p>` : null}
-        ` : html`<p>Starting login flow…</p>`}
+          ${
+						flow.auth.deviceCode !== undefined
+							? html`
+            <p class="warning">${t("auth.enterCode")} <code>${flow.auth.deviceCode.userCode}</code></p>
+          `
+							: flow.auth.instructions !== undefined
+								? html`<p class="warning">${flow.auth.instructions}</p>`
+								: null
+					}
+        `
+						: html`<p>${t("auth.startingLogin")}</p>`
+				}
         ${flow.progress.length > 0 ? html`<ul class="progress">${flow.progress.map((line) => html`<li>${line}</li>`)}</ul>` : null}
-        ${flow.info?.map((item) => item.links === undefined || item.links.length === 0 ? null : html`
-          <div class="info-links" aria-label="Related information">
+        ${
+					flow.info?.map((item) =>
+						item.links === undefined || item.links.length === 0
+							? null
+							: html`
+          <div class="info-links" aria-label=${t("auth.related")}>
             ${item.links.map((link) => html`<a href=${link.url} target="_blank" rel="noreferrer" title=${item.message}>${link.label ?? link.url}</a>`)}
           </div>
-        `) ?? null}
-        ${prompt !== undefined ? html`
+        `,
+					) ?? null
+				}
+        ${
+					prompt !== undefined
+						? html`
           <label>${prompt.message}</label>
-          <input type=${promptInputType} autocomplete=${promptInputType === "password" ? "off" : "on"} .value=${state.inputValue ?? ""} placeholder=${prompt.placeholder ?? ""} @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.onOAuthInput?.(event.target.value); }}>
-          <div class="actions"><button @click=${() => { this.onOAuthCancel?.(); }}>Cancel</button><button class="primary" ?disabled=${state.responding === true} @click=${() => { this.onOAuthRespond?.(); }}>Submit</button></div>
-        ` : null}
-        ${select !== undefined ? html`
+          <input type=${promptInputType} autocomplete=${promptInputType === "password" ? "off" : "on"} .value=${state.inputValue ?? ""} placeholder=${prompt.placeholder ?? ""} @input=${(
+						event: Event,
+					) => {
+						if (event.target instanceof HTMLInputElement)
+							this.onOAuthInput?.(event.target.value);
+					}}>
+          <div class="actions"><button @click=${() => {
+						this.onOAuthCancel?.();
+					}}>${t("common.cancel")}</button><button class="primary" ?disabled=${state.responding === true} @click=${() => {
+						this.onOAuthRespond?.();
+					}}>${t("auth.continue")}</button></div>
+        `
+						: null
+				}
+        ${
+					select !== undefined
+						? html`
           <p>${select.message}</p>
-          <div class="inline-options">${select.options.map((option) => html`
-            <button @click=${() => { this.onOAuthRespond?.(option.value); }}>
+          <div class="inline-options">${select.options.map(
+						(option) => html`
+            <button @click=${() => {
+							this.onOAuthRespond?.(option.value);
+						}}>
               <span>${option.label}</span>
               ${option.description === undefined ? null : html`<small>${option.description}</small>`}
             </button>
-          `)}</div>
-        ` : null}
+          `,
+					)}</div>
+        `
+						: null
+				}
         ${state.error !== undefined && state.error !== "" ? html`<div class="error-text">${state.error}</div>` : null}
-        ${flow.status === "error" || flow.status === "cancelled" ? html`<div class="error-text">${flow.error ?? flow.status}</div><div class="actions"><button @click=${() => { this.cancel(); }}>Close</button></div>` : null}
-        ${prompt === undefined && select === undefined && flow.status === "running" ? html`<div class="actions"><button @click=${() => { this.onOAuthCancel?.(); }}>Cancel</button></div>` : null}
+        ${
+					flow.status === "error" || flow.status === "cancelled"
+						? html`<div class="error-text">${flow.error ?? flow.status}</div><div class="actions"><button @click=${() => {
+								this.cancel();
+							}}>${t("common.close")}</button></div>`
+						: null
+				}
+        ${
+					prompt === undefined &&
+					select === undefined &&
+					flow.status === "running"
+						? html`<div class="actions"><button @click=${() => {
+								this.onOAuthCancel?.();
+							}}>${t("common.cancel")}</button></div>`
+						: null
+				}
       </div>
     `;
-  }
+	}
 
-  private focusInputIfNeeded(): void {
-    const key = focusKey(this.state);
-    if (key === undefined) {
-      this.lastFocusedInputKey = undefined;
-      return;
-    }
-    if (key === this.lastFocusedInputKey) return;
-    this.lastFocusedInputKey = key;
-    this.input?.focus();
-  }
+	private focusInputIfNeeded(): void {
+		const key = focusKey(this.state);
+		if (key === undefined) {
+			this.lastFocusedInputKey = undefined;
+			return;
+		}
+		if (key === this.lastFocusedInputKey) return;
+		this.lastFocusedInputKey = key;
+		this.input?.focus();
+	}
 
-  private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      this.cancel();
-      return;
-    }
-    if (event.key !== "Enter") return;
-    const state = this.state;
-    if (state?.step === "apiKey") {
-      event.preventDefault();
-      this.onSaveApiKey?.();
-    } else if (state?.step === "oauth" && state.flow.prompt !== undefined) {
-      event.preventDefault();
-      this.onOAuthRespond?.();
-    }
-  }
+	private handleKeyDown(event: KeyboardEvent): void {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			this.cancel();
+			return;
+		}
+		if (event.key !== "Enter") return;
+		const state = this.state;
+		if (state?.step === "apiKey") {
+			event.preventDefault();
+			this.onSaveApiKey?.();
+		} else if (state?.step === "oauth" && state.flow.prompt !== undefined) {
+			event.preventDefault();
+			this.onOAuthRespond?.();
+		}
+	}
 
-  private cancel(): void {
-    const state = this.state;
-    if (state?.step === "oauth") this.onOAuthCancel?.();
-    else this.onCancel?.();
-  }
+	private cancel(): void {
+		const state = this.state;
+		if (state?.step === "oauth") this.onOAuthCancel?.();
+		else this.onCancel?.();
+	}
 
-  static override styles = [commandPickerStyles, css`
+	static override styles = [
+		commandPickerStyles,
+		css`
     .form { display: grid; gap: 12px; padding: 14px; overflow: auto; }
     .form p { margin: 0; color: var(--pi-text-secondary); overflow-wrap: anywhere; }
     .form a { color: var(--pi-accent); overflow-wrap: anywhere; }
@@ -175,33 +284,48 @@ export class AuthDialog extends LitElement {
     .inline-options button { display: grid; gap: 2px; text-align: left; }
     .inline-options small { color: var(--pi-muted); }
     em { color: var(--pi-success); font-style: normal; font-size: 12px; }
-  `];
+  `,
+	];
 }
 
-export function oauthPromptInputType(promptType: NonNullable<OAuthFlowState["prompt"]>["promptType"]): "text" | "password" {
-  return promptType === "secret" ? "password" : "text";
+export function oauthPromptInputType(
+	promptType: NonNullable<OAuthFlowState["prompt"]>["promptType"],
+): "text" | "password" {
+	return promptType === "secret" ? "password" : "text";
 }
 
 function authTypeLabel(authType: "oauth" | "api_key"): string {
-  return authType === "oauth" ? "subscription" : "credentials";
+	return authType === "oauth"
+		? t("auth.authTypeSubscription")
+		: t("auth.authTypeCredentials");
 }
 
 function focusKey(state: AuthDialogState | undefined): string | undefined {
-  if (state?.step === "apiKey") return `api-key:${state.provider.authType}:${state.provider.id}`;
-  if (state?.step === "oauth" && state.flow.prompt !== undefined) return `oauth:${state.flow.flowId}:${state.flow.prompt.requestId}`;
-  return undefined;
+	if (state?.step === "apiKey")
+		return `api-key:${state.provider.authType}:${state.provider.id}`;
+	if (state?.step === "oauth" && state.flow.prompt !== undefined)
+		return `oauth:${state.flow.flowId}:${state.flow.prompt.requestId}`;
+	return undefined;
 }
 
 function statusLabel(provider: AuthProviderOption): string {
-  if (provider.status.source === undefined) return "";
-  switch (provider.status.source) {
-    case "stored": return "✓ configured";
-    case "environment": return `✓ env${provider.status.label === undefined ? "" : `: ${provider.status.label}`}`;
-    case "runtime": return "✓ runtime";
-    case "fallback": return "✓ custom key";
-    case "models_json_key": return "✓ models.json key";
-    case "models_json_command": return "✓ models.json command";
-    default: return "";
-  }
+	if (provider.status.source === undefined) return "";
+	switch (provider.status.source) {
+		case "stored":
+			return t("auth.statusStored");
+		case "environment":
+			return provider.status.label === undefined
+				? t("auth.statusEnv")
+				: t("auth.statusEnvLabel", { label: provider.status.label });
+		case "runtime":
+			return t("auth.statusRuntime");
+		case "fallback":
+			return t("auth.statusFallback");
+		case "models_json_key":
+			return t("auth.statusModelsKey");
+		case "models_json_command":
+			return t("auth.statusModelsCommand");
+		default:
+			return "";
+	}
 }
-

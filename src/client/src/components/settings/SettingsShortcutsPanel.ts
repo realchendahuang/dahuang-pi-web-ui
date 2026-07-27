@@ -1,192 +1,251 @@
-import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
+import {
+	css,
+	html,
+	LitElement,
+	type PropertyValues,
+	type TemplateResult,
+} from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AppAction } from "../../actions";
-import type { PiWebConfigResponse, PiWebConfigValues, PiWebShortcutConfig } from "../../api";
-import { formatShortcut, isShortcutSequenceStarter, parseShortcutInput, resolveShortcutBindings, shortcutSequenceTimeoutMs, shortcutTokenFromEvent, type ShortcutBindingResolution } from "../../keyboardShortcuts";
-import { readPromptEnterPreference, writePromptEnterPreference, type PromptEnterPreference } from "../../promptEnterBehavior";
+import type {
+	PiWebConfigResponse,
+	PiWebConfigValues,
+	PiWebShortcutConfig,
+} from "../../api";
+import { LocaleController, t } from "../../i18n";
+import {
+	formatShortcut,
+	isShortcutSequenceStarter,
+	parseShortcutInput,
+	resolveShortcutBindings,
+	shortcutSequenceTimeoutMs,
+	shortcutTokenFromEvent,
+	type ShortcutBindingResolution,
+} from "../../keyboardShortcuts";
+import {
+	readPromptEnterPreference,
+	writePromptEnterPreference,
+	type PromptEnterPreference,
+} from "../../promptEnterBehavior";
 import "./SettingsPanelFrame";
 import type { SettingsNotice } from "./SettingsPanelFrame";
 
 const RECORD_SHORTCUT_LISTENER_OPTIONS = { capture: true } as const;
 
-const PROMPT_ENTER_OPTIONS: readonly { value: PromptEnterPreference; label: string; description: string }[] = [
-  {
-    value: "auto",
-    label: "Auto/default",
-    description: "Desktop-like Enter sends; mobile, coarse pointer, or narrow screens insert a new line.",
-  },
-  {
-    value: "send",
-    label: "Enter sends message",
-    description: "Enter sends the chat message; Shift+Enter adds a new line when supported.",
-  },
-  {
-    value: "newline",
-    label: "Enter inserts new line",
-    description: "Enter adds a line break; Shift+Enter sends the chat message when supported.",
-  },
-];
+function promptEnterOptions(): readonly {
+	value: PromptEnterPreference;
+	label: string;
+	description: string;
+}[] {
+	return [
+		{
+			value: "auto",
+			label: t("settings.shortcuts.enterAuto"),
+			description: t("settings.shortcuts.enterAutoDesc"),
+		},
+		{
+			value: "send",
+			label: t("settings.shortcuts.enterSend"),
+			description: t("settings.shortcuts.enterSendDesc"),
+		},
+		{
+			value: "newline",
+			label: t("settings.shortcuts.enterNewline"),
+			description: t("settings.shortcuts.enterNewlineDesc"),
+		},
+	];
+}
 
-function renderShortcutsDescription(): TemplateResult {
-  return html`Edit app shortcuts by action. Type a shortcut such as <code>mod+k</code> or <code>mod+g p</code>, record one from the keyboard, disable it with None, or reset it to the default. When shortcuts conflict, custom shortcuts win before defaults; ties are resolved by action id, and shorter shortcuts shadow longer sequences with the same prefix.`;
+function renderShortcutsDescription(): string {
+	return t("settings.shortcuts.description");
 }
 
 @customElement("settings-shortcuts-panel")
 export class SettingsShortcutsPanel extends LitElement {
-  @property({ attribute: false }) actions: AppAction[] = [];
-  @property({ attribute: false }) configResponse: PiWebConfigResponse | undefined;
-  @property({ type: Boolean }) loading = false;
-  @property({ type: Boolean }) saving = false;
-  @property() error = "";
-  @property() savedMessage = "";
-  @property({ attribute: false }) onReload?: () => void | Promise<void>;
-  @property({ attribute: false }) onSave?: (config: PiWebConfigValues) => void | Promise<void>;
-  @state() private drafts: Record<string, string> = {};
-  @state() private localError = "";
-  @state() private promptEnterPreference: PromptEnterPreference = readPromptEnterPreference();
-  @state() private recording: RecordingState | undefined;
-  private recordingTimer: number | undefined;
-  private recordingListenerActive = false;
+	@property({ attribute: false }) actions: AppAction[] = [];
+	@property({ attribute: false }) configResponse:
+		| PiWebConfigResponse
+		| undefined;
+	@property({ type: Boolean }) loading = false;
+	@property({ type: Boolean }) saving = false;
+	@property() error = "";
+	@property() savedMessage = "";
+	@property({ attribute: false }) onReload?: () => void | Promise<void>;
+	@property({ attribute: false }) onSave?: (
+		config: PiWebConfigValues,
+	) => void | Promise<void>;
+	@state() private drafts: Record<string, string> = {};
+	@state() private localError = "";
+	@state() private promptEnterPreference: PromptEnterPreference =
+		readPromptEnterPreference();
+	@state() private recording: RecordingState | undefined;
+	private recordingTimer: number | undefined;
+	private recordingListenerActive = false;
+	private readonly locale = new LocaleController(this);
 
-  private readonly onRecordKeyDown = (event: KeyboardEvent): void => {
-    const recording = this.recording;
-    if (recording === undefined) return;
-    event.preventDefault();
-    event.stopPropagation();
+	private readonly onRecordKeyDown = (event: KeyboardEvent): void => {
+		const recording = this.recording;
+		if (recording === undefined) return;
+		event.preventDefault();
+		event.stopPropagation();
 
-    if (event.key === "Escape") {
-      this.stopRecording();
-      return;
-    }
+		if (event.key === "Escape") {
+			this.stopRecording();
+			return;
+		}
 
-    const token = shortcutTokenFromEvent(event);
-    if (token === undefined) {
-      this.localError = "Press a letter, number, punctuation, function, or navigation key. Press Esc to cancel recording.";
-      return;
-    }
-    if (recording.tokens.length === 0 && !isShortcutSequenceStarter(token)) {
-      this.localError = "Start shortcuts with Ctrl/⌘ or Alt so normal typing is not captured.";
-      return;
-    }
+		const token = shortcutTokenFromEvent(event);
+		if (token === undefined) {
+			this.localError =
+				"Press a letter, number, punctuation, function, or navigation key. Press Esc to cancel recording.";
+			return;
+		}
+		if (recording.tokens.length === 0 && !isShortcutSequenceStarter(token)) {
+			this.localError =
+				"Start shortcuts with Ctrl/⌘ or Alt so normal typing is not captured.";
+			return;
+		}
 
-    const tokens = [...recording.tokens, token];
-    this.localError = "";
-    this.drafts = { [recording.actionId]: tokens.join(" ") };
-    this.recording = { actionId: recording.actionId, tokens };
-    this.armRecordingTimer();
-  };
+		const tokens = [...recording.tokens, token];
+		this.localError = "";
+		this.drafts = { [recording.actionId]: tokens.join(" ") };
+		this.recording = { actionId: recording.actionId, tokens };
+		this.armRecordingTimer();
+	};
 
-  protected override willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has("configResponse") && this.configResponse !== undefined) {
-      this.drafts = {};
-      this.localError = "";
-      this.stopRecording();
-    }
-  }
+	protected override willUpdate(changed: PropertyValues<this>): void {
+		if (changed.has("configResponse") && this.configResponse !== undefined) {
+			this.drafts = {};
+			this.localError = "";
+			this.stopRecording();
+		}
+	}
 
-  override disconnectedCallback(): void {
-    this.stopRecording();
-    super.disconnectedCallback();
-  }
+	override disconnectedCallback(): void {
+		this.stopRecording();
+		super.disconnectedCallback();
+	}
 
-  override render(): TemplateResult {
-    const groups = shortcutGroups(this.actions);
-    const shortcutResolutions = this.shortcutResolutions();
-    return html`
+	override render(): TemplateResult {
+		void this.locale.locale;
+		const groups = shortcutGroups(this.actions);
+		const shortcutResolutions = this.shortcutResolutions();
+		return html`
       <settings-panel-frame
-        heading="Keyboard shortcuts"
+        heading=${t("settings.shortcuts.heading")}
         .description=${renderShortcutsDescription()}
-        actionLabel="Reload"
+        actionLabel=${t("common.reload")}
         .actionDisabled=${this.loading}
         .notices=${this.panelNotices()}
         .onAction=${this.onReload}
       >
         ${this.renderPromptEnterPreferenceCard()}
-        ${this.configResponse === undefined && this.loading ? html`<div class="loading-card">Loading shortcuts…</div>` : html`
+        ${
+					this.configResponse === undefined && this.loading
+						? html`<div class="loading-card">${t("settings.shortcuts.loading")}</div>`
+						: html`
           <div class="config-path-card">
-            <span>Config file</span>
-            <code>${this.configResponse?.path ?? "Unknown"}</code>
-            <small>Shortcut overrides are saved under <code>shortcuts</code>. A value of <code>null</code> disables the action shortcut.</small>
+            <span>${t("common.configFile")}</span>
+            <code>${this.configResponse?.path ?? t("common.unavailable")}</code>
           </div>
-          ${groups.length === 0 ? html`<div class="loading-card">No actions registered.</div>` : groups.map((group) => html`
+          ${
+						groups.length === 0
+							? html`<div class="loading-card">${t("settings.shortcuts.none")}</div>`
+							: groups.map(
+									(group) => html`
             <section class="shortcut-group">
               <h3>${group.name}</h3>
               <div class="shortcut-list">
                 ${group.actions.map((action) => this.renderShortcutRow(action, shortcutResolutions.get(action.id)))}
               </div>
             </section>
-          `)}
-        `}
+          `,
+								)
+					}
+        `
+				}
       </settings-panel-frame>
     `;
-  }
+	}
 
-  private panelNotices(): readonly SettingsNotice[] {
-    const notices: SettingsNotice[] = [];
-    const error = this.localError || this.error;
-    if (error !== "") notices.push({ type: "error", content: error });
-    if (this.savedMessage !== "") notices.push({ type: "success", content: this.savedMessage });
-    return notices;
-  }
+	private panelNotices(): readonly SettingsNotice[] {
+		const notices: SettingsNotice[] = [];
+		const error = this.localError || this.error;
+		if (error !== "") notices.push({ type: "error", content: error });
+		if (this.savedMessage !== "")
+			notices.push({ type: "success", content: this.savedMessage });
+		return notices;
+	}
 
-  private renderPromptEnterPreferenceCard(): TemplateResult {
-    return html`
+	private renderPromptEnterPreferenceCard(): TemplateResult {
+		return html`
       <section class="prompt-enter-card" aria-labelledby="prompt-enter-preference-title">
         <div class="prompt-enter-copy">
-          <span class="card-eyebrow">Chat composer</span>
-          <h3 id="prompt-enter-preference-title">Enter key behavior</h3>
-          <p>Choose what Enter does in this browser. Shift+Enter does the opposite when supported; automatic touch-keyboard capitalization is ignored to avoid accidental sends.</p>
+          <span class="card-eyebrow">${t("settings.shortcuts.promptEnterTitle")}</span>
+          <h3 id="prompt-enter-preference-title">${t("settings.shortcuts.promptEnterTitle")}</h3>
+          <p>${t("settings.shortcuts.promptEnterIntro")}</p>
         </div>
-        <div class="prompt-enter-options" role="radiogroup" aria-label="Enter and Shift Enter behavior in the chat composer">
-          ${PROMPT_ENTER_OPTIONS.map((option) => html`
+        <div class="prompt-enter-options" role="radiogroup" aria-label=${t("settings.shortcuts.promptEnterTitle")}>
+          ${promptEnterOptions().map(
+						(option) => html`
             <label class="prompt-enter-option">
               <input
                 type="radio"
                 name="prompt-enter-preference"
                 .value=${option.value}
                 .checked=${this.promptEnterPreference === option.value}
-                @change=${() => { this.updatePromptEnterPreference(option.value); }}
+                @change=${() => {
+									this.updatePromptEnterPreference(option.value);
+								}}
               >
               <span>
                 <strong>${option.label}</strong>
                 <small>${option.description}</small>
               </span>
             </label>
-          `)}
+          `,
+					)}
         </div>
       </section>
     `;
-  }
+	}
 
-  private updatePromptEnterPreference(preference: PromptEnterPreference): void {
-    this.promptEnterPreference = preference;
-    writePromptEnterPreference(preference);
-  }
+	private updatePromptEnterPreference(preference: PromptEnterPreference): void {
+		this.promptEnterPreference = preference;
+		writePromptEnterPreference(preference);
+	}
 
-  private renderShortcutRow(action: AppAction, resolution: ShortcutBindingResolution | undefined): TemplateResult {
-    const shortcuts = this.configResponse?.config.shortcuts;
-    const configured = shortcutPreference(action.id, shortcuts);
-    const state = shortcutState(action, shortcuts);
-    const inputText = this.shortcutInputText(action);
-    const parsedInput = inputText.trim() === "" ? undefined : parseShortcutInput(inputText);
-    const previewShortcut = parsedInput?.ok === true ? parsedInput.shortcut : effectiveShortcut(action, shortcuts);
-    const hasConfiguredShortcut = configured !== undefined;
-    const hasDraft = this.drafts[action.id] !== undefined;
-    const displayState = hasDraft && inputText.trim() !== "" ? "custom" : state;
-    const recordingHint = this.recordingHint(action.id);
-    const conflictLabel = shortcutConflictLabel(resolution);
-    return html`
+	private renderShortcutRow(
+		action: AppAction,
+		resolution: ShortcutBindingResolution | undefined,
+	): TemplateResult {
+		const shortcuts = this.configResponse?.config.shortcuts;
+		const configured = shortcutPreference(action.id, shortcuts);
+		const state = shortcutState(action, shortcuts);
+		const inputText = this.shortcutInputText(action);
+		const parsedInput =
+			inputText.trim() === "" ? undefined : parseShortcutInput(inputText);
+		const previewShortcut =
+			parsedInput?.ok === true
+				? parsedInput.shortcut
+				: effectiveShortcut(action, shortcuts);
+		const hasConfiguredShortcut = configured !== undefined;
+		const hasDraft = this.drafts[action.id] !== undefined;
+		const displayState = hasDraft && inputText.trim() !== "" ? "custom" : state;
+		const recordingHint = this.recordingHint(action.id);
+		const conflictLabel = shortcutConflictLabel(resolution);
+		return html`
       <article class=${shortcutRowClass(resolution)}>
         <div class="shortcut-main">
           <strong>${action.title}</strong>
           ${action.description !== undefined && action.description !== "" ? html`<small>${action.description}</small>` : null}
           <small class="shortcut-id">${action.id}</small>
-          <small>${action.shortcut !== undefined && action.shortcut !== "" ? html`Default: <kbd>${formatShortcut(action.shortcut)}</kbd>` : "No default shortcut"}</small>
+          <small>${action.shortcut !== undefined && action.shortcut !== "" ? html`${t("settings.shortcuts.default")}: <kbd>${formatShortcut(action.shortcut)}</kbd>` : t("settings.shortcuts.noDefault")}</small>
         </div>
         <div class="shortcut-editor">
           <div class="shortcut-status">
-            ${previewShortcut !== undefined && previewShortcut !== "" ? html`<kbd>${formatShortcut(previewShortcut)}</kbd>` : html`<span class="unassigned">${state === "disabled" ? "Disabled" : "Unassigned"}</span>`}
-            <small class=${displayState}>${shortcutStateLabel(displayState)}${hasDraft ? " · Unsaved" : ""}</small>
+            ${previewShortcut !== undefined && previewShortcut !== "" ? html`<kbd>${formatShortcut(previewShortcut)}</kbd>` : html`<span class="unassigned">${state === "disabled" ? t("settings.shortcuts.disabled") : t("settings.shortcuts.unassigned")}</span>`}
+            <small class=${displayState}>${shortcutStateLabel(displayState)}${hasDraft ? ` · ${t("settings.shortcuts.unsaved")}` : ""}</small>
             ${conflictLabel === undefined ? null : html`<small class=${shortcutConflictClass(resolution)}>${conflictLabel}</small>`}
           </div>
           <label class="shortcut-input-label">
@@ -200,148 +259,184 @@ export class SettingsShortcutsPanel extends LitElement {
               autocapitalize="off"
               spellcheck="false"
               ?disabled=${this.saving}
-              @input=${(event: Event) => { this.updateDraft(action.id, inputValue(event)); }}
+              @input=${(event: Event) => {
+								this.updateDraft(action.id, inputValue(event));
+							}}
             >
           </label>
           ${recordingHint !== "" ? html`<small class="recording-hint">${recordingHint}</small>` : null}
           <div class="shortcut-actions">
-            <button class="primary" ?disabled=${this.loading || this.saving || !hasDraft || inputText.trim() === ""} @click=${() => { void this.saveShortcut(action); }}>Save</button>
-            <button ?disabled=${this.loading || this.saving} @click=${() => { void this.toggleRecording(action.id); }}>${this.recording?.actionId === action.id ? "Cancel recording" : "Record"}</button>
-            <button ?disabled=${this.loading || this.saving || configured === null} @click=${() => { void this.setShortcutNone(action.id); }}>None</button>
-            <button ?disabled=${this.loading || this.saving || !hasConfiguredShortcut} @click=${() => { void this.resetShortcut(action.id); }}>Reset</button>
+            <button class="primary" ?disabled=${this.loading || this.saving || !hasDraft || inputText.trim() === ""} @click=${() => {
+							void this.saveShortcut(action);
+						}}>Save</button>
+            <button ?disabled=${this.loading || this.saving} @click=${() => {
+							void this.toggleRecording(action.id);
+						}}>${this.recording?.actionId === action.id ? "Cancel recording" : "Record"}</button>
+            <button ?disabled=${this.loading || this.saving || configured === null} @click=${() => {
+							void this.setShortcutNone(action.id);
+						}}>None</button>
+            <button ?disabled=${this.loading || this.saving || !hasConfiguredShortcut} @click=${() => {
+							void this.resetShortcut(action.id);
+						}}>Reset</button>
           </div>
         </div>
       </article>
     `;
-  }
+	}
 
-  private shortcutInputText(action: AppAction): string {
-    const draft = this.drafts[action.id];
-    if (draft !== undefined) return draft;
-    const configured = shortcutPreference(action.id, this.configResponse?.config.shortcuts);
-    if (configured === null) return "";
-    return configured ?? action.shortcut ?? "";
-  }
+	private shortcutInputText(action: AppAction): string {
+		const draft = this.drafts[action.id];
+		if (draft !== undefined) return draft;
+		const configured = shortcutPreference(
+			action.id,
+			this.configResponse?.config.shortcuts,
+		);
+		if (configured === null) return "";
+		return configured ?? action.shortcut ?? "";
+	}
 
-  private recordingHint(actionId: string): string {
-    const recording = this.recording;
-    if (recording?.actionId !== actionId) return "";
-    if (recording.tokens.length === 0) return "Recording: press Ctrl/⌘ or Alt with a key. Press Esc to cancel.";
-    return `Recording: ${formatShortcut(recording.tokens.join(" "))}. Press another key to add a sequence, or wait to finish.`;
-  }
+	private recordingHint(actionId: string): string {
+		const recording = this.recording;
+		if (recording?.actionId !== actionId) return "";
+		if (recording.tokens.length === 0)
+			return "Recording: press Ctrl/⌘ or Alt with a key. Press Esc to cancel.";
+		return `Recording: ${formatShortcut(recording.tokens.join(" "))}. Press another key to add a sequence, or wait to finish.`;
+	}
 
-  private updateDraft(actionId: string, value: string): void {
-    this.drafts = { [actionId]: value };
-    this.localError = "";
-  }
+	private updateDraft(actionId: string, value: string): void {
+		this.drafts = { [actionId]: value };
+		this.localError = "";
+	}
 
-  private async saveShortcut(action: AppAction): Promise<void> {
-    this.stopRecording();
-    const input = this.shortcutInputText(action).trim();
-    const parsed = parseShortcutInput(input);
-    if (!parsed.ok) {
-      this.localError = parsed.message;
-      return;
-    }
-    this.localError = "";
-    await this.saveShortcutPreference(action.id, parsed.shortcut);
-  }
+	private async saveShortcut(action: AppAction): Promise<void> {
+		this.stopRecording();
+		const input = this.shortcutInputText(action).trim();
+		const parsed = parseShortcutInput(input);
+		if (!parsed.ok) {
+			this.localError = parsed.message;
+			return;
+		}
+		this.localError = "";
+		await this.saveShortcutPreference(action.id, parsed.shortcut);
+	}
 
-  private async setShortcutNone(actionId: string): Promise<void> {
-    this.stopRecording();
-    this.localError = "";
-    await this.saveShortcutPreference(actionId, null);
-  }
+	private async setShortcutNone(actionId: string): Promise<void> {
+		this.stopRecording();
+		this.localError = "";
+		await this.saveShortcutPreference(actionId, null);
+	}
 
-  private async resetShortcut(actionId: string): Promise<void> {
-    this.stopRecording();
-    this.localError = "";
-    await this.saveShortcutPreference(actionId, undefined);
-  }
+	private async resetShortcut(actionId: string): Promise<void> {
+		this.stopRecording();
+		this.localError = "";
+		await this.saveShortcutPreference(actionId, undefined);
+	}
 
-  private async saveShortcutPreference(actionId: string, shortcut: string | null | undefined): Promise<void> {
-    const config: PiWebConfigValues = { ...(this.configResponse?.config ?? {}) };
-    const currentShortcuts = config.shortcuts ?? {};
-    const shortcuts = shortcut === undefined ? withoutShortcutPreference(currentShortcuts, actionId) : { ...currentShortcuts, [actionId]: shortcut };
-    if (Object.keys(shortcuts).length === 0) {
-      delete config.shortcuts;
-    } else {
-      config.shortcuts = shortcuts;
-    }
-    await this.onSave?.(config);
-  }
+	private async saveShortcutPreference(
+		actionId: string,
+		shortcut: string | null | undefined,
+	): Promise<void> {
+		const config: PiWebConfigValues = {
+			...(this.configResponse?.config ?? {}),
+		};
+		const currentShortcuts = config.shortcuts ?? {};
+		const shortcuts =
+			shortcut === undefined
+				? withoutShortcutPreference(currentShortcuts, actionId)
+				: { ...currentShortcuts, [actionId]: shortcut };
+		if (Object.keys(shortcuts).length === 0) {
+			delete config.shortcuts;
+		} else {
+			config.shortcuts = shortcuts;
+		}
+		await this.onSave?.(config);
+	}
 
-  private shortcutResolutions(): Map<string, ShortcutBindingResolution> {
-    return new Map(resolveShortcutBindings(this.actions, this.previewShortcutConfig(), { enabledOnly: true }).map((resolution) => [resolution.action.id, resolution]));
-  }
+	private shortcutResolutions(): Map<string, ShortcutBindingResolution> {
+		return new Map(
+			resolveShortcutBindings(this.actions, this.previewShortcutConfig(), {
+				enabledOnly: true,
+			}).map((resolution) => [resolution.action.id, resolution]),
+		);
+	}
 
-  private previewShortcutConfig(): PiWebShortcutConfig | undefined {
-    const shortcuts = { ...(this.configResponse?.config.shortcuts ?? {}) };
-    for (const [actionId, draft] of Object.entries(this.drafts)) {
-      const trimmedDraft = draft.trim();
-      if (trimmedDraft === "") continue;
-      const parsed = parseShortcutInput(trimmedDraft);
-      if (parsed.ok) shortcuts[actionId] = parsed.shortcut;
-    }
-    return Object.keys(shortcuts).length === 0 ? undefined : shortcuts;
-  }
+	private previewShortcutConfig(): PiWebShortcutConfig | undefined {
+		const shortcuts = { ...(this.configResponse?.config.shortcuts ?? {}) };
+		for (const [actionId, draft] of Object.entries(this.drafts)) {
+			const trimmedDraft = draft.trim();
+			if (trimmedDraft === "") continue;
+			const parsed = parseShortcutInput(trimmedDraft);
+			if (parsed.ok) shortcuts[actionId] = parsed.shortcut;
+		}
+		return Object.keys(shortcuts).length === 0 ? undefined : shortcuts;
+	}
 
-  private async toggleRecording(actionId: string): Promise<void> {
-    if (this.recording?.actionId === actionId) {
-      this.stopRecording();
-      return;
-    }
-    this.stopRecording();
-    this.localError = "";
-    this.recording = { actionId, tokens: [] };
-    this.ensureRecordingListener();
-    await this.updateComplete;
-    this.focusShortcutInput(actionId);
-  }
+	private async toggleRecording(actionId: string): Promise<void> {
+		if (this.recording?.actionId === actionId) {
+			this.stopRecording();
+			return;
+		}
+		this.stopRecording();
+		this.localError = "";
+		this.recording = { actionId, tokens: [] };
+		this.ensureRecordingListener();
+		await this.updateComplete;
+		this.focusShortcutInput(actionId);
+	}
 
-  private focusShortcutInput(actionId: string): void {
-    for (const input of this.renderRoot.querySelectorAll<HTMLInputElement>(".shortcut-input")) {
-      if (input.dataset["actionId"] === actionId) {
-        input.focus();
-        input.select();
-        return;
-      }
-    }
-  }
+	private focusShortcutInput(actionId: string): void {
+		for (const input of this.renderRoot.querySelectorAll<HTMLInputElement>(
+			".shortcut-input",
+		)) {
+			if (input.dataset["actionId"] === actionId) {
+				input.focus();
+				input.select();
+				return;
+			}
+		}
+	}
 
-  private armRecordingTimer(): void {
-    this.clearRecordingTimer();
-    this.recordingTimer = window.setTimeout(() => {
-      this.recordingTimer = undefined;
-      this.stopRecording();
-    }, shortcutSequenceTimeoutMs);
-  }
+	private armRecordingTimer(): void {
+		this.clearRecordingTimer();
+		this.recordingTimer = window.setTimeout(() => {
+			this.recordingTimer = undefined;
+			this.stopRecording();
+		}, shortcutSequenceTimeoutMs);
+	}
 
-  private stopRecording(): void {
-    this.clearRecordingTimer();
-    this.removeRecordingListener();
-    this.recording = undefined;
-  }
+	private stopRecording(): void {
+		this.clearRecordingTimer();
+		this.removeRecordingListener();
+		this.recording = undefined;
+	}
 
-  private clearRecordingTimer(): void {
-    if (this.recordingTimer === undefined) return;
-    window.clearTimeout(this.recordingTimer);
-    this.recordingTimer = undefined;
-  }
+	private clearRecordingTimer(): void {
+		if (this.recordingTimer === undefined) return;
+		window.clearTimeout(this.recordingTimer);
+		this.recordingTimer = undefined;
+	}
 
-  private ensureRecordingListener(): void {
-    if (this.recordingListenerActive) return;
-    window.addEventListener("keydown", this.onRecordKeyDown, RECORD_SHORTCUT_LISTENER_OPTIONS);
-    this.recordingListenerActive = true;
-  }
+	private ensureRecordingListener(): void {
+		if (this.recordingListenerActive) return;
+		window.addEventListener(
+			"keydown",
+			this.onRecordKeyDown,
+			RECORD_SHORTCUT_LISTENER_OPTIONS,
+		);
+		this.recordingListenerActive = true;
+	}
 
-  private removeRecordingListener(): void {
-    if (!this.recordingListenerActive) return;
-    window.removeEventListener("keydown", this.onRecordKeyDown, RECORD_SHORTCUT_LISTENER_OPTIONS);
-    this.recordingListenerActive = false;
-  }
+	private removeRecordingListener(): void {
+		if (!this.recordingListenerActive) return;
+		window.removeEventListener(
+			"keydown",
+			this.onRecordKeyDown,
+			RECORD_SHORTCUT_LISTENER_OPTIONS,
+		);
+		this.recordingListenerActive = false;
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { display: block; }
     h3, p { margin: 0; }
     h3 { font-size: 13px; line-height: 1.3; }
@@ -401,76 +496,121 @@ export class SettingsShortcutsPanel extends LitElement {
 }
 
 interface RecordingState {
-  actionId: string;
-  tokens: string[];
+	actionId: string;
+	tokens: string[];
 }
 
 type ShortcutState = "default" | "custom" | "disabled" | "unassigned";
 
-function shortcutRowClass(resolution: ShortcutBindingResolution | undefined): string {
-  if (resolution?.active === false) return "shortcut-row shadowed";
-  if (resolution?.active === true && resolution.shadows.length > 0) return "shortcut-row shadowing";
-  return "shortcut-row";
+function shortcutRowClass(
+	resolution: ShortcutBindingResolution | undefined,
+): string {
+	if (resolution?.active === false) return "shortcut-row shadowed";
+	if (resolution?.active === true && resolution.shadows.length > 0)
+		return "shortcut-row shadowing";
+	return "shortcut-row";
 }
 
-function shortcutConflictClass(resolution: ShortcutBindingResolution | undefined): string {
-  return resolution?.active === false ? "conflict shadowed" : "conflict shadowing";
+function shortcutConflictClass(
+	resolution: ShortcutBindingResolution | undefined,
+): string {
+	return resolution?.active === false
+		? "conflict shadowed"
+		: "conflict shadowing";
 }
 
-function shortcutConflictLabel(resolution: ShortcutBindingResolution | undefined): string | undefined {
-  if (resolution === undefined) return undefined;
-  if (!resolution.active) return `Shadowed by ${resolution.shadowedBy?.action.title ?? "another action"}`;
-  const shadowedCount = resolution.shadows.length;
-  if (shadowedCount === 0) return undefined;
-  const shadowedNames = resolution.shadows.slice(0, 2).map((binding) => binding.action.title).join(", ");
-  const suffix = shadowedCount > 2 ? `, +${String(shadowedCount - 2)} more` : "";
-  return `Shadows ${String(shadowedCount)} ${shadowedCount === 1 ? "action" : "actions"}: ${shadowedNames}${suffix}`;
+function shortcutConflictLabel(
+	resolution: ShortcutBindingResolution | undefined,
+): string | undefined {
+	if (resolution === undefined) return undefined;
+	if (!resolution.active)
+		return `Shadowed by ${resolution.shadowedBy?.action.title ?? "another action"}`;
+	const shadowedCount = resolution.shadows.length;
+	if (shadowedCount === 0) return undefined;
+	const shadowedNames = resolution.shadows
+		.slice(0, 2)
+		.map((binding) => binding.action.title)
+		.join(", ");
+	const suffix =
+		shadowedCount > 2 ? `, +${String(shadowedCount - 2)} more` : "";
+	return `Shadows ${String(shadowedCount)} ${shadowedCount === 1 ? "action" : "actions"}: ${shadowedNames}${suffix}`;
 }
 
-function shortcutGroups(actions: AppAction[]): { name: string; actions: AppAction[] }[] {
-  const grouped = new Map<string, AppAction[]>();
-  for (const action of [...actions].sort(compareActions)) {
-    const group = action.group ?? "Other";
-    grouped.set(group, [...(grouped.get(group) ?? []), action]);
-  }
-  return [...grouped.entries()].map(([name, groupActions]) => ({ name, actions: groupActions }));
+function shortcutGroups(
+	actions: AppAction[],
+): { name: string; actions: AppAction[] }[] {
+	const grouped = new Map<string, AppAction[]>();
+	for (const action of [...actions].sort(compareActions)) {
+		const group = action.group ?? "Other";
+		grouped.set(group, [...(grouped.get(group) ?? []), action]);
+	}
+	return [...grouped.entries()].map(([name, groupActions]) => ({
+		name,
+		actions: groupActions,
+	}));
 }
 
 function compareActions(left: AppAction, right: AppAction): number {
-  return (left.group ?? "Other").localeCompare(right.group ?? "Other") || left.title.localeCompare(right.title);
+	return (
+		(left.group ?? "Other").localeCompare(right.group ?? "Other") ||
+		left.title.localeCompare(right.title)
+	);
 }
 
-function shortcutPreference(actionId: string, shortcuts: PiWebShortcutConfig | undefined): string | null | undefined {
-  if (shortcuts === undefined || !Object.hasOwn(shortcuts, actionId)) return undefined;
-  return shortcuts[actionId];
+function shortcutPreference(
+	actionId: string,
+	shortcuts: PiWebShortcutConfig | undefined,
+): string | null | undefined {
+	if (shortcuts === undefined || !Object.hasOwn(shortcuts, actionId))
+		return undefined;
+	return shortcuts[actionId];
 }
 
-function withoutShortcutPreference(shortcuts: PiWebShortcutConfig, actionId: string): PiWebShortcutConfig {
-  return Object.fromEntries(Object.entries(shortcuts).filter(([shortcutActionId]) => shortcutActionId !== actionId));
+function withoutShortcutPreference(
+	shortcuts: PiWebShortcutConfig,
+	actionId: string,
+): PiWebShortcutConfig {
+	return Object.fromEntries(
+		Object.entries(shortcuts).filter(
+			([shortcutActionId]) => shortcutActionId !== actionId,
+		),
+	);
 }
 
-function effectiveShortcut(action: AppAction, shortcuts: PiWebShortcutConfig | undefined): string | undefined {
-  const configured = shortcutPreference(action.id, shortcuts);
-  if (configured === null) return undefined;
-  return configured ?? action.shortcut;
+function effectiveShortcut(
+	action: AppAction,
+	shortcuts: PiWebShortcutConfig | undefined,
+): string | undefined {
+	const configured = shortcutPreference(action.id, shortcuts);
+	if (configured === null) return undefined;
+	return configured ?? action.shortcut;
 }
 
-function shortcutState(action: AppAction, shortcuts: PiWebShortcutConfig | undefined): ShortcutState {
-  const configured = shortcutPreference(action.id, shortcuts);
-  if (configured === null) return "disabled";
-  if (configured !== undefined) return "custom";
-  return action.shortcut === undefined || action.shortcut === "" ? "unassigned" : "default";
+function shortcutState(
+	action: AppAction,
+	shortcuts: PiWebShortcutConfig | undefined,
+): ShortcutState {
+	const configured = shortcutPreference(action.id, shortcuts);
+	if (configured === null) return "disabled";
+	if (configured !== undefined) return "custom";
+	return action.shortcut === undefined || action.shortcut === ""
+		? "unassigned"
+		: "default";
 }
 
 function shortcutStateLabel(state: ShortcutState): string {
-  switch (state) {
-    case "default": return "Default";
-    case "custom": return "Custom";
-    case "disabled": return "Disabled";
-    case "unassigned": return "No default";
-  }
+	switch (state) {
+		case "default":
+			return t("settings.shortcuts.default");
+		case "custom":
+			return t("settings.shortcuts.custom");
+		case "disabled":
+			return t("settings.shortcuts.disabled");
+		case "unassigned":
+			return t("settings.shortcuts.noDefault");
+	}
 }
 
 function inputValue(event: Event): string {
-  return event.target instanceof HTMLInputElement ? event.target.value : "";
+	return event.target instanceof HTMLInputElement ? event.target.value : "";
 }

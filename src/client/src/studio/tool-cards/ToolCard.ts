@@ -2,6 +2,7 @@ import { LitElement, css, html, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { writeClipboardText } from "../../clipboard";
 import type { ToolExecutionPart } from "../../components/shared";
+import { LocaleController, t } from "../../i18n";
 import {
 	toolCardViewModel,
 	type ToolCardKind,
@@ -18,6 +19,8 @@ const MAX_OUTPUT_LINES = 400;
  */
 @customElement("tool-card")
 export class ToolCard extends LitElement {
+	private readonly locale = new LocaleController(this);
+
 	@property({ attribute: false }) execution: ToolExecutionPart | undefined;
 	@property({ attribute: false }) onOpenInChanges?: (
 		filePath: string | undefined,
@@ -28,6 +31,7 @@ export class ToolCard extends LitElement {
 	@state() private copiedTarget: "command" | "output" | "diff" | undefined;
 
 	override render() {
+		void this.locale.locale;
 		const execution = this.execution;
 		if (execution === undefined) return null;
 		const model = toolCardViewModel(execution);
@@ -41,7 +45,7 @@ export class ToolCard extends LitElement {
           <span class="tool-icon" aria-hidden="true">${toolIcon(model.kind)}</span>
           <span class="tool-title" dir="auto" title=${model.title}>${model.title}</span>
           ${model.editCountLabel === undefined ? null : html`<span class="tool-meta-text">${model.editCountLabel}</span>`}
-          ${model.diff === undefined ? null : html`<span class="diff-stats" aria-label=${`${String(model.diff.additions)} additions, ${String(model.diff.deletions)} deletions`}><b class="added">+${model.diff.additions}</b> <b class="removed">−${model.diff.deletions}</b></span>`}
+          ${model.diff === undefined ? null : html`<span class="diff-stats" aria-label=${t("tool.diffStats", { add: model.diff.additions, del: model.diff.deletions })}><b class="added">+${model.diff.additions}</b> <b class="removed">−${model.diff.deletions}</b></span>`}
           ${model.status === "failed" ? html`<span class="tool-status-label failed">failed</span>` : null}
           ${model.status === "running" || model.status === "pending" ? html`<span class="tool-status-label running">${model.status}</span>` : null}
           <span class=${`chevron ${open ? "open" : ""}`} aria-hidden="true">›</span>
@@ -105,7 +109,7 @@ export class ToolCard extends LitElement {
             ${preview.truncated ? html`<span class="truncation-note">Output truncated to the first ${String(MAX_OUTPUT_LINES)} lines.</span>` : null}
             <button type="button" class="text-button" @click=${() => {
 							void this.copy("output", model.resultText ?? "");
-						}}>${this.copiedTarget === "output" ? "Copied" : "Copy output"}</button>
+						}}>${this.copiedTarget === "output" ? t("common.copied") : t("tool.copyOutput")}</button>
           </div>
         </div>
       `
@@ -127,7 +131,7 @@ export class ToolCard extends LitElement {
             ${output.truncated ? html`<span class="truncation-note">Showing first ${String(MAX_OUTPUT_LINES)} lines</span>` : null}
             <button type="button" class="text-button" @click=${() => {
 							void this.copy("output", model.resultText ?? "");
-						}}>${this.copiedTarget === "output" ? "Copied" : "Copy output"}</button>
+						}}>${this.copiedTarget === "output" ? t("common.copied") : t("tool.copyOutput")}</button>
           </div>
         </div>
       `
@@ -160,7 +164,7 @@ export class ToolCard extends LitElement {
 			? lines.slice(0, MAX_COLLAPSED_DIFF_LINES)
 			: lines;
 		return html`
-      <pre class="diff" dir="ltr" aria-label="Diff"><code>${visible.map((line) => html`<span class=${diffLineClass(line)}>${line}</span>`)}</code></pre>
+      <pre class="diff" dir="ltr" aria-label=${t("tool.diff")}><code>${visible.map((line) => html`<span class=${diffLineClass(line)}>${line}</span>`)}</code></pre>
       <div class="output-footer">
         ${
 					truncated
@@ -173,7 +177,7 @@ export class ToolCard extends LitElement {
 				}
         <button type="button" class="text-button" @click=${() => {
 					void this.copy("diff", content);
-				}}>${this.copiedTarget === "diff" ? "Copied" : "Copy diff"}</button>
+				}}>${this.copiedTarget === "diff" ? t("common.copied") : t("tool.diff")}</button>
       </div>
     `;
 	}
@@ -223,7 +227,7 @@ export class ToolCard extends LitElement {
         <pre class="command" dir="ltr"><code>$ ${model.command}</code></pre>
         <button type="button" class="text-button" @click=${() => {
 					void this.copy("command", model.command ?? "");
-				}}>${this.copiedTarget === "command" ? "Copied" : "Copy command"}</button>
+				}}>${this.copiedTarget === "command" ? t("common.copied") : t("tool.copyCommand")}</button>
       </div>
     `;
 	}

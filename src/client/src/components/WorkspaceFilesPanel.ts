@@ -7,6 +7,7 @@ import type { WorkspaceUploadBatchState, WorkspaceUploadFileState } from "../wor
 import { MAX_IMAGE_PREVIEW_BYTES, MAX_IMAGE_PREVIEW_LABEL } from "../../../shared/workspaceFiles";
 import type { WorkspacePanelContext } from "../plugins/types";
 import { workspacePanelStyles } from "./shared";
+import { LocaleController, t } from "../i18n";
 
 interface PendingWorkspaceUploadReview {
   files: File[];
@@ -20,6 +21,8 @@ export interface WorkspaceUploadScope {
 
 @customElement("workspace-files-panel")
 export class WorkspaceFilesPanel extends LitElement {
+  private readonly locale = new LocaleController(this);
+
   @property({ attribute: false }) context: WorkspacePanelContext | undefined;
   @query("#workspace-upload-input") private uploadInput?: HTMLInputElement;
   @state() private pendingUpload: PendingWorkspaceUploadReview | undefined;
@@ -37,6 +40,7 @@ export class WorkspaceFilesPanel extends LitElement {
   }
 
   override render(): TemplateResult {
+    void this.locale.locale;
     const context = this.context;
     if (context === undefined) return html`<p class="muted">Files unavailable.</p>`;
     return html`
@@ -51,8 +55,8 @@ export class WorkspaceFilesPanel extends LitElement {
           <strong>Files</strong>
           ${context.fileTreeStale ? html`<span class="stale">stale</span>` : null}
           <div class="toolbar-actions">
-            <button @click=${this.openFilePicker}>Upload</button>
-            <button @click=${context.onRefreshFiles}>Refresh</button>
+            <button @click=${this.openFilePicker}>${t("files.uploadBtn")}</button>
+            <button @click=${context.onRefreshFiles}>${t("files.refresh")}</button>
           </div>
           <input id="workspace-upload-input" class="visually-hidden" type="file" multiple @change=${this.handleFileInputChange} />
         </section>
@@ -67,8 +71,8 @@ export class WorkspaceFilesPanel extends LitElement {
         </section>
         <div class="drop-overlay" aria-hidden=${this.dragActive ? "false" : "true"}>
           <div>
-            <strong>Drop files to upload</strong>
-            <span>Uploads immediately to the default folder.</span>
+            <strong>${t("files.dropToUpload")}</strong>
+            <span>${t("files.uploadImmediate")}</span>
           </div>
         </div>
         ${this.pendingUpload === undefined ? null : this.renderUploadDialog(context, this.pendingUpload)}
@@ -134,9 +138,9 @@ export class WorkspaceFilesPanel extends LitElement {
     });
     if (batches.length === 0) return null;
     return html`
-      <section class="upload-progress" aria-label="Workspace uploads">
+      <section class="upload-progress" aria-label=${t("files.uploadsAria")}>
         <div class="upload-progress-header">
-          <strong>Uploads</strong>
+          <strong>${t("files.uploads")}</strong>
           <small>${uploadSummaryLabel(batches)}</small>
         </div>
         ${batches.map((batch) => this.renderUploadBatch(context, batch))}
@@ -159,7 +163,7 @@ export class WorkspaceFilesPanel extends LitElement {
           ${batch.files.map((file) => this.renderUploadFile(file))}
         </div>
         <div class="upload-actions">
-          ${batch.status === "uploading" ? html`<button @click=${() => { context.onCancelWorkspaceUpload(batch.id); }}>Cancel</button>` : html`<button @click=${() => { context.onClearWorkspaceUpload(batch.id); }}>Dismiss</button>`}
+          ${batch.status === "uploading" ? html`<button @click=${() => { context.onCancelWorkspaceUpload(batch.id); }}>${t("common.cancel")}</button>` : html`<button @click=${() => { context.onClearWorkspaceUpload(batch.id); }}>${t("files.dismiss")}</button>`}
         </div>
       </article>
     `;
@@ -182,31 +186,31 @@ export class WorkspaceFilesPanel extends LitElement {
     const fileCount = review.files.length;
     return html`
       <div class="dialog-backdrop" @mousedown=${() => { this.closeUploadDialog(); }}>
-        <section class="upload-dialog" role="dialog" aria-modal="true" aria-label="Review file upload" @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }} @keydown=${this.handleDialogKeyDown}>
+        <section class="upload-dialog" role="dialog" aria-modal="true" aria-label=${t("files.uploadDialog")} @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }} @keydown=${this.handleDialogKeyDown}>
           <header>
             <div>
-              <span class="eyebrow">Upload</span>
-              <h2>Review ${fileCount === 1 ? "file" : `${String(fileCount)} files`}</h2>
+              <span class="eyebrow">${t("files.uploads")}</span>
+              <h2>${fileCount === 1 ? t("files.reviewOne") : t("files.reviewMany", { count: fileCount })}</h2>
             </div>
-            <button class="close-button" title="Cancel upload" aria-label="Cancel upload" @click=${() => { this.closeUploadDialog(); }}>×</button>
+            <button class="close-button" title=${t("files.cancelUpload")} aria-label=${t("files.cancelUpload")} @click=${() => { this.closeUploadDialog(); }}>×</button>
           </header>
           <form @submit=${(event: SubmitEvent) => { this.submitUploadReview(event, context, review); }}>
             <label>
-              <span>Destination folder</span>
+              <span>${t("files.destination")}</span>
               <input .value=${this.destinationFolder} placeholder=${context.workspaceUploadDefaultFolder} @input=${this.handleDestinationInput} />
-              <small>Workspace-relative. Leave empty to upload at the workspace root.</small>
+              <small>${t("files.destinationHint")}</small>
             </label>
             <div class="dialog-options">
               <label>
                 <input type="checkbox" .checked=${this.createDirs} @change=${this.handleCreateDirsChange} />
-                <span>Create parent folders</span>
+                <span>${t("files.createParents")}</span>
               </label>
               <label>
                 <input type="checkbox" .checked=${this.overwrite} @change=${this.handleOverwriteChange} />
-                <span>Overwrite existing files</span>
+                <span>${t("files.overwrite")}</span>
               </label>
             </div>
-            <section class="review-files" aria-label="Files to upload">
+            <section class="review-files" aria-label=${t("files.reviewFiles")}>
               <strong>${fileCount === 1 ? "File" : "Files"}</strong>
               ${review.files.map((file) => html`
                 <div class="review-file">
@@ -217,8 +221,8 @@ export class WorkspaceFilesPanel extends LitElement {
             </section>
             ${this.formError === "" ? null : html`<div class="dialog-error" role="alert">${this.formError}</div>`}
             <footer>
-              <button type="button" @click=${() => { this.closeUploadDialog(); }}>Cancel</button>
-              <button type="submit">Upload</button>
+              <button type="button" @click=${() => { this.closeUploadDialog(); }}>${t("common.cancel")}</button>
+              <button type="submit">${t("files.uploadBtn")}</button>
             </footer>
           </form>
         </section>
@@ -386,7 +390,7 @@ export function workspaceUploadBatchesForScope(batches: Record<string, Workspace
 }
 
 export function workspaceUploadReviewError(files: readonly File[], destinationFolder: string): string | undefined {
-  if (files.length === 0) return "Choose at least one file to upload.";
+  if (files.length === 0) return t("files.chooseFiles");
   for (const file of files) {
     try {
       workspaceUploadPath(destinationFolder, file.name);
@@ -410,7 +414,7 @@ export function workspaceFileViewerStatusLabel(
   context: Pick<WorkspacePanelContext, "selectedFilePath" | "selectedFileContent">,
 ): string | undefined {
   const file = context.selectedFileContent;
-  if (context.selectedFilePath === undefined || context.selectedFilePath === "") return "Select a file.";
+  if (context.selectedFilePath === undefined || context.selectedFilePath === "") return t("files.selectFile");
   if (file === undefined) return `Loading ${context.selectedFilePath}…`;
   if (file.mediaType === "image") return undefined;
   if (file.binary) return `Binary file: ${file.path} · ${formatFileSize(file.size)}`;

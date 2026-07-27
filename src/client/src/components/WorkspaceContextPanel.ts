@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
 import type { WorkspacePanelContext } from "../plugins/types";
+import { LocaleController, t } from "../i18n";
 
 /**
  * Context panel: the current session's model, thinking level, context window
@@ -10,9 +11,12 @@ import type { WorkspacePanelContext } from "../plugins/types";
  */
 @customElement("workspace-context-panel")
 export class WorkspaceContextPanel extends LitElement {
+  private readonly locale = new LocaleController(this);
+
 	@property({ attribute: false }) context: WorkspacePanelContext | undefined;
 
 	override render() {
+    void this.locale.locale;
 		const context = this.context;
 		if (context === undefined) return html`<p class="muted">Loading…</p>`;
 		const state = context.state;
@@ -37,11 +41,11 @@ export class WorkspaceContextPanel extends LitElement {
           </dl>
         </section>
         <section>
-          <h3>Context</h3>
+          <h3>${t("context.heading")}</h3>
           ${this.renderContextUsage(status)}
         </section>
         <section>
-          <h3>Tokens</h3>
+          <h3>${t("context.tokens")}</h3>
           <dl>
             <div><dt>Input</dt><dd>${formatCount(status?.tokens.input)}</dd></div>
             <div><dt>Output</dt><dd>${formatCount(status?.tokens.output)}</dd></div>
@@ -51,11 +55,11 @@ export class WorkspaceContextPanel extends LitElement {
           </dl>
         </section>
         <section>
-          <h3>Session</h3>
+          <h3>${t("context.sessionHeading")}</h3>
           <dl>
-            <div><dt>Cost</dt><dd>$${formatCost(status?.cost)}</dd></div>
-            <div><dt>Messages</dt><dd>${String(status?.messageCount ?? session.messageCount)}</dd></div>
-            <div><dt>Compaction</dt><dd>${status?.isCompacting === true ? "Compacting…" : "Idle"}</dd></div>
+            <div><dt>${t("context.cost")}</dt><dd>$${formatCost(status?.cost)}</dd></div>
+            <div><dt>${t("context.messages")}</dt><dd>${String(status?.messageCount ?? session.messageCount)}</dd></div>
+            <div><dt>${t("context.compaction")}</dt><dd>${status?.isCompacting === true ? t("context.compacting") : t("context.idle")}</dd></div>
             <div><dt>Streaming</dt><dd>${status?.isStreaming === true ? "Yes" : "No"}</dd></div>
           </dl>
         </section>
@@ -67,7 +71,7 @@ export class WorkspaceContextPanel extends LitElement {
 		const usage = status?.contextUsage;
 		const percent = usage?.percent;
 		if (percent === undefined || percent === null) {
-			return html`<p class="muted">Context usage is not available for this model.</p>`;
+			return html`<p class="muted">${t("context.windowUsed")}</p>`;
 		}
 		const clampedPercent = Math.min(100, Math.max(0, percent));
 		const tokens =
@@ -76,7 +80,7 @@ export class WorkspaceContextPanel extends LitElement {
 				: formatCount(usage.tokens);
 		return html`
       <div class="usage">
-        <div class="usage-bar" role="progressbar" aria-valuenow=${Math.round(clampedPercent)} aria-valuemin="0" aria-valuemax="100" aria-label="Context window used">
+        <div class="usage-bar" role="progressbar" aria-valuenow=${Math.round(clampedPercent)} aria-valuemin="0" aria-valuemax="100" aria-label=${t("context.windowUsed")}>
           <div class=${`usage-fill ${clampedPercent >= 90 ? "critical" : clampedPercent >= 70 ? "warn" : ""}`} style=${`width:${String(clampedPercent)}%`}></div>
         </div>
         <p class="usage-label">${tokens} / ${formatCount(usage?.contextWindow)} tokens · ${clampedPercent.toFixed(1)}% used</p>

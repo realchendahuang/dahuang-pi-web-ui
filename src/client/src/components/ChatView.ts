@@ -50,6 +50,7 @@ import { chatStyles, renderSessionWarningIcon } from "./shared";
 import "./ConversationMeter";
 import "./FormattedText";
 import "../studio/tool-cards/ToolCard";
+import { LocaleController, t } from "../i18n";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, {
 	dateStyle: "medium",
@@ -118,16 +119,16 @@ export function chatQueuedMessageSections(
 			? undefined
 			: {
 					source: "client",
-					heading: "Queued until session starts",
-					detail: "Will send once the backend session is ready",
+					heading: t("chat.queuedUntilStart"),
+					detail: t("chat.queuedUntilStartDetail"),
 					messages: clientQueued,
 				},
 		serverQueued.length === 0
 			? undefined
 			: {
 					source: "server",
-					heading: "Queued messages",
-					detail: `${String(serverQueued.length)} pending`,
+					heading: t("chat.queuedMessagesHeading"),
+					detail: t("chat.queuedPending", { count: serverQueued.length }),
 					messages: serverQueued,
 				},
 	].filter((section): section is QueuedMessageSection => section !== undefined);
@@ -142,15 +143,14 @@ export function chatImagePartSource(part: ChatImagePart): {
 } {
 	return {
 		src: `data:${part.mimeType};base64,${part.data}`,
-		alt: "attached image",
+		alt: t("chat.attachedImage"),
 	};
 }
 
-/** The message-header label used when a tool message renders as an image output. */
 export function chatToolOutputLabel(toolName?: string): string {
 	return toolName === undefined || toolName === ""
-		? "tool output"
-		: `${toolName} output`;
+		? t("chat.toolOutput")
+		: t("chat.toolOutputNamed", { name: toolName });
 }
 
 /** The stable scroll-anchor/render key for a top-level message at `index`. */
@@ -178,9 +178,8 @@ export function chatMessageGroupClassName(defaultOpen: boolean): string {
 	return defaultOpen ? "msg event-group live" : "msg event-group";
 }
 
-/** The disclosure summary label for an event group, distinguishing the live tail. */
 export function chatMessageGroupLabel(defaultOpen: boolean): string {
-	return defaultOpen ? "live events" : "events";
+	return defaultOpen ? t("chat.liveEvents") : t("chat.events");
 }
 
 /** Whether a queued-message section shows the server clear-queue action. */
@@ -224,9 +223,7 @@ export function chatMessageMetadataLabel(message: ChatLine): string {
 	const parts = [time, model].filter(
 		(part): part is string => part !== undefined && part !== "",
 	);
-	return parts.length === 0
-		? "No Pi message metadata available"
-		: parts.join(" · ");
+	return parts.length === 0 ? t("chat.noMetadata") : parts.join(" · ");
 }
 
 function formatMessageTimestamp(timestamp: string): string | undefined {
@@ -247,6 +244,8 @@ function chatMessageModelLabel(message: ChatLine): string | undefined {
 
 @customElement("chat-view")
 export class ChatView extends LitElement {
+	private readonly locale = new LocaleController(this);
+
 	@property({ attribute: false }) messages: ChatLine[] = [];
 	@property() sessionId = "";
 	@property({ type: Number }) messageStart = 0;
@@ -471,6 +470,7 @@ export class ChatView extends LitElement {
 	}
 
 	override render() {
+		void this.locale.locale;
 		const groups = this.groupedMessages();
 		return html`
       ${this.renderTopNotices()}
@@ -517,7 +517,7 @@ export class ChatView extends LitElement {
 					this.pinnedToBottom
 						? null
 						: html`
-          <button type="button" class="jump-to-latest" aria-label="Jump to latest messages" @click=${() => {
+          <button type="button" class="jump-to-latest" aria-label=${t("chat.jumpLatest")} @click=${() => {
 						this.pinnedToBottom = true;
 						this.scrollToBottom();
 					}}><span aria-hidden="true">↓</span> Latest</button>
@@ -552,8 +552,8 @@ export class ChatView extends LitElement {
 			inbox,
 		);
 		const toggleLabel = collapsed
-			? "Expand notifications"
-			: "Collapse notifications";
+			? t("chat.expandNotifications")
+			: t("chat.collapseNotifications");
 		return html`
       <section class=${`notification-tray${collapsed ? " collapsed" : ""}`} role="region" aria-labelledby="session-notifications-heading" @focusout=${(
 				event: FocusEvent,
@@ -566,13 +566,13 @@ export class ChatView extends LitElement {
             <button
               type="button"
               class="notification-control notification-clear"
-              aria-label="Clear all notifications"
-              title="Clear all notifications"
+              aria-label=${t("chat.clearNotifications")}
+              title=${t("chat.clearNotifications")}
               ?disabled=${inbox.dismissAllPending || totalCount === 0 || this.onDismissAllNotifications === undefined}
               @click=${() => {
 								this.dismissAllNotifications();
 							}}
-            >Clear</button>
+            >${t("chat.clear")}</button>
             <button
               type="button"
               class="notification-control notification-toggle"
@@ -611,7 +611,7 @@ export class ChatView extends LitElement {
                   type="button"
                   class="notification-row-dismiss"
                   aria-label=${notificationDismissLabel(notification)}
-                  title="Dismiss notification"
+                  title=${t("chat.dismissNotification")}
                   ?disabled=${inbox.pendingDismissedIds.has(notification.id) || inbox.dismissAllPending || this.onDismissNotification === undefined}
                   @click=${() => {
 										this.dismissNotification(notification.id);
@@ -758,14 +758,14 @@ export class ChatView extends LitElement {
             <button
               type="button"
               class="session-warnings-collapse"
-              title="Minimise warnings"
-              aria-label="Minimise warnings"
+              title=${t("chat.minimiseWarnings")}
+              aria-label=${t("chat.dismissWarning")}
               @click=${this.handleToggleWarnings}
             >
               <svg class="session-warnings-collapse-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="m18 15-6-6-6 6"></path>
               </svg>
-              <span>Minimise</span>
+              <span>${t("chat.minimise")}</span>
             </button>
           </div>
         `
@@ -789,8 +789,8 @@ export class ChatView extends LitElement {
               <button
                 type="button"
                 class="session-warning-dismiss"
-                title="Don't show this warning again"
-                aria-label="Dismiss warning"
+                title=${t("chat.dismissWarningTitle")}
+                aria-label=${t("chat.dismissWarning")}
                 @click=${() => {
 									this.onDismissWarning?.(dismissId);
 								}}
@@ -811,7 +811,7 @@ export class ChatView extends LitElement {
 					this.zoomedImage === undefined
 						? null
 						: html`
-          <button type="button" class="image-zoom-close" aria-label="Close image" @click=${this.closeImageZoom}>×</button>
+          <button type="button" class="image-zoom-close" aria-label=${t("common.close")} @click=${this.closeImageZoom}>×</button>
           <img class="image-zoom-full" src=${this.zoomedImage.src} alt=${this.zoomedImage.alt} />
         `
 				}
@@ -890,7 +890,7 @@ export class ChatView extends LitElement {
           ${
 						canClear
 							? html`
-            <button type="button" class="queued-clear-button" title="Clear queued messages without stopping active work" @click=${this.handleClearServerQueue}>Clear queue</button>
+            <button type="button" class="queued-clear-button" title=${t("chat.clearQueueTitle")} @click=${this.handleClearServerQueue}>${t("chat.clearQueue")}</button>
           `
 							: null
 					}
@@ -898,7 +898,7 @@ export class ChatView extends LitElement {
         ${section.messages.map(
 					(message, index) => html`
           <div class="queued-message">
-            <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
+            <span class="queued-kind">${message.kind === "steer" ? t("chat.steer") : t("chat.followUp")} ${String(index + 1)}</span>
             <formatted-text .text=${message.text}></formatted-text>
           </div>
         `,
@@ -911,9 +911,9 @@ export class ChatView extends LitElement {
 		if (!this.isCompacting) return null;
 		return html`
       <aside class="session-activity compacting" aria-live="polite">
-        <strong>Compacting history…</strong>
-        <span>The agent is summarizing earlier context. New prompts will be queued until compaction finishes.</span>
-        ${this.pendingMessageCount > 0 ? html`<small>${this.pendingMessageCount} queued ${this.pendingMessageCount === 1 ? "message" : "messages"}</small>` : null}
+        <strong>${t("context.compacting")}</strong>
+        <span>${t("chat.compactingDetail")}</span>
+        ${this.pendingMessageCount > 0 ? html`<small>${this.pendingMessageCount === 1 ? t("chat.queuedOne") : t("chat.queuedMany", { count: this.pendingMessageCount })}</small>` : null}
       </aside>
     `;
 	}
@@ -981,13 +981,13 @@ export class ChatView extends LitElement {
       <div class="history-boundary">
         <button type="button" class="history-load-button" ?disabled=${this.loadMoreRequested} @click=${() => {
 					this.requestLoadMore();
-				}}>Load earlier messages</button>
-        <span>Scroll up to load earlier messages</span>
+				}}>${t("chat.loadEarlier")}</button>
+        <span>${t("chat.scrollUpEarlier")}</span>
         ${range}
       </div>
     `;
 		if (this.messages.length)
-			return html`<div class="history-boundary"><span>Beginning of session</span>${range}</div>`;
+			return html`<div class="history-boundary"><span>${t("chat.beginning")}</span>${range}</div>`;
 		return null;
 	}
 
@@ -996,7 +996,7 @@ export class ChatView extends LitElement {
 		const from = this.messageStart + 1;
 		const to = this.loadedRawMessageEnd();
 		const total = Math.max(this.messageTotal, to);
-		return html`<small>Showing messages ${from}–${to} of ${total}</small>`;
+		return html`<small>${t("chat.showingMessages", { from, to, total })}</small>`;
 	}
 
 	private loadedRawMessageEnd(): number {
@@ -1111,8 +1111,8 @@ export class ChatView extends LitElement {
 		if (!this.isCopyableMessage(message)) return null;
 		const copied = this.copiedMessageKey === key;
 		return html`
-      <div class="msg-actions" aria-label="Message actions">
-        <button type="button" class="msg-action" title=${copied ? "Copied" : "Copy message"} aria-label=${`${copied ? "Copied" : "Copy"} ${message.role} message`} @click=${(
+      <div class="msg-actions" aria-label=${t("chat.messageActions")}>
+        <button type="button" class="msg-action" title=${copied ? t("chat.copiedMessage") : t("chat.copyMessage")} aria-label=${t("chat.copyRoleMessage", { action: copied ? t("chat.copiedMessage") : t("common.copy"), role: message.role })} @click=${(
 					event: MouseEvent,
 				) => {
 					void this.copyMessage(message, key, event);
@@ -1179,11 +1179,11 @@ export class ChatView extends LitElement {
 		if (part.type === "text")
 			return html`<formatted-text class="part" .text=${part.text}></formatted-text>`;
 		if (part.type === "thinking")
-			return html`<details class="part thinking"><summary><span class="thinking-label">Thinking</span></summary><formatted-text .text=${part.text}></formatted-text></details>`;
+			return html`<details class="part thinking"><summary><span class="thinking-label">${t("chat.thinkingDone")}</span></summary><formatted-text .text=${part.text}></formatted-text></details>`;
 		if (part.type === "skillInvocation")
 			return html`
       <details class="part skill-invocation">
-        <summary><b>[skill]</b> ${part.name}</summary>
+        <summary><b>${t("chat.skill")}</b> ${part.name}</summary>
         <small>${part.location}</small>
         <formatted-text .text=${part.content}></formatted-text>
       </details>
@@ -1191,13 +1191,13 @@ export class ChatView extends LitElement {
 		if (part.type === "skillRead")
 			return html`
       <div class="part skill-read">
-        <strong>Loaded ${part.name}</strong>
-        <small>read ${part.path}</small>
+        <strong>${t("chat.skillLoaded", { name: part.name })}</strong>
+        <small>${t("chat.skillRead", { path: part.path })}</small>
       </div>
     `;
 		if (part.type === "image") {
 			const { src, alt } = chatImagePartSource(part);
-			return html`<img class="part chat-image" src=${src} alt=${alt} loading="lazy" role="button" tabindex="0" title="Click to enlarge" @load=${this.onImageLoad} @click=${() => {
+			return html`<img class="part chat-image" src=${src} alt=${alt} loading="lazy" role="button" tabindex="0" title=${t("chat.clickEnlarge")} @load=${this.onImageLoad} @click=${() => {
 				this.openImageZoom(src, alt);
 			}} @keydown=${(event: KeyboardEvent) => {
 				if (event.key === "Enter" || event.key === " ") {

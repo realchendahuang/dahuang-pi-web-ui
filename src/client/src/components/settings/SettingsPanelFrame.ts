@@ -1,49 +1,64 @@
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { LocaleController, t } from "../../i18n";
 
-export const SETTINGS_NOTICE_TONES = ["error", "success", "warning", "info"] as const;
+export const SETTINGS_NOTICE_TONES = [
+	"error",
+	"success",
+	"warning",
+	"info",
+] as const;
 export type SettingsNoticeTone = (typeof SETTINGS_NOTICE_TONES)[number];
 
-export const SETTINGS_NOTICE_TYPES = ["availability", "error", "success", "security", "warning", "info"] as const;
+export const SETTINGS_NOTICE_TYPES = [
+	"availability",
+	"error",
+	"success",
+	"security",
+	"warning",
+	"info",
+] as const;
 export type SettingsNoticeType = (typeof SETTINGS_NOTICE_TYPES)[number];
 
 export type SettingsNoticeRole = "alert" | "note" | "status";
 export type SettingsNoticeContent = string | TemplateResult;
 
 export interface SettingsNotice {
-  readonly type: SettingsNoticeType;
-  readonly content: SettingsNoticeContent;
-  readonly tone?: SettingsNoticeTone;
-  readonly title?: string;
-  readonly role?: SettingsNoticeRole;
+	readonly type: SettingsNoticeType;
+	readonly content: SettingsNoticeContent;
+	readonly tone?: SettingsNoticeTone;
+	readonly title?: string;
+	readonly role?: SettingsNoticeRole;
 }
 
 const DEFAULT_NOTICE_TONE: Record<SettingsNoticeType, SettingsNoticeTone> = {
-  availability: "error",
-  error: "error",
-  success: "success",
-  security: "warning",
-  warning: "warning",
-  info: "info",
+	availability: "error",
+	error: "error",
+	success: "success",
+	security: "warning",
+	warning: "warning",
+	info: "info",
 };
 
 export function settingsNoticeTone(notice: SettingsNotice): SettingsNoticeTone {
-  return notice.tone ?? DEFAULT_NOTICE_TONE[notice.type];
+	return notice.tone ?? DEFAULT_NOTICE_TONE[notice.type];
 }
 
 @customElement("settings-panel-frame")
 export class SettingsPanelFrame extends LitElement {
-  @property() heading = "";
-  @property({ attribute: false }) description: SettingsNoticeContent = "";
-  @property() actionLabel = "";
-  @property() actionTitle = "";
-  @property({ type: Boolean }) actionDisabled = false;
-  @property({ attribute: false }) notices: readonly SettingsNotice[] = [];
-  @property({ attribute: false }) onAction?: () => void | Promise<void>;
+	@property() heading = "";
+	@property({ attribute: false }) description: SettingsNoticeContent = "";
+	@property() actionLabel = "";
+	@property() actionTitle = "";
+	@property({ type: Boolean }) actionDisabled = false;
+	@property({ attribute: false }) notices: readonly SettingsNotice[] = [];
+	@property({ attribute: false }) onAction?: () => void | Promise<void>;
+	private readonly locale = new LocaleController(this);
 
-  override render(): TemplateResult {
-    return html`
-      <section class="panel" aria-label=${this.heading || "Settings panel"}>
+	override render(): TemplateResult {
+		void this.locale.locale;
+		return html`
+      <section class="panel" aria-label=${this.heading || t("settings.panelAria")}>
         <header class="section-heading">
           <div class="heading-copy">
             ${this.heading === "" ? nothing : html`<h2>${this.heading}</h2>`}
@@ -55,42 +70,44 @@ export class SettingsPanelFrame extends LitElement {
         <div class="content"><slot></slot></div>
       </section>
     `;
-  }
+	}
 
-  private renderDefaultAction(): TemplateResult | typeof nothing {
-    if (this.actionLabel === "") return nothing;
-    return html`
+	private renderDefaultAction(): TemplateResult | typeof nothing {
+		if (this.actionLabel === "") return nothing;
+		return html`
       <button
         class="secondary"
         title=${this.actionTitle || this.actionLabel}
         ?disabled=${this.actionDisabled}
-        @click=${() => { void this.onAction?.(); }}
+        @click=${() => {
+					void this.onAction?.();
+				}}
       >${this.actionLabel}</button>
     `;
-  }
+	}
 
-  private renderNoticeStack(): TemplateResult | typeof nothing {
-    if (this.notices.length === 0) return nothing;
-    return html`
-      <div class="notice-stack" aria-label="Settings notices">
+	private renderNoticeStack(): TemplateResult | typeof nothing {
+		if (this.notices.length === 0) return nothing;
+		return html`
+      <div class="notice-stack" aria-label=${t("settings.noticesAria")}>
         ${this.notices.map((notice) => this.renderNotice(notice))}
       </div>
     `;
-  }
+	}
 
-  private renderNotice(notice: SettingsNotice): TemplateResult {
-    const tone = settingsNoticeTone(notice);
-    const role = notice.role ?? defaultNoticeRole(tone);
-    const title = notice.title;
-    return html`
+	private renderNotice(notice: SettingsNotice): TemplateResult {
+		const tone = settingsNoticeTone(notice);
+		const role = notice.role ?? defaultNoticeRole(tone);
+		const title = notice.title;
+		return html`
       <article class=${`notice ${tone}`} role=${role}>
         ${title === undefined || title === "" ? nothing : html`<strong class="notice-title">${title}</strong>`}
         <div class="notice-content">${notice.content}</div>
       </article>
     `;
-  }
+	}
 
-  static override styles = css`
+	static override styles = css`
     :host { display: block; }
     .panel { display: block; }
     .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
@@ -122,16 +139,19 @@ export class SettingsPanelFrame extends LitElement {
 }
 
 function defaultNoticeRole(tone: SettingsNoticeTone): SettingsNoticeRole {
-  switch (tone) {
-    case "error": return "alert";
-    case "success": return "status";
-    case "warning":
-    case "info": return "note";
-  }
+	switch (tone) {
+		case "error":
+			return "alert";
+		case "success":
+			return "status";
+		case "warning":
+		case "info":
+			return "note";
+	}
 }
 
 declare global {
-  interface HTMLElementTagNameMap {
-    "settings-panel-frame": SettingsPanelFrame;
-  }
+	interface HTMLElementTagNameMap {
+		"settings-panel-frame": SettingsPanelFrame;
+	}
 }

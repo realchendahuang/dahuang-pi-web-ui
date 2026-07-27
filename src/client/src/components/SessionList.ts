@@ -2,6 +2,7 @@ import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
 import { isCachedNewSessionInfo } from "../cachedNewSessions";
+import { LocaleController, t } from "../i18n";
 import { shortSessionId } from "../sessionLabels";
 import {
 	isArchivableSessionInfo,
@@ -61,9 +62,9 @@ export class SessionList
 	@property({ type: Boolean }) canCleanup = false;
 	@property({ type: Boolean }) authoritativeSessionPersistence = false;
 	@property({ type: String }) archivedDeleteUnavailableMessage =
-		"Update and restart Pi-Web on this machine to delete archived sessions.";
+		t("session.capabilityDelete");
 	@property({ type: String }) cleanupUnavailableMessage =
-		"Update and restart Pi-Web on this machine to clean up sessions.";
+		t("session.capabilityCleanup");
 	@property({ type: Boolean, reflect: true }) collapsible = false;
 	@property({ type: Boolean, reflect: true }) collapsed = false;
 	@property({ attribute: false }) onSelect?: (session: SessionInfo) => void;
@@ -104,6 +105,7 @@ export class SessionList
 		new Set();
 	@state() private selectedSessionIds: ReadonlySet<string> = new Set();
 	@state() private searchQuery = "";
+	private readonly locale = new LocaleController(this);
 
 	private readonly onDocumentClick = (event: MouseEvent) => {
 		if (event.composedPath().includes(this)) return;
@@ -216,8 +218,8 @@ export class SessionList
               ${group.items.map((row) => this.renderSession(row, descendantCounts.get(row.session.id) ?? 0, "current"))}
             `,
 						)}
-            ${currentRows.length === 0 && this.startingCount === 0 ? html`<p class="list-empty">No sessions yet. Start one with the + button above.</p>` : null}
-            ${currentRows.length > 0 && visibleRows.length === 0 ? html`<p class="list-empty">No sessions match “${this.searchQuery.trim()}”.</p>` : null}
+            ${currentRows.length === 0 && this.startingCount === 0 ? html`<p class="list-empty">${t("session.empty")}</p>` : null}
+            ${currentRows.length > 0 && visibleRows.length === 0 ? html`<p class="list-empty">${t("session.noMatch", { query: this.searchQuery.trim() })}</p>` : null}
             ${
 							archivedRows.length > 0
 								? html`
@@ -245,8 +247,8 @@ export class SessionList
       <div class="session-search">
         <input
           type="search"
-          placeholder="Search sessions"
-          aria-label="Search sessions"
+          placeholder=${t("session.searchPlaceholder")}
+          aria-label=${t("session.searchAria")}
           .value=${this.searchQuery}
           @input=${(event: InputEvent) => {
 						const target = event.target;
@@ -263,10 +265,11 @@ export class SessionList
 		currentSessions: SessionInfo[],
 		unreadCount: number,
 	) {
+		void this.locale.locale;
 		if (!this.collapsible) {
 			return html`
         <h2>
-          <span class="plain-heading">Sessions</span>
+          <span class="plain-heading">${t("nav.sessions")}</span>
           ${this.renderCurrentSelectionButton(currentSessions)}
           ${this.renderUnreadCount(unreadCount)}
           ${this.renderCleanupButton()}
@@ -276,14 +279,14 @@ export class SessionList
 		}
 		const selectedSummary =
 			this.selected === undefined
-				? "No session selected"
+				? t("nav.sessions")
 				: sessionLabel(this.selected);
 		const selectedTitle = this.selected?.path ?? selectedSummary;
 		return html`
       <h2>
         <button class="section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
 					this.onToggleCollapsed?.();
-				}}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Sessions</span>${this.collapsed ? html`<small class="section-selected" dir="auto" title=${selectedTitle}>${selectedSummary}</small>` : null}</span></button>
+				}}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} ${t("nav.sessions")}</span>${this.collapsed ? html`<small class="section-selected" dir="auto" title=${selectedTitle}>${selectedSummary}</small>` : null}</span></button>
         ${this.renderCurrentSelectionButton(currentSessions)}
         ${this.renderUnreadCount(unreadCount)}
         <small class="section-count">${sessionCount}</small>
@@ -302,7 +305,7 @@ export class SessionList
 	private renderCurrentSelectionButton(currentSessions: SessionInfo[]) {
 		if (this.collapsed || currentSessions.length === 0) return null;
 		const active = this.selectionScopes.has("current");
-		return html`<button class="bulk-select-entry ${active ? "selected" : ""}" title=${active ? "Close current session selection" : "Select current sessions"} aria-label=${active ? "Close current session selection" : "Select current sessions"} aria-expanded=${String(active)} aria-pressed=${String(active)} @click=${(
+		return html`<button class="bulk-select-entry ${active ? "selected" : ""}" title=${active ? t("session.closeSelectCurrent") : t("session.selectCurrent")} aria-label=${active ? t("session.closeSelectCurrent") : t("session.selectCurrent")} aria-expanded=${String(active)} aria-pressed=${String(active)} @click=${(
 			event: MouseEvent,
 		) => {
 			event.stopPropagation();
@@ -311,17 +314,17 @@ export class SessionList
 	}
 
 	private renderCleanupButton() {
-		return html`<button class="cleanup-entry" title=${this.canCleanup ? "Preview session cleanup" : this.cleanupUnavailableMessage} @click=${(
+		return html`<button class="cleanup-entry" title=${this.canCleanup ? t("session.cleanupTitle") : this.cleanupUnavailableMessage} @click=${(
 			event: MouseEvent,
 		) => {
 			event.stopPropagation();
 			this.onCleanup?.();
-		}}>Clean up</button>`;
+		}}>${t("session.cleanup")}</button>`;
 	}
 
 	private renderStartButton() {
 		const title =
-			this.startingCount > 0 ? "Start another session" : "Start a new session";
+			this.startingCount > 0 ? t("session.startAnother") : t("session.startNew");
 		return html`<button class="start-session-button" title=${title} aria-label=${title} ?disabled=${!this.canStart} @click=${(
 			event: MouseEvent,
 		) => {
@@ -335,7 +338,7 @@ export class SessionList
 		return html`
       <div class="pending-session-row starting-session" role="status" aria-live="polite">
         <div class="action-main">
-          <span class="action-name"><span class="activity-indicator sending" aria-hidden="true"></span>${plural ? `Starting ${String(this.startingCount)} sessions…` : "Starting session…"}</span>
+          <span class="action-name"><span class="activity-indicator sending" aria-hidden="true"></span>${plural ? t("session.startingMany", { count: this.startingCount }) : t("session.starting")}</span>
           <small>Waiting for ${plural ? "new sessions" : "the new session"} to be created</small>
         </div>
       </div>
@@ -348,10 +351,10 @@ export class SessionList
       <h2 class="subheading">
         <button class="section-toggle" aria-expanded=${String(this.archivedExpanded)} @click=${() => {
 					this.toggleArchived();
-				}}><span>${this.archivedExpanded ? "▾" : "▸"} Archived</span></button>
+				}}><span>${this.archivedExpanded ? "▾" : "▸"} ${t("session.archivedHeading")}</span></button>
         ${
 					this.archivedExpanded
-						? html`<button class="bulk-select-entry ${active ? "selected" : ""}" title=${active ? "Close archived session selection" : "Select archived sessions"} aria-label=${active ? "Close archived session selection" : "Select archived sessions"} aria-expanded=${String(active)} aria-pressed=${String(active)} @click=${() => {
+						? html`<button class="bulk-select-entry ${active ? "selected" : ""}" title=${active ? t("session.closeSelectArchived") : t("session.selectArchived")} aria-label=${active ? t("session.closeSelectArchived") : t("session.selectArchived")} aria-expanded=${String(active)} aria-pressed=${String(active)} @click=${() => {
 								this.toggleSelection("archived", archivedSessions);
 							}}>☑</button>`
 						: null
@@ -385,17 +388,17 @@ export class SessionList
       <div class="bulk-row selecting">
         <button ?disabled=${visibleSessions.length === 0} @click=${() => {
 					this.toggleVisibleSelection(visibleSessions, !allVisibleSelected);
-				}}>${allVisibleSelected ? "Clear visible" : "Select visible"}</button>
-        <small>${selectedSessions.length} selected${visibleSelectedCount !== selectedSessions.length ? html` · ${visibleSelectedCount} visible` : null}</small>
+				}}>${allVisibleSelected ? t("session.clearVisible") : t("session.selectVisible")}</button>
+        <small>${t("session.selectedCount", { count: selectedSessions.length })}${visibleSelectedCount !== selectedSessions.length ? html` · ${t("session.visibleCount", { count: visibleSelectedCount })}` : null}</small>
         <button ?disabled=${archivableSessions.length === 0} @click=${() => {
 					this.archiveSelectedCurrent();
-				}}>Archive selected</button>
+				}}>${t("session.archiveSelected")}</button>
         <button @click=${() => {
 					this.clearSelection("current");
-				}}>Clear</button>
+				}}>${t("common.clear")}</button>
         <button @click=${() => {
 					this.closeSelection("current");
-				}}>Done</button>
+				}}>${t("common.done")}</button>
       </div>
     `;
 	}
@@ -417,17 +420,17 @@ export class SessionList
       <div class="bulk-row selecting">
         <button ?disabled=${visibleSessions.length === 0} @click=${() => {
 					this.toggleVisibleSelection(visibleSessions, !allVisibleSelected);
-				}}>${allVisibleSelected ? "Clear visible" : "Select visible"}</button>
-        <small>${selectedSessions.length} selected${visibleSelectedCount !== selectedSessions.length ? html` · ${visibleSelectedCount} visible` : null}</small>
-        <button class="danger" title=${this.canDeleteArchived ? "Permanently delete selected archived sessions" : this.archivedDeleteUnavailableMessage} ?disabled=${selectedSessions.length === 0 || !this.canDeleteArchived} @click=${() => {
+				}}>${allVisibleSelected ? t("session.clearVisible") : t("session.selectVisible")}</button>
+        <small>${t("session.selectedCount", { count: selectedSessions.length })}${visibleSelectedCount !== selectedSessions.length ? html` · ${t("session.visibleCount", { count: visibleSelectedCount })}` : null}</small>
+        <button class="danger" title=${this.canDeleteArchived ? t("session.deleteSelected") : this.archivedDeleteUnavailableMessage} ?disabled=${selectedSessions.length === 0 || !this.canDeleteArchived} @click=${() => {
 					this.confirmDeleteSelectedArchived();
-				}}>Delete selected</button>
+				}}>${t("session.deleteSelected")}</button>
         <button @click=${() => {
 					this.clearSelection("archived");
-				}}>Clear</button>
+				}}>${t("common.clear")}</button>
         <button @click=${() => {
 					this.closeSelection("archived");
-				}}>Done</button>
+				}}>${t("common.done")}</button>
         ${this.canDeleteArchived ? null : html`<small class="capability-hint">${this.archivedDeleteUnavailableMessage}</small>`}
       </div>
     `;
@@ -493,11 +496,11 @@ export class SessionList
 								}}>`
 							: null
 					}
-          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">depth ${row.depth}</span>` : null}${row.hasMissingParent ? html` <span class="badge">parent unavailable</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${formatRelativeTime(session.modified)} · ${String(session.messageCount)} messages</small>
+          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">${t("session.depth", { depth: row.depth })}</span>` : null}${row.hasMissingParent ? html` <span class="badge">${t("session.parentUnavailable")}</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${formatRelativeTime(session.modified)} · ${t("session.messagesCount", { count: session.messageCount })}</small>
           ${this.renderActivity(indicatorKind)}
         </div>
         <div class="action-menu">
-          <button class="action-menu-toggle" title="Session actions" @click=${(
+          <button class="action-menu-toggle" title=${t("session.actionsMenu")} @click=${(
 						event: MouseEvent,
 					) => {
 						event.stopPropagation();
@@ -510,37 +513,37 @@ export class SessionList
               ${
 								session.archived === true
 									? html`
-                  <button title="Restore session" @click=${() => {
+                  <button title=${t("session.restore")} @click=${() => {
 										this.openMenuSessionId = undefined;
 										this.onRestore?.(session);
-									}}>Restore</button>
-                  <button class="danger" title=${this.canDeleteArchived ? "Permanently delete archived session" : this.archivedDeleteUnavailableMessage} ?disabled=${!this.canDeleteArchived} @click=${() => {
+									}}>${t("session.restoreOne")}</button>
+                  <button class="danger" title=${this.canDeleteArchived ? t("session.deleteArchivedTitle") : this.archivedDeleteUnavailableMessage} ?disabled=${!this.canDeleteArchived} @click=${() => {
 										this.openMenuSessionId = undefined;
 										this.confirmDeleteArchived(session);
-									}}>Delete archived session</button>
+									}}>${t("session.deleteArchivedOne")}</button>
                 `
 									: canDeleteTransient
-										? html`<button title="Delete transient new session" @click=${() => {
+										? html`<button title=${t("session.deleteTransient")} @click=${() => {
 												this.openMenuSessionId = undefined;
 												this.onDelete?.(session);
-											}}>Delete</button>`
+											}}>${t("session.deleteOne")}</button>`
 										: html`
                     ${
 											canArchive
 												? html`
-                      <button title="Archive session" @click=${() => {
+                      <button title=${t("session.archiveTitle")} @click=${() => {
 												this.openMenuSessionId = undefined;
 												this.onArchive?.(session);
-											}}>Archive</button>
+											}}>${t("session.archiveOne")}</button>
                       ${
 												descendantCount > 0
-													? html`<button title="Archive this session and its descendants" @click=${() => {
+													? html`<button title=${t("session.archiveWithDescTitle")} @click=${() => {
 															this.openMenuSessionId = undefined;
 															this.confirmArchiveWithDescendants(
 																session,
 																descendantCount,
 															);
-														}}>Archive with descendants (${descendantCount})</button>`
+														}}>${t("session.archiveWithDesc", { count: descendantCount })}</button>`
 													: null
 											}
                     `
@@ -548,18 +551,18 @@ export class SessionList
 										}
                     ${
 											session.parentSessionPath !== undefined
-												? html`<button title="Detach from parent" @click=${() => {
+												? html`<button title=${t("session.detachTitle")} @click=${() => {
 														this.openMenuSessionId = undefined;
 														this.onDetachParent?.(session);
-													}}>Detach from parent</button>`
+													}}>${t("session.detach")}</button>`
 												: null
 										}
                     ${
 											canReloadSession
-												? html`<button title=${isSessionActive(this.statuses[session.id], this.activities[session.id]) ? "Stop current session activity before reloading from disk" : "Reload session from disk without refreshing Pi runtime resources"} ?disabled=${isSessionActive(this.statuses[session.id], this.activities[session.id])} @click=${() => {
+												? html`<button title=${isSessionActive(this.statuses[session.id], this.activities[session.id]) ? t("session.reloadBusy") : t("session.reloadTitle")} ?disabled=${isSessionActive(this.statuses[session.id], this.activities[session.id])} @click=${() => {
 														this.openMenuSessionId = undefined;
 														this.onReload?.(session);
-													}}>Reload from disk</button>`
+													}}>${t("session.reloadOne")}</button>`
 												: null
 										}
                   `
@@ -816,10 +819,10 @@ export class SessionList
 	private renderActivity(kind: ActivityIndicatorKind | undefined) {
 		const label =
 			kind === "sending"
-				? "Sending message"
+				? t("session.sending")
 				: kind === "unread"
-					? "Unread session activity"
-					: "Session active";
+					? t("session.unreadActivity")
+					: t("session.activeLabel");
 		return renderActionActivityIndicator(kind, label);
 	}
 

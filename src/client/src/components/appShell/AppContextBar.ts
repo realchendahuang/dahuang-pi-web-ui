@@ -1,8 +1,10 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { Machine, Project, SessionInfo, Workspace } from "../../api";
-import { shortSessionId } from "../../sessionLabels";
 import type { NavigationSection } from "../../appShell/navigationState";
+import { LocaleController, t } from "../../i18n";
+import { appIcon } from "../../icons/appIcons";
+import { shortSessionId } from "../../sessionLabels";
 
 @customElement("app-context-bar")
 export class AppContextBar extends LitElement {
@@ -19,6 +21,7 @@ export class AppContextBar extends LitElement {
 	@query(".context-items") private contextItems?: HTMLElement | null;
 	@state() private canScrollLeft = false;
 	@state() private canScrollRight = false;
+	private readonly locale = new LocaleController(this);
 	private observedContextItems: HTMLElement | undefined;
 	private contextItemsResizeObserver: ResizeObserver | undefined;
 
@@ -40,23 +43,25 @@ export class AppContextBar extends LitElement {
 	}
 
 	override render() {
+		void this.locale.locale;
 		const showMachineContext = shouldShowMachineContext(this.machines);
 		const machineLabel = machineContextLabel(this.machine);
 		const projectLabel = projectContextLabel(this.project);
 		const workspaceLabel = workspaceContextLabel(this.workspace);
 		const sessionLabel = sessionContextLabel(this.session);
 		return html`
-      <nav class=${this.contextBarClass()} aria-label="Current location">
-        <span class="context-bar-label">Location</span>
+      <nav class=${this.contextBarClass()} aria-label=${t("context.aria")}>
+        <span class="context-bar-label">${t("context.location")}</span>
         <ol class="context-items" @scroll=${this.onContextScroll}>
           ${
 						showMachineContext
 							? html`
             <li class="context-item">
-              <button type="button" class=${this.machine === undefined ? "context-chip empty" : "context-chip"} title=${machineContextTitle(this.machine)} aria-label=${`Machine: ${machineLabel}. Open machine selection.`} @click=${() => {
+              <button type="button" class=${this.machine === undefined ? "context-chip empty" : "context-chip"} title=${machineContextTitle(this.machine)} aria-label=${t("context.openMachine", { label: machineLabel })} @click=${() => {
 								this.onOpenSection?.("machines");
 							}}>
-                <span class="context-kind">Machine</span>
+                <span class="context-kind-icon" aria-hidden="true">${appIcon("machine", { size: 12 })}</span>
+                <span class="context-kind">${t("context.machine")}</span>
                 <span class="context-value">${machineLabel}</span>
               </button>
             </li>
@@ -64,26 +69,29 @@ export class AppContextBar extends LitElement {
 							: null
 					}
           <li class="context-item">
-            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => {
+            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${t("context.openProject", { label: projectLabel })} @click=${() => {
 							this.onOpenSection?.("projects");
 						}}>
-              <span class="context-kind">Project</span>
+              <span class="context-kind-icon" aria-hidden="true">${appIcon("folder", { size: 12 })}</span>
+              <span class="context-kind">${t("context.project")}</span>
               <span class="context-value">${projectLabel}</span>
             </button>
           </li>
           <li class="context-item">
-            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${`Workspace: ${workspaceLabel}. Open workspace selection.`} @click=${() => {
+            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${t("context.openWorkspace", { label: workspaceLabel })} @click=${() => {
 							this.onOpenSection?.("workspaces");
 						}}>
-              <span class="context-kind">Workspace</span>
+              <span class="context-kind-icon" aria-hidden="true">${appIcon("git", { size: 12 })}</span>
+              <span class="context-kind">${t("context.workspace")}</span>
               <span class="context-value">${workspaceLabel}</span>
             </button>
           </li>
           <li class="context-item">
-            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${`Session: ${sessionLabel}. Open session selection.`} @click=${() => {
+            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${t("context.openSession", { label: sessionLabel })} @click=${() => {
 							this.onOpenSection?.("sessions");
 						}}>
-              <span class="context-kind">Session</span>
+              <span class="context-kind-icon" aria-hidden="true">${appIcon("message", { size: 12 })}</span>
+              <span class="context-kind">${t("context.session")}</span>
               <span class="context-value">${sessionLabel}</span>
             </button>
           </li>
@@ -96,15 +104,13 @@ export class AppContextBar extends LitElement {
 	private renderActionsButton() {
 		if (this.onShowActions === undefined) return null;
 		return html`
-      <button type="button" class="context-action-button" title="Show Actions" aria-label="Show Actions" @click=${(
+      <button type="button" class="context-action-button" title=${t("nav.showActions")} aria-label=${t("nav.showActions")} @click=${(
 				event: MouseEvent,
 			) => {
 				event.stopPropagation();
 				this.onShowActions?.();
 			}}>
-        <svg class="context-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M13 2 4 14h7l-1 8 10-13h-7V2Z"></path>
-        </svg>
+        <span class="context-action-icon" aria-hidden="true">${appIcon("sparkles", { size: 16 })}</span>
       </button>
     `;
 	}
@@ -183,8 +189,11 @@ export class AppContextBar extends LitElement {
     app-refresh-control, .context-action-button { position: relative; z-index: 1; pointer-events: auto; }
     .context-action-button { box-sizing: border-box; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); padding: 0; line-height: 1; }
     .context-action-button:hover, .context-action-button:focus-visible { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
-    .context-action-icon { width: 18px; height: 18px; fill: currentColor; pointer-events: none; }
-    .context-chip { flex: 0 0 auto; min-width: 0; display: inline-flex; align-items: baseline; gap: 5px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 4px 6px; font: inherit; font-size: 13px; text-align: left; }
+    .context-action-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; color: currentColor; pointer-events: none; }
+    .context-action-icon .lucide-icon { width: 16px; height: 16px; }
+    .context-kind-icon { display: inline-grid; place-items: center; color: var(--pi-muted); flex: 0 0 auto; }
+    .context-kind-icon .lucide-icon { width: 12px; height: 12px; }
+    .context-chip { flex: 0 0 auto; min-width: 0; display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 4px 6px; font: inherit; font-size: 13px; text-align: left; }
     .context-chip:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .context-chip:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     .context-chip.empty { color: var(--pi-dim); }

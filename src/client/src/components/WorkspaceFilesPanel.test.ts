@@ -10,6 +10,7 @@ import type { WorkspaceUploadBatchState } from "../workspaceUploadState";
 // workspaceFileViewerStatusLabel seam instead of scraping Lit markup.
 import { findOptionalTemplateEventHandlerAfterMarker, templateClickHandlerForText, templateEventHandlerAfterMarker } from "../templateInspection.testSupport";
 import { WorkspaceFilesPanel, startDirectWorkspaceUpload, uploadBatchProgressValue, uploadBatchStatusLabel, workspaceFileViewerStatusLabel, workspaceUploadBatchesForScope, workspaceUploadReviewDefaults, workspaceUploadReviewError } from "./WorkspaceFilesPanel";
+import { setLocale } from "../i18n";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -80,6 +81,8 @@ describe("workspace-files-panel file tree boundary", () => {
     }))).toBe("Binary file: README.md · 4.0 KB");
   });
 });
+
+setLocale("en", { persist: false });
 
 describe("workspaceFileViewerStatusLabel", () => {
   it("messages empty, loading, and binary viewer states while deferring to real viewers", () => {
@@ -156,6 +159,8 @@ describe("workspace upload defaults", () => {
     expect(onStartWorkspaceUpload).not.toHaveBeenCalled();
   });
 });
+
+setLocale("en", { persist: false });
 
 describe("workspaceUploadReviewError", () => {
   it("accepts one or more files with a workspace-relative destination", () => {

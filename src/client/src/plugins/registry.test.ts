@@ -1,5 +1,6 @@
 import { html } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_LOCALE, resetLocaleForTests, setLocale, t } from "../i18n";
 import type {
 	DeleteWorkspaceFileResponse,
 	FileContentResponse,
@@ -120,6 +121,10 @@ function createContext(statePatch: Partial<AppState> = {}) {
 	};
 	return { context, calls };
 }
+
+afterEach(() => {
+	resetLocaleForTests(DEFAULT_LOCALE);
+});
 
 describe("PluginRegistry", () => {
 	it("namespaces contribution ids with the owning plugin id", () => {
@@ -448,10 +453,17 @@ describe("PluginRegistry", () => {
 			(action) => action.id === "core:session.reload",
 		);
 		expect(reloadableAction?.enabled).toBe(true);
-		expect(reloadableAction?.title).toBe("Reload Session from Disk");
-		expect(reloadableAction?.description).toContain(
-			"Use /reload in the prompt for Pi runtime resources",
-		);
+		setLocale("en", { persist: false });
+		const reloadableEn = registry
+			.getActions(
+				createContext({
+					selectedSession: testSession({ persisted: true }),
+					machineRuntimes: reloadRuntime,
+				}).context,
+			)
+			.find((action) => action.id === "core:session.reload");
+		expect(reloadableEn?.title).toBe(t("action.sessionReload"));
+		expect(reloadableEn?.description).toBe(t("action.sessionReloadDesc"));
 
 		const noCapability = registry.getActions(
 			createContext({ selectedSession: testSession({ persisted: true }) })

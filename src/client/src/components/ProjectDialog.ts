@@ -2,9 +2,12 @@ import { LitElement, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, type FileSuggestion } from "../api";
 import { css } from "lit";
+import { LocaleController, t } from "../i18n";
 
 @customElement("project-dialog")
 export class ProjectDialog extends LitElement {
+  private readonly locale = new LocaleController(this);
+
   @property({ attribute: false }) onSubmit?: (path: string, create: boolean) => void;
   @property({ attribute: false }) onCancel?: () => void;
   @property() machineId = "local";
@@ -88,26 +91,27 @@ export class ProjectDialog extends LitElement {
   }
 
   override render() {
+    void this.locale.locale;
     return html`
       <div class="backdrop" @click=${() => this.onCancel?.()}>
         <section @click=${(event: Event) => { event.stopPropagation(); }}>
           <header>
-            <strong>Add project</strong>
-            <button @click=${() => { this.onCancel?.(); }} aria-label="Close">×</button>
+            <strong>${t("projectDialog.title")}</strong>
+            <button @click=${() => { this.onCancel?.(); }} aria-label=${t("projectDialog.close")}>×</button>
           </header>
           <div class="body">
             <label>
-              Project folder
-              <input .value=${this.path} @input=${(event: InputEvent) => { this.onPathInput(event); }} @keydown=${(event: KeyboardEvent) => { this.onKeyDown(event); }} placeholder="/path/to/project or ~/code/project" autofocus />
+              ${t("projectDialog.path")}
+              <input .value=${this.path} @input=${(event: InputEvent) => { this.onPathInput(event); }} @keydown=${(event: KeyboardEvent) => { this.onKeyDown(event); }} placeholder=${t("projectDialog.pathPlaceholder")} autofocus />
             </label>
             <div class="suggestions">
-              ${this.loading ? html`<div class="hint">Loading folders…</div>` : null}
+              ${this.loading ? html`<div class="hint">${t("projectDialog.loading")}</div>` : null}
               ${this.suggestions.map((suggestion, index) => html`
                 <button class=${index === this.selected ? "selected" : ""} @click=${() => { this.pick(suggestion); }}>
                   ${suggestion.path}
                 </button>
               `)}
-              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">No matching folders. Enter a new path to create it.</div>` : null}
+              ${!this.loading && this.suggestions.length === 0 ? html`<div class="hint">${t("projectDialog.noMatch")}</div>` : null}
             </div>
             <label class="check">
               <input type="checkbox" .checked=${this.createMissing} @change=${(event: InputEvent) => { this.onCreateMissingChange(event); }} />
@@ -115,8 +119,8 @@ export class ProjectDialog extends LitElement {
             </label>
           </div>
           <footer>
-            <button @click=${() => { this.onCancel?.(); }}>Cancel</button>
-            <button class="primary" ?disabled=${this.path.trim() === ""} @click=${() => { this.submit(); }}>Add project</button>
+            <button @click=${() => { this.onCancel?.(); }}>${t("projectDialog.cancel")}</button>
+            <button class="primary" ?disabled=${this.path.trim() === ""} @click=${() => { this.submit(); }}>${t("projectDialog.open")}</button>
           </footer>
         </section>
       </div>

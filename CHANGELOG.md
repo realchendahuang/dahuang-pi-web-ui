@@ -1,5 +1,16 @@
 # @realchendahuang/dahuang-pi-web-ui
 
+## 0.202607.2
+
+### Patch Changes
+
+- Localize the web UI for Chinese and English and fix the npm publish workflow.
+
+  - Wire every remaining hardcoded English UI string in the client to the `t()` i18n system so labels, aria-text, statuses, and dialogs render in the active locale (default Chinese, with English available). Covers the auth dialog, machine switcher/dialog, command picker, chat view, status bar, prompt editor, session cleanup dialog, session tree navigator, terminal soft keys, workspace list/git/changes panels, and settings surfaces.
+  - Trim redundant copy and remove duplicate message keys; named tool-output labels no longer repeat the word "tool".
+  - Fix a test-isolation leak where the chat-history cache (backed by the vitest `sessionStorage` polyfill) carried one test's transcript into the next; the shared controller test harness now clears session storage between tests.
+  - Fix the GitHub Actions publish workflow so the `npm publish` step receives `NODE_AUTH_TOKEN`, and remove two unused exports flagged by knip (`tt`, `workspaceIcon`).
+
 ## 0.202607.1
 
 ### Patch Changes

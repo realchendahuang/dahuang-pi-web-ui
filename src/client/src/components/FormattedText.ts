@@ -4,12 +4,16 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { writeClipboardText } from "../clipboard";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import { formattedTextStyles } from "./shared";
+import { LocaleController, t } from "../i18n";
 
 @customElement("formatted-text")
 export class FormattedText extends LitElement {
+  private readonly locale = new LocaleController(this);
+
   @property() text = "";
 
   override render() {
+    void this.locale.locale;
     return html`<div class="formatted" dir="auto" @click=${this.onFormattedClick}>${unsafeHTML(toSafeMarkdownHtml(this.text))}</div>`;
   }
 
@@ -27,8 +31,8 @@ export class FormattedText extends LitElement {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "code-copy-button";
-      button.title = "Copy code block";
-      button.setAttribute("aria-label", "Copy code block");
+      button.title = t("code.copyBlock");
+      button.setAttribute("aria-label", t("code.copyBlock"));
       const icon = document.createElement("span");
       icon.setAttribute("aria-hidden", "true");
       icon.textContent = "⧉";
@@ -60,7 +64,7 @@ export class FormattedText extends LitElement {
   private setCopyButtonState(button: HTMLButtonElement, state: "idle" | "copied" | "failed"): void {
     const icon = button.querySelector("span");
     if (icon !== null) icon.textContent = state === "copied" ? "✓" : "⧉";
-    const label = state === "copied" ? "Copied code block" : state === "failed" ? "Failed to copy code block" : "Copy code block";
+    const label = state === "copied" ? t("code.copiedBlock") : state === "failed" ? t("code.copyBlock") : t("code.copyBlock");
     button.title = label;
     button.setAttribute("aria-label", label);
   }
