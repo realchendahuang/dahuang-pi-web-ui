@@ -24,6 +24,8 @@
 
 这不是“给网页套一个窗口”。完成后的用户路径应是：下载 DMG、拖入 Applications、打开 Pi Agent、选择项目、创建会话。用户不需要安装 npm 包、理解端口、配置 LaunchAgent、修复 `node-pty` 权限或手动编辑全局 JSON 才能开始工作。
 
+Pi Runtime 的嵌入位置已经形成单独的研究与架构决策：[macOS 原生客户端与 Pi Runtime 融合](./macos-pi-runtime-integration.md)。最终选择不是让 Swift 直接链接 Pi SDK，也不是让 Swift 为每个 session 直接控制 `pi --mode rpc`，而是：**App 内随包携带长期 Node Runtime，Runtime 内通过窄 adapter 直接使用 Pi SDK，Swift 只消费版本化 Native Contract；Pi RPC 保留为 Runtime 内的兼容或隔离 driver。**
+
 ## 2. 设计基准与开源复用决策
 
 本项目不从空白重新发明 Agent 桌面端，也不把“参考成熟产品”误解成“复制它的技术栈”。产品结构以 Codex 桌面端和 T3 Code 为主要基准，macOS 工程能力优先复用经过验证的原生库和系统框架；任何第三方项目都必须先经过许可证、维护状态、可嵌入边界、性能、辅助功能和签名验证。
@@ -818,6 +820,7 @@ Bundled Runtime、node-pty 随 App 签名、Textual/Markdown renderer、dependen
 10. Textual、swift-markdown 与 transcript 增量渲染边界；
 11. XcodeGen 或 checked-in Xcode project；
 12. legacy Web UI、CLI 和 browser plugin 的支持周期。
+13. Pi SDK adapter、bundled Node Runtime 与 RPC fallback 的边界；详细决策见 [macOS 原生客户端与 Pi Runtime 融合](./macos-pi-runtime-integration.md)。
 
 ADR 必须记录选择、拒绝方案、证据、回滚路径和需要复核的假设，不能只写最终结论。
 
