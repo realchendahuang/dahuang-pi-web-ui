@@ -98,7 +98,7 @@ struct PiAgentContractCheck {
         precondition(session.messageCount == 2)
 
         let messageData = Data(
-            #"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"text","text":"world"}]}],"start":0,"total":2}"#.utf8
+            #"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"world"}]}],"start":0,"total":2}"#.utf8
         )
         let page = try decoder.decode(RuntimeMessagePage.self, from: messageData)
         precondition(page.messages.count == 2)
@@ -112,7 +112,7 @@ struct PiAgentContractCheck {
         decoder.dateDecodingStrategy = .iso8601
         let snapshot = try decoder.decode(
             RuntimeStreamSnapshot.self,
-            from: Data(#"{"seq":42,"partial":{"role":"assistant","content":"partial answer"}}"#.utf8)
+            from: Data(#"{"seq":42,"partial":{"role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"partial answer"}]}}"#.utf8)
         )
         precondition(snapshot.seq == 42)
         precondition(snapshot.partial?.role == "assistant")

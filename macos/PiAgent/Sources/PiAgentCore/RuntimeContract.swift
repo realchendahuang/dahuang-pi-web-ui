@@ -200,12 +200,12 @@ public struct RuntimeMessage: Decodable, Identifiable, Sendable {
         guard case let .object(fields) = value else {
             id = UUID().uuidString
             role = "message"
-            text = value.renderedText
+            text = value.transcriptText
             return
         }
         id = fields["id"]?.stringValue ?? UUID().uuidString
         role = fields["role"]?.stringValue ?? fields["type"]?.stringValue ?? "message"
-        text = fields["content"]?.renderedText
+        text = fields["content"]?.transcriptText
             ?? fields["text"]?.stringValue
             ?? fields["message"]?.stringValue
             ?? ""
@@ -392,7 +392,10 @@ public indirect enum JSONValue: Decodable, Sendable {
         return value
     }
 
-    fileprivate var renderedText: String {
+    /// Text safe to show in the native transcript. Provider thinking blocks
+    /// can be present in the browser projection for compatibility, but they
+    /// are private reasoning and must never be rendered as assistant text.
+    fileprivate var transcriptText: String {
         switch self {
         case .null:
             return ""
@@ -403,10 +406,13 @@ public indirect enum JSONValue: Decodable, Sendable {
         case let .string(value):
             return value
         case let .array(values):
-            return values.map(\.renderedText).filter { !$0.isEmpty }.joined(separator: "\n")
+            return values.map(\.transcriptText).filter { !$0.isEmpty }.joined(separator: "\n")
         case let .object(fields):
-            for key in ["text", "thinking", "output", "summary", "message"] {
-                if let value = fields[key]?.renderedText, !value.isEmpty { return value }
+            // A thinking block may also carry provider-specific fields. Check
+            // its semantic type before looking at generic text-like keys.
+            if fields["type"]?.stringValue == "thinking" { return "" }
+            for key in ["text", "output", "summary", "message", "content"] {
+                if let value = fields[key]?.transcriptText, !value.isEmpty { return value }
             }
             return ""
         }
