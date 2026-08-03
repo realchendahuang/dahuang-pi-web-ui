@@ -1,12 +1,12 @@
 # Pi Agent for macOS：彻底原生化方案
 
-> 状态：Phase 0 已落地，Phase 1 单机 vertical slice 已开始落地，完整原生产品仍在实施中。
+> 状态：Phase 0 已落地，Phase 1 单机 vertical slice 已落地（仍不是完整原生产品），后续生命周期、分发和 workspace 能力继续实施。
 >
 > 目标：把 PI WEB 改造成真正的 macOS 原生桌面应用 **Pi Agent**。产品主界面、窗口、菜单、设置、通知、权限、更新与安装全部使用 macOS 原生能力；不使用 Electron、Tauri 或 WebView 作为产品界面。现有 TypeScript/Node 会话核心作为 App 内嵌运行时保留，逐步从浏览器控制面中解耦。
 >
 > 开源与产品调研快照：**2026-08-03**。外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
 
-当前已经可验证的切片位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health contract、Unix-socket client、显式 RuntimeSupervisor、项目目录选择、session projection、消息/状态读取、真实 Prompt 提交与 settle 轮询、contract-check executable，以及本地 `.app` 组装/签名/验证脚本。它还不是可分发的稳定 DMG，不改变现有 Web UI 或 sessiond 的事实所有权；流式 WebSocket、内嵌 Runtime、签名公证和完整项目/工作区投影仍在后续阶段。
+当前已经可验证的切片位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health contract、Unix-socket client、项目目录选择、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable 和本地 `.app` 组装/签名/验证脚本。Prompt 不再通过固定间隔轮询等待完成。它还不是可分发的稳定 DMG，不改变现有 Web UI 或 sessiond 的事实所有权；内嵌 Runtime、签名公证和完整项目/工作区投影仍在后续阶段。
 
 ## 1. 结论
 
@@ -127,7 +127,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 | [SwiftUI / AppKit / Security / ServiceManagement / OSLog](https://developer.apple.com/documentation/) | Apple SDK | 采用 | 窗口、菜单、Keychain、Login Item、日志、权限等平台边界；优先于同功能包装库 |
 | [Sparkle 2](https://github.com/sparkle-project/Sparkle) | 宽松许可证，含第三方 notices | 采用 | 应用内更新；业务层仍负责 active-session gate、checkpoint、Runtime/helper 协调和回滚验证 |
 | [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | 采用 | 只保存 App 自己的 bookmark metadata、window state、UI cache 和 migration journal；不与 Runtime 并发写同一数据库 |
-| [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) | MIT | Phase 0 首选 | AppKit `TerminalView` 和 VT emulation 首选；只接 Runtime 的 byte stream，不接管 PTY process |
+| [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) | MIT | **已采用（1.11.2）** | AppKit `TerminalView` 和 VT emulation；只接 Runtime 的 byte stream，不接管 PTY process；1.11.2 固定版本避免当前 CommandLineTools 缺少 `metal` 时的 shader 构建阻塞 |
 | [Ghostty / libghostty](https://github.com/ghostty-org/ghostty) | MIT | Phase 0 对照 | 高性能 terminal engine/Metal 参考；`libghostty-vt` 可嵌入但 API 仍变化，只有 SwiftTerm 不达标时才评估 pin commit + C bridge |
 | [Textual](https://github.com/gonzalezreal/textual) | MIT | Phase 0 首选 | 原生 selection、code block、table、accessibility-friendly rich text；用长 transcript 和流式更新验证后再采用 |
 | [swift-markdown](https://github.com/swiftlang/swift-markdown) | Apache-2.0 | Phase 0 候选 | 需要可控 GFM AST 时作为解析层；renderer 仍由本项目或 Textual 提供 |
@@ -450,7 +450,7 @@ Pi Agent.app/Contents/
 
 目录权限为 `0700`，socket 只能由当前用户访问。协议不依赖浏览器 Cookie、CORS、Host allowlist 或公开 TCP 端口。远程能力使用单独的网络 transport adapter，不能把本机 socket 认证假设复制到网络边界。
 
-第一阶段可以复用当前 Unix socket 上的 HTTP + WebSocket 实现以降低迁移风险，但 Swift 侧只依赖 `RuntimeClient` 协议，不让 HTTP 概念渗入 feature。第二阶段把本机 transport 收敛为统一的长度前缀 JSON message stream：
+第一阶段已经复用当前 Unix socket 上的 HTTP + WebSocket 实现以降低迁移风险。Swift feature 只依赖 `RuntimeClient`、`RuntimeEventStreamClient` 和 `RuntimeTerminalClient` 协议，不让 HTTP 概念渗入 View。当前兼容路径使用 `PI_AGENT_RUNTIME_SOCKET`，未配置时回退到 `~/.pi-web/sessiond.sock`；最终打包 Runtime 的 socket 位置仍按本方案后续的 Application Support 布局收口。session event 连接 `/sessions/:sessionId/events`，加入前读取 `/stream-snapshot`，在同一 Runtime epoch 内按单调 `seq` 去重；terminal 连接 `/terminals/:terminalId/socket`，PTY 仍由 Node `TerminalService` 所有。第二阶段再把本机 transport 收敛为统一的长度前缀 JSON message stream：
 
 ```json
 {
@@ -525,8 +525,8 @@ Swift feature 将错误翻译到最近的用户边界：字段错误留在表单
 ### 9.2 Transcript
 
 - 使用 SwiftUI 列表/滚动容器与可测量的增量渲染，不一次加载完整历史；
-- Runtime 提供分页 snapshot，App 保持 scroll anchor；
-- 流式 Assistant 内容以稳定 message ID 更新，不重建整个列表；
+- Runtime 提供历史消息与 in-flight stream snapshot，App 用 `seq` 水位保持加入时的一致性；
+- 当前切片已用 `assistant.delta`/`message.end` 驱动稳定的 streaming message 更新，不再轮询 messages/status 等待 settle；断线自动重连并重新读取 snapshot；
 - 工具调用采用原生 disclosure group 和状态图标；
 - 代码、diff 和日志采用原生选择/复制语义；
 - Markdown 渲染层必须支持文本选择、链接安全策略、代码块和 VoiceOver；
@@ -534,7 +534,7 @@ Swift feature 将错误翻译到最近的用户边界：字段错误留在表单
 
 ### 9.3 Terminal
 
-终端是原生壳最难的 UI 边界。第一版不自研完整 VT parser/state machine，也不通过 WKWebView 嵌入 xterm。Phase 0 首先验证 SwiftTerm；只有其性能或现代控制序列不达门槛时，才验证固定 commit 的 `libghostty-vt` 与薄 AppKit/Metal surface。无论选型如何都必须支持：
+终端是原生壳最难的 UI 边界。第一版不自研完整 VT parser/state machine，也不通过 WKWebView 嵌入 xterm。当前 vertical slice 已固定采用 SwiftTerm 1.11.2 的 AppKit `TerminalView`；`TerminalSurfaceView` 只把 Node PTY 的 output byte stream feed 给 renderer，并将输入和 resize 发回 `/terminals/:id/socket`。只有 SwiftTerm 后续真实长输出、辅助功能或现代控制序列验收不达门槛时，才验证固定 commit 的 `libghostty-vt` 与薄 AppKit/Metal surface。无论选型如何都必须支持：
 
 - PTY resize、Unicode、宽字符、ANSI color；
 - 鼠标选择、复制、粘贴、IME；
@@ -543,7 +543,7 @@ Swift feature 将错误翻译到最近的用户边界：字段错误留在表单
 - 大量输出的有界缓冲；
 - App 重连时恢复 terminal snapshot 或明确标记不可恢复。
 
-PTY 进程仍由 Runtime 拥有；原生 terminal view 只负责输入和渲染，第三方库的 local-process helper 不进入所有权路径。终端 renderer 在阶段 0 必须单独做技术验证，不能等主界面完成后才发现不可行。
+PTY 进程仍由 Runtime 拥有；原生 terminal view 只负责输入和渲染，第三方库的 local-process helper 不进入所有权路径。SwiftTerm 阶段 0 spike 已通过真实 PTY smoke；长会话、辅助功能和现代控制序列的完整验收仍需在后续打包/长跑测试中完成。
 
 ### 9.4 Settings
 
@@ -729,25 +729,23 @@ Diagnostics 页面至少展示：
 
 ### Phase 0：技术验证与冻结边界
 
-交付：
+本轮已完成的 Phase 0/Phase 1 vertical slice 交付：
 
 - 最小 SwiftUI App；
-- 启动 bundled Node Runtime；
-- Unix socket health/hello；
-- Textual 与 swift-markdown 的原生 transcript 对照原型；
-- SwiftTerm 与 libghostty 的原生 terminal 对照原型；
-- 签名后 App bundle 能运行 `node-pty`；
-- TypeScript/Swift contract fixture；
-- dependency inventory 与 license/notice 草案；
-- ADR，确认 terminal、transcript、Keychain、project generation、IPC framing 和最低 macOS 版本。
+- Unix socket health/hello、HTTP contract 和 WebSocket transport；
+- SwiftTerm 1.11.2 原生 terminal surface（真实 PTY output/input/resize/reconnect smoke）；
+- TypeScript/Swift contract fixture 与 native contract checks；
+- release `.app` 组装、ad-hoc 签名和本机验证脚本。
 
-退出门槛：在一台干净 Apple Silicon Mac 上，从签名 `.app` 创建真实 Pi 会话、收到 stream、打开 PTY、关闭并重开窗口后继续连接。任何一项失败都不能进入全量 UI 开发。
+Bundled Runtime、node-pty 随 App 签名、Textual/Markdown renderer、dependency inventory 和正式 ADR 仍是后续交付，不在本轮 vertical slice 的已完成范围内。
+
+当前切片退出证据：在本机 Apple Silicon 上，release contract check 与签名 `.app` artifact 已验证；contract check 连接现有 sessiond，完成真实 session event WebSocket 101 握手、terminal WebSocket 握手、PTY resize 和命令回显。干净机安装、公证、窗口关闭/重开后的 Runtime 生命周期仍是后续 Phase 2/3 门槛。
 
 ### Phase 1：原生单机 MVP
 
-交付：项目/工作区、会话列表、聊天、Prompt、Pi/OMP、文件、Git diff、终端、基础设置和诊断。Runtime 仍可使用现有 socket HTTP/WS transport，但所有 Swift feature 只依赖 `RuntimeClient`。
+交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
 
-退出门槛：不打开浏览器、不全局安装 npm 包即可完成日常单机工作；现有会话数据可读取且无损。
+退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 和完整 workspace 仍未达到该门槛。
 
 ### Phase 2：生命周期与 macOS 集成
 
@@ -840,6 +838,8 @@ ADR 必须记录选择、拒绝方案、证据、回滚路径和需要复核的�
 - 当前 Web/CLI 用户有明确兼容和退出周期。
 
 ## 22. 推荐的第一个实现切片
+
+第一个实现切片中的原生窗口、health/session contract、事件驱动 transcript、SwiftTerm terminal 和签名 artifact 已在本轮完成并通过本机 smoke；bundled Runtime、App 关闭后生命周期协调和完整 workspace projection 仍是下一轮，不把当前 prototype 宣称为完整产品。
 
 第一个切片严格限制为一个 vertical slice：
 

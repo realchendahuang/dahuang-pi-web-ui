@@ -6,6 +6,7 @@ struct PiAgentContractCheck {
     static func main() async throws {
         try checkHealthDecoding()
         try checkSessionAndMessageDecoding()
+        try checkStreamingAndTerminalDecoding()
         checkImplicitLaunchIsDisabled()
         try checkExplicitLaunchPlan()
         if let socketPath = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SOCKET"] {
@@ -31,6 +32,42 @@ struct PiAgentContractCheck {
                     runtimeId: session.runtimeId
                 )
                 print("Read session \(session.id): \(page.messages.count) messages, streaming=\(status.isStreaming)")
+            }
+            if ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_WS_SMOKE"] == "1",
+               let session = sessions.first(where: { $0.runtimeId == "pi" }) ?? sessions.first
+            {
+                let snapshot = try await client.streamSnapshot(
+                    sessionId: session.id,
+                    cwd: cwd,
+                    runtimeId: session.runtimeId
+                )
+                let subscription = client.subscribe(
+                    sessionId: session.id,
+                    cwd: cwd,
+                    runtimeId: session.runtimeId
+                )
+                var connected = false
+                for try await _ in subscription.ready {
+                    connected = true
+                    break
+                }
+                precondition(connected)
+                subscription.cancel()
+                print("Session stream snapshot seq=\(snapshot.seq), WebSocket handshake passed for \(session.id)")
+            }
+            if let terminalID = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_TERMINAL_ID"] {
+                let subscription = client.subscribeTerminal(id: terminalID, cols: 120, rows: 32)
+                var connected = false
+                for try await _ in subscription.ready {
+                    connected = true
+                    break
+                }
+                precondition(connected)
+                subscription.resize(cols: 80, rows: 24)
+                subscription.sendInput("printf 'pi-agent-native-terminal-smoke\\n'\r")
+                try await waitForTerminalOutput(subscription.events, containing: "pi-agent-native-terminal-smoke")
+                subscription.cancel()
+                print("Terminal WebSocket handshake passed for \(terminalID)")
             }
         }
         print("PiAgentCore contract checks passed")
@@ -70,12 +107,60 @@ struct PiAgentContractCheck {
         precondition(page.total == 2)
     }
 
+    private static func checkStreamingAndTerminalDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(
+            RuntimeStreamSnapshot.self,
+            from: Data(#"{"seq":42,"partial":{"role":"assistant","content":"partial answer"}}"#.utf8)
+        )
+        precondition(snapshot.seq == 42)
+        precondition(snapshot.partial?.role == "assistant")
+        precondition(snapshot.partial?.text == "partial answer")
+
+        let event = try decoder.decode(
+            RuntimeSessionEvent.self,
+            from: Data(#"{"type":"assistant.delta","text":"hello","seq":43}"#.utf8)
+        )
+        precondition(event.type == "assistant.delta")
+        precondition(event.seq == 43)
+        precondition(event.text == "hello")
+
+        let terminal = try decoder.decode(
+            RuntimeTerminalEvent.self,
+            from: Data(#"{"type":"output","data":"$ ","replay":true}"#.utf8)
+        )
+        precondition(terminal.type == "output")
+        precondition(terminal.data == "$ ")
+        precondition(terminal.replay == true)
+    }
+
     private static func checkImplicitLaunchIsDisabled() {
         let plan = RuntimeLaunchPlan.fromEnvironment(
             ["PATH": "/usr/bin"],
             defaultSocketPath: "/tmp/pi-agent.sock"
         )
         precondition(plan == nil)
+    }
+
+    private static func waitForTerminalOutput(
+        _ events: AsyncThrowingStream<RuntimeTerminalEvent, Error>,
+        containing marker: String
+    ) async throws {
+        try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for try await event in events {
+                    if event.type == "output", event.data?.contains(marker) == true { return true }
+                }
+                return false
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+                throw ContractCheckError.timeout
+            }
+            guard try await group.next() == true else { throw ContractCheckError.timeout }
+            group.cancelAll()
+        }
     }
 
     private static func checkExplicitLaunchPlan() throws {
@@ -100,4 +185,5 @@ struct PiAgentContractCheck {
 
 private enum ContractCheckError: Error {
     case missingExplicitPlan
+    case timeout
 }

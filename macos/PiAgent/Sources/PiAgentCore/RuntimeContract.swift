@@ -189,6 +189,12 @@ public struct RuntimeMessage: Decodable, Identifiable, Sendable {
     public let role: String
     public let text: String
 
+    public init(id: String, role: String, text: String) {
+        self.id = id
+        self.role = role
+        self.text = text
+    }
+
     public init(from decoder: Decoder) throws {
         let value = try JSONValue(from: decoder)
         guard case let .object(fields) = value else {
@@ -230,6 +236,121 @@ public struct RuntimeMessagePage: Decodable, Sendable {
         case messages
         case start
         case total
+    }
+}
+
+/// Join-time watermark and the assistant message that was in flight when the
+/// snapshot was captured. The runtime owns the canonical message object; this
+/// is intentionally only the browser/native text projection.
+public struct RuntimeStreamSnapshot: Decodable, Sendable {
+    public let seq: Int
+    public let partial: RuntimeMessage?
+
+    public init(seq: Int, partial: RuntimeMessage?) {
+        self.seq = seq
+        self.partial = partial
+    }
+}
+
+/// A decoded, additive session event from `/sessions/:id/events`.
+///
+/// The server deliberately keeps the wire event union open as Pi gains new
+/// event types. Native code therefore decodes the stable fields it can render
+/// and preserves the original type for forward-compatible handling.
+public struct RuntimeSessionEvent: Decodable, Sendable {
+    public let type: String
+    public let seq: Int?
+    public let text: String?
+    public let message: RuntimeMessage?
+    public let status: RuntimeSessionStatus?
+    public let session: RuntimeSession?
+    public let sessionId: String?
+    public let name: String?
+    public let command: String?
+    public let chunk: String?
+    public let output: String?
+    public let exitCode: Int?
+    public let cancelled: Bool?
+    public let isError: Bool?
+    public let toolName: String?
+    public let toolCallId: String?
+    public let summary: String?
+    public let errorMessage: String?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        seq = try container.decodeIfPresent(Int.self, forKey: .seq)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        message = try container.decodeIfPresent(RuntimeMessage.self, forKey: .message)
+        status = try container.decodeIfPresent(RuntimeSessionStatus.self, forKey: .status)
+        session = try container.decodeIfPresent(RuntimeSession.self, forKey: .session)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        command = try container.decodeIfPresent(String.self, forKey: .command)
+        chunk = try container.decodeIfPresent(String.self, forKey: .chunk)
+        output = try container.decodeIfPresent(String.self, forKey: .output)
+        exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
+        cancelled = try container.decodeIfPresent(Bool.self, forKey: .cancelled)
+        isError = try container.decodeIfPresent(Bool.self, forKey: .isError)
+        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        toolCallId = try container.decodeIfPresent(String.self, forKey: .toolCallId)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        errorMessage = (try? container.decode(String.self, forKey: .message))
+            ?? (type == "session.error" ? text : nil)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, seq, text, message, status, session, sessionId, name
+        case command, chunk, output, exitCode, cancelled, isError
+        case toolName, toolCallId, summary
+    }
+}
+
+/// A terminal record returned by the Node PTY owner.
+public struct RuntimeTerminalInfo: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let cwd: String
+    public let name: String
+    public let createdAt: Date
+    public let exited: Bool
+    public let exitCode: Int?
+    public let commandRunId: String?
+
+    public init(
+        id: String,
+        cwd: String,
+        name: String,
+        createdAt: Date,
+        exited: Bool,
+        exitCode: Int? = nil,
+        commandRunId: String? = nil
+    ) {
+        self.id = id
+        self.cwd = cwd
+        self.name = name
+        self.createdAt = createdAt
+        self.exited = exited
+        self.exitCode = exitCode
+        self.commandRunId = commandRunId
+    }
+}
+
+/// Terminal WebSocket messages. PTY bytes remain owned by the Node terminal
+/// service; the native surface only consumes output and sends input/resize.
+public struct RuntimeTerminalEvent: Decodable, Sendable {
+    public let type: String
+    public let data: String?
+    public let replay: Bool?
+    public let exitCode: Int?
+    public let message: String?
+
+    public init(type: String, data: String? = nil, replay: Bool? = nil, exitCode: Int? = nil, message: String? = nil) {
+        self.type = type
+        self.data = data
+        self.replay = replay
+        self.exitCode = exitCode
+        self.message = message
     }
 }
 
@@ -298,6 +419,79 @@ public protocol RuntimeClient: RuntimeHealthClient {
     func messages(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeMessagePage
     func status(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
     func prompt(sessionId: String, cwd: String, runtimeId: String?, text: String) async throws
+}
+
+/// Session event transport kept separate from the request client so tests and
+/// future runtimes can provide only the capabilities they support.
+public protocol RuntimeEventStreamClient: Sendable {
+    func streamSnapshot(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeStreamSnapshot
+    func subscribe(sessionId: String, cwd: String, runtimeId: String?) -> RuntimeEventSubscription
+}
+
+public protocol RuntimeTerminalClient: Sendable {
+    func listTerminals(cwd: String) async throws -> [RuntimeTerminalInfo]
+    func createTerminal(cwd: String, name: String, cols: Int, rows: Int) async throws -> RuntimeTerminalInfo
+    func continueTerminal(id: String) async throws -> RuntimeTerminalInfo
+    func subscribeTerminal(id: String, cols: Int, rows: Int) -> RuntimeTerminalSubscription
+}
+
+/// A cancellable, reconnectable unit of session event delivery. Cancellation
+/// closes the underlying Unix socket rather than merely stopping a consumer.
+public final class RuntimeEventSubscription: @unchecked Sendable {
+    public let events: AsyncThrowingStream<RuntimeSessionEvent, Error>
+    public let ready: AsyncThrowingStream<Void, Error>
+    private let cancelAction: @Sendable () -> Void
+
+    public init(
+        events: AsyncThrowingStream<RuntimeSessionEvent, Error>,
+        ready: AsyncThrowingStream<Void, Error>,
+        cancel: @escaping @Sendable () -> Void
+    ) {
+        self.events = events
+        self.ready = ready
+        self.cancelAction = cancel
+    }
+
+    public func cancel() {
+        cancelAction()
+    }
+}
+
+/// A cancellable terminal byte/event stream. Outgoing input is buffered until
+/// the WebSocket handshake finishes, so a freshly-created surface cannot lose
+/// the first resize or keystroke.
+public final class RuntimeTerminalSubscription: @unchecked Sendable {
+    public let events: AsyncThrowingStream<RuntimeTerminalEvent, Error>
+    public let ready: AsyncThrowingStream<Void, Error>
+    private let sendInputAction: @Sendable (String) -> Void
+    private let resizeAction: @Sendable (Int, Int) -> Void
+    private let cancelAction: @Sendable () -> Void
+
+    public init(
+        events: AsyncThrowingStream<RuntimeTerminalEvent, Error>,
+        ready: AsyncThrowingStream<Void, Error>,
+        sendInput: @escaping @Sendable (String) -> Void,
+        resize: @escaping @Sendable (Int, Int) -> Void,
+        cancel: @escaping @Sendable () -> Void
+    ) {
+        self.events = events
+        self.ready = ready
+        self.sendInputAction = sendInput
+        self.resizeAction = resize
+        self.cancelAction = cancel
+    }
+
+    public func sendInput(_ data: String) {
+        sendInputAction(data)
+    }
+
+    public func resize(cols: Int, rows: Int) {
+        resizeAction(cols, rows)
+    }
+
+    public func cancel() {
+        cancelAction()
+    }
 }
 
 public enum RuntimeClientError: LocalizedError, Equatable, Sendable {

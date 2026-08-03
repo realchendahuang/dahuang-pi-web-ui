@@ -11,6 +11,12 @@ let package = Package(
         .library(name: "PiAgentCore", targets: ["PiAgentCore"]),
         .executable(name: "PiAgent", targets: ["PiAgentApp"]),
     ],
+    dependencies: [
+        // SwiftTerm provides the native VT parser and AppKit surface. PTY
+        // ownership remains in the Node session daemon; this is only the
+        // renderer/input adapter.
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.11.2"),
+    ],
     targets: [
         .target(
             name: "PiAgentCore",
@@ -18,7 +24,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "PiAgentApp",
-            dependencies: ["PiAgentCore"],
+            dependencies: [
+                "PiAgentCore",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
             path: "Sources/PiAgentApp"
         ),
         .executableTarget(

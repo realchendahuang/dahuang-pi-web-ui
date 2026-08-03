@@ -1,6 +1,7 @@
 import AppKit
 import PiAgentCore
 import SwiftUI
+import SwiftTerm
 
 @main
 struct PiAgentApp: App {
@@ -49,8 +50,21 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var isSending = false
     @Published var errorMessage: String?
+    @Published var isProjectExpanded = true
+    @Published var terminalInfo: RuntimeTerminalInfo?
+    @Published var terminalErrorMessage: String?
 
     let runtimeClient: any RuntimeClient
+    let terminalSurfaceController = TerminalSurfaceController()
+
+    private var sessionStreamTask: Task<Void, Never>?
+    private var sessionEventSubscription: RuntimeEventSubscription?
+    private var sessionStreamGeneration = 0
+    private var lastSessionSequence = 0
+    private var streamingMessage: RuntimeMessage?
+    private var terminalTask: Task<Void, Never>?
+    private var terminalSubscription: RuntimeTerminalSubscription?
+    private var terminalCWD: String?
 
     init(
         runtimeClient: any RuntimeClient = AppModel.makeRuntimeClient(),
@@ -125,11 +139,15 @@ final class AppModel: ObservableObject {
     }
 
     func selectSession(_ sessionID: String?) {
+        stopSessionEventStream()
         selectedSessionID = sessionID
         transcriptMessages = []
+        streamingMessage = nil
+        lastSessionSequence = 0
         errorMessage = nil
         guard sessionID != nil else { return }
         loadSelectedSession()
+        startSessionEventStream()
     }
 
     func startNewSession() {
@@ -145,7 +163,10 @@ final class AppModel: ObservableObject {
                 self.sessions.insert(session, at: 0)
                 self.selectedSessionID = session.id
                 self.transcriptMessages = []
+                self.streamingMessage = nil
+                self.lastSessionSequence = 0
                 self.isSending = false
+                self.startSessionEventStream()
             } catch {
                 guard let self else { return }
                 self.errorMessage = error.localizedDescription
@@ -176,11 +197,6 @@ final class AppModel: ObservableObject {
                 )
                 guard let self else { return }
                 self.prompt = ""
-                try await self.refreshUntilSettled(
-                    client: client,
-                    session: session,
-                    cwd: cwd
-                )
                 self.isSending = false
             } catch {
                 guard let self else { return }
@@ -192,6 +208,128 @@ final class AppModel: ObservableObject {
 
     func refreshSelectedSession() {
         loadSelectedSession()
+    }
+
+    func ensureTerminalConnection() {
+        guard let client = runtimeClient as? any RuntimeTerminalClient else {
+            terminalErrorMessage = "This Runtime does not expose a terminal surface."
+            return
+        }
+        if terminalCWD == projectPath && (terminalSubscription != nil || terminalTask != nil) { return }
+
+        terminalTask?.cancel()
+        terminalSubscription?.cancel()
+        terminalTask = nil
+        terminalSubscription = nil
+        terminalInfo = nil
+        terminalCWD = projectPath
+        terminalErrorMessage = nil
+
+        let cwd = projectPath
+        terminalTask = Task { [weak self] in
+            do {
+                let existing = try await client.listTerminals(cwd: cwd)
+                let terminal: RuntimeTerminalInfo
+                if let existingTerminal = existing.first {
+                    terminal = existingTerminal
+                } else {
+                    terminal = try await client.createTerminal(
+                        cwd: cwd,
+                        name: "Pi Agent Terminal",
+                        cols: 120,
+                        rows: 32
+                    )
+                }
+                guard let self else { return }
+                self.terminalInfo = terminal
+                var reconnectDelay: UInt64 = 250_000_000
+                while !Task.isCancelled && self.terminalCWD == cwd {
+                    let subscription = client.subscribeTerminal(id: terminal.id, cols: 120, rows: 32)
+                    self.terminalSubscription = subscription
+                    do {
+                        var connected = false
+                        for try await _ in subscription.ready {
+                            connected = true
+                            break
+                        }
+                        guard connected else { throw RuntimeClientError.connectionFailed("terminal socket closed before handshake") }
+                        self.terminalErrorMessage = nil
+                        reconnectDelay = 250_000_000
+                        for try await event in subscription.events {
+                            guard self.terminalCWD == cwd else { return }
+                            switch event.type {
+                            case "output":
+                                if let data = event.data { self.terminalSurfaceController.feed(data) }
+                            case "exit":
+                                self.terminalInfo = RuntimeTerminalInfo(
+                                    id: terminal.id,
+                                    cwd: terminal.cwd,
+                                    name: terminal.name,
+                                    createdAt: terminal.createdAt,
+                                    exited: true,
+                                    exitCode: event.exitCode,
+                                    commandRunId: terminal.commandRunId
+                                )
+                            case "error":
+                                self.terminalErrorMessage = event.message ?? "Terminal stream failed."
+                            default:
+                                break
+                            }
+                        }
+                        throw RuntimeClientError.connectionFailed("terminal socket closed")
+                    } catch is CancellationError {
+                        subscription.cancel()
+                        return
+                    } catch {
+                        subscription.cancel()
+                        guard self.terminalCWD == cwd else { return }
+                        self.terminalSubscription = nil
+                        self.terminalErrorMessage = "Terminal reconnecting: \(error.localizedDescription)"
+                        do {
+                            try await Task.sleep(nanoseconds: reconnectDelay)
+                        } catch {
+                            return
+                        }
+                        reconnectDelay = min(reconnectDelay * 2, 5_000_000_000)
+                    }
+                }
+            } catch is CancellationError {
+                // Selection/project changes intentionally cancel the old PTY
+                // attachment; the PTY itself remains owned by sessiond.
+            } catch {
+                self?.terminalErrorMessage = error.localizedDescription
+                if self?.terminalCWD == cwd { self?.terminalTask = nil }
+            }
+        }
+    }
+
+    func reconnectTerminal() {
+        terminalCWD = nil
+        ensureTerminalConnection()
+    }
+
+    func sendTerminalInput(_ data: String) {
+        terminalSubscription?.sendInput(data)
+    }
+
+    func resizeTerminal(cols: Int, rows: Int) {
+        terminalSubscription?.resize(cols: cols, rows: rows)
+    }
+
+    func continueTerminal() {
+        guard let client = runtimeClient as? any RuntimeTerminalClient,
+              let terminal = terminalInfo,
+              terminal.exited
+        else { return }
+        Task { [weak self] in
+            do {
+                let continued = try await client.continueTerminal(id: terminal.id)
+                self?.terminalInfo = continued
+                self?.ensureTerminalConnection()
+            } catch {
+                self?.terminalErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func loadSelectedSession() {
@@ -211,7 +349,8 @@ final class AppModel: ObservableObject {
                     runtimeId: session.runtimeId
                 )
                 guard let self else { return }
-                self.transcriptMessages = page.messages
+                self.mergeLoadedMessages(page.messages)
+                self.synchronizeStreamingMessage()
                 if let status { self.statusBySession[session.id] = status }
             } catch {
                 self?.errorMessage = error.localizedDescription
@@ -219,29 +358,223 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func refreshUntilSettled(
-        client: any RuntimeClient,
-        session: RuntimeSession,
-        cwd: String
-    ) async throws {
-        for _ in 0..<20 {
-            try await Task.sleep(nanoseconds: 350_000_000)
-            let page = try await client.messages(
-                sessionId: session.id,
-                cwd: cwd,
-                runtimeId: session.runtimeId
-            )
-            let status = try await client.status(
-                sessionId: session.id,
-                cwd: cwd,
-                runtimeId: session.runtimeId
-            )
-            transcriptMessages = page.messages
-            statusBySession[session.id] = status
-            if !status.isStreaming && !status.isCompacting && status.pendingMessageCount == 0 {
-                return
+    private func startSessionEventStream() {
+        stopSessionEventStream()
+        guard let session = selectedSession,
+              let client = runtimeClient as? any RuntimeEventStreamClient
+        else { return }
+
+        sessionStreamGeneration += 1
+        let generation = sessionStreamGeneration
+        lastSessionSequence = 0
+        streamingMessage = nil
+        let cwd = projectPath
+
+        sessionStreamTask = Task { [weak self] in
+            guard let self else { return }
+            var reconnectDelay: UInt64 = 250_000_000
+            while !Task.isCancelled && self.isCurrentSessionStream(generation, sessionID: session.id) {
+                let subscription = client.subscribe(
+                    sessionId: session.id,
+                    cwd: cwd,
+                    runtimeId: session.runtimeId
+                )
+                self.sessionEventSubscription = subscription
+                do {
+                    var connected = false
+                    for try await _ in subscription.ready {
+                        connected = true
+                        break
+                    }
+                    guard connected else { throw RuntimeClientError.connectionFailed("session event socket closed before handshake") }
+
+                    let snapshot = try await client.streamSnapshot(
+                        sessionId: session.id,
+                        cwd: cwd,
+                        runtimeId: session.runtimeId
+                    )
+                    guard self.isCurrentSessionStream(generation, sessionID: session.id) else {
+                        subscription.cancel()
+                        return
+                    }
+                    self.applyStreamSnapshot(snapshot, sessionID: session.id)
+                    reconnectDelay = 250_000_000
+
+                    for try await event in subscription.events {
+                        guard self.isCurrentSessionStream(generation, sessionID: session.id) else {
+                            subscription.cancel()
+                            return
+                        }
+                        self.applySessionEvent(event, sessionID: session.id)
+                    }
+                    throw RuntimeClientError.connectionFailed("session event socket closed")
+                } catch is CancellationError {
+                    subscription.cancel()
+                    return
+                } catch {
+                    subscription.cancel()
+                    guard self.isCurrentSessionStream(generation, sessionID: session.id) else { return }
+                    self.errorMessage = "Session stream reconnecting: \(error.localizedDescription)"
+                    do {
+                        try await Task.sleep(nanoseconds: reconnectDelay)
+                    } catch {
+                        return
+                    }
+                    reconnectDelay = min(reconnectDelay * 2, 5_000_000_000)
+                }
             }
         }
+    }
+
+    private func stopSessionEventStream() {
+        sessionStreamGeneration += 1
+        sessionStreamTask?.cancel()
+        sessionEventSubscription?.cancel()
+        sessionStreamTask = nil
+        sessionEventSubscription = nil
+    }
+
+    private func isCurrentSessionStream(_ generation: Int, sessionID: String) -> Bool {
+        generation == sessionStreamGeneration && selectedSessionID == sessionID
+    }
+
+    private func applyStreamSnapshot(_ snapshot: RuntimeStreamSnapshot, sessionID: String) {
+        // A lower watermark means the daemon/runtime epoch changed. The
+        // persisted history remains authoritative, so refresh it once and then
+        // continue applying events from the new epoch.
+        if snapshot.seq < lastSessionSequence {
+            lastSessionSequence = 0
+            loadSelectedSession()
+        }
+        lastSessionSequence = snapshot.seq
+        streamingMessage = snapshot.partial
+        synchronizeStreamingMessage()
+    }
+
+    private func applySessionEvent(_ event: RuntimeSessionEvent, sessionID: String) {
+        if let sequence = event.seq {
+            guard sequence > lastSessionSequence else { return }
+            lastSessionSequence = sequence
+        }
+
+        switch event.type {
+        case "message.append":
+            if let message = event.message { upsertTranscript(message) }
+        case "assistant.delta":
+            appendAssistantDelta(event.text ?? "")
+        case "assistant.thinking.delta":
+            // Thinking is intentionally not rendered as transcript content;
+            // the visible assistant text still arrives through assistant.delta.
+            break
+        case "message.end":
+            if let message = event.message {
+                upsertTranscript(message)
+            } else {
+                synchronizeStreamingMessage()
+            }
+            streamingMessage = nil
+        case "status.update":
+            if let status = event.status { statusBySession[sessionID] = status }
+        case "session.name":
+            updateSessionName(sessionID: event.sessionId ?? sessionID, name: event.name)
+        case "session.created":
+            if let session = event.session {
+                upsertSession(session)
+            }
+        case "session.error":
+            errorMessage = event.errorMessage ?? event.text ?? "The session reported an error."
+        case "tool.start":
+            if let toolCallId = event.toolCallId {
+                upsertTranscript(RuntimeMessage(
+                    id: "tool:\(toolCallId)",
+                    role: "tool",
+                    text: [event.toolName, event.summary].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ": ")
+                ))
+            }
+        case "tool.update", "tool.end":
+            if let toolCallId = event.toolCallId {
+                upsertTranscript(RuntimeMessage(
+                    id: "tool:\(toolCallId)",
+                    role: "tool",
+                    text: event.text ?? event.output ?? ""
+                ))
+            }
+        case "shell.start":
+            if let command = event.command, !command.isEmpty {
+                upsertTranscript(RuntimeMessage(id: "shell:\(lastSessionSequence)", role: "shell", text: "$ \(command)"))
+            }
+        case "shell.chunk", "command.output":
+            if let text = event.chunk ?? event.text, !text.isEmpty {
+                upsertTranscript(RuntimeMessage(id: "shell:\(lastSessionSequence)", role: "shell", text: text))
+            }
+        default:
+            break
+        }
+    }
+
+    private func appendAssistantDelta(_ delta: String) {
+        guard !delta.isEmpty else { return }
+        if let current = streamingMessage {
+            streamingMessage = RuntimeMessage(id: current.id, role: current.role, text: current.text + delta)
+        } else {
+            streamingMessage = RuntimeMessage(id: "streaming-assistant", role: "assistant", text: delta)
+        }
+        synchronizeStreamingMessage()
+    }
+
+    private func synchronizeStreamingMessage() {
+        guard let streamingMessage else { return }
+        transcriptMessages.removeAll { $0.id == streamingMessage.id }
+        transcriptMessages.append(streamingMessage)
+    }
+
+    private func mergeLoadedMessages(_ loaded: [RuntimeMessage]) {
+        var merged = loaded
+        let loadedIDs = Set(loaded.map(\.id))
+        for live in transcriptMessages where !loadedIDs.contains(live.id) {
+            // Keep events that arrived while the history request was in
+            // flight. Persisted messages normally have stable ids; the
+            // role/text fallback prevents duplication for older Pi records
+            // that do not carry an id.
+            guard !merged.contains(where: { $0.id == live.id || ($0.role == live.role && $0.text == live.text) }) else { continue }
+            merged.append(live)
+        }
+        transcriptMessages = merged
+    }
+
+    private func upsertTranscript(_ message: RuntimeMessage) {
+        if let index = transcriptMessages.firstIndex(where: { $0.id == message.id }) {
+            transcriptMessages[index] = message
+        } else if message.id == "streaming-assistant" {
+            transcriptMessages.removeAll { $0.role == "assistant" && $0.id == "streaming-assistant" }
+            transcriptMessages.append(message)
+        } else {
+            transcriptMessages.append(message)
+        }
+    }
+
+    private func upsertSession(_ session: RuntimeSession) {
+        sessions.removeAll { $0.id == session.id }
+        sessions.insert(session, at: 0)
+    }
+
+    private func updateSessionName(sessionID: String, name: String?) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let session = sessions[index]
+        sessions[index] = RuntimeSession(
+            id: session.id,
+            cwd: session.cwd,
+            runtimeId: session.runtimeId,
+            path: session.path,
+            persisted: session.persisted,
+            name: name,
+            created: session.created,
+            modified: session.modified,
+            messageCount: session.messageCount,
+            firstMessage: session.firstMessage,
+            archived: session.archived,
+            archivedAt: session.archivedAt
+        )
     }
 
     private func replaceSessions(_ sessions: [RuntimeSession]) {
@@ -251,9 +584,14 @@ final class AppModel: ObservableObject {
         self.sessions = visible
         if let selectedSessionID, visible.contains(where: { $0.id == selectedSessionID }) {
             loadSelectedSession()
+            startSessionEventStream()
         } else {
+            stopSessionEventStream()
             self.selectedSessionID = visible.first?.id
-            if self.selectedSessionID != nil { loadSelectedSession() }
+            if self.selectedSessionID != nil {
+                loadSelectedSession()
+                startSessionEventStream()
+            }
         }
     }
 
@@ -307,6 +645,7 @@ struct ContentView: View {
         }
         .task {
             model.refreshRuntime()
+            model.ensureTerminalConnection()
         }
     }
 }
@@ -319,37 +658,28 @@ struct SidebarView: View {
             get: { model.selectedSessionID },
             set: { model.selectSession($0) }
         )) {
-            Section("Project") {
-                Button {
-                    model.openProject()
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.projectName)
-                            Text(model.projectPath)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+            Section("Projects") {
+                DisclosureGroup(isExpanded: $model.isProjectExpanded) {
+                    if model.sessions.isEmpty {
+                        Label(
+                            model.isLoading ? "Loading…" : "No threads yet",
+                            systemImage: "bubble.left.and.bubble.right"
+                        )
+                        .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.sessions) { session in
+                            SessionRow(session: session, status: model.statusBySession[session.id])
+                                .padding(.leading, 12)
+                                .tag(Optional(session.id))
                         }
-                    } icon: {
-                        Image(systemName: "folder")
                     }
-                }
-                .buttonStyle(.plain)
-            }
-
-            Section("Sessions") {
-                if model.sessions.isEmpty {
-                    Label(
-                        model.isLoading ? "Loading sessions…" : "No sessions in this project",
-                        systemImage: "bubble.left.and.bubble.right"
-                    )
-                    .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.sessions) { session in
-                        SessionRow(session: session, status: model.statusBySession[session.id])
-                            .tag(Optional(session.id))
+                } label: {
+                    Button {
+                        model.openProject()
+                    } label: {
+                        Label(model.projectName, systemImage: "folder")
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -510,11 +840,47 @@ struct InspectorView: View {
             Section("Workspace") {
                 Label("Changes", systemImage: "square.and.pencil")
                 Label("Files", systemImage: "doc")
-                Label("Terminal", systemImage: "terminal")
+            }
+            Section("Terminal") {
+                if let terminal = model.terminalInfo {
+                    HStack {
+                        Label(terminal.name, systemImage: "terminal")
+                            .lineLimit(1)
+                        Spacer()
+                        if terminal.exited {
+                            Button("Continue") { model.continueTerminal() }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                    TerminalSurfaceView(
+                        controller: model.terminalSurfaceController,
+                        onInput: model.sendTerminalInput,
+                        onResize: model.resizeTerminal(cols:rows:)
+                    )
+                    .frame(minHeight: 220, idealHeight: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    Label(
+                        model.terminalErrorMessage ?? "Connecting…",
+                        systemImage: "terminal"
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                if let terminalErrorMessage = model.terminalErrorMessage {
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(terminalErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Reconnect") { model.reconnectTerminal() }
+                            .buttonStyle(.borderless)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Inspector")
+        .task { model.ensureTerminalConnection() }
     }
 }
 
@@ -543,5 +909,85 @@ private extension AppModel {
     var runtimeClientSocketDescription: String {
         if let client = runtimeClient as? UnixSocketRuntimeClient { return client.socketPath }
         return "Configured Runtime client"
+    }
+}
+
+@MainActor
+final class TerminalSurfaceController: ObservableObject {
+    weak var view: TerminalView?
+    private var pendingOutput: [String] = []
+
+    func attach(_ view: TerminalView) {
+        self.view = view
+        flush()
+    }
+
+    func feed(_ output: String) {
+        guard !output.isEmpty else { return }
+        if view == nil {
+            pendingOutput.append(output)
+            if pendingOutput.count > 64 { pendingOutput.removeFirst(pendingOutput.count - 64) }
+            return
+        }
+        view?.feed(byteArray: Array(output.utf8)[...])
+    }
+
+    private func flush() {
+        guard view != nil else { return }
+        let output = pendingOutput
+        pendingOutput.removeAll(keepingCapacity: false)
+        for chunk in output { view?.feed(byteArray: Array(chunk.utf8)[...]) }
+    }
+}
+
+struct TerminalSurfaceView: NSViewRepresentable {
+    @ObservedObject var controller: TerminalSurfaceController
+    let onInput: (String) -> Void
+    let onResize: (Int, Int) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onInput: onInput, onResize: onResize)
+    }
+
+    func makeNSView(context: Context) -> TerminalView {
+        let view = TerminalView(frame: .zero)
+        view.configureNativeColors()
+        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        view.terminalDelegate = context.coordinator
+        controller.attach(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: TerminalView, context: Context) {
+        nsView.terminalDelegate = context.coordinator
+        controller.attach(nsView)
+    }
+
+    final class Coordinator: NSObject, TerminalViewDelegate {
+        private let onInput: (String) -> Void
+        private let onResize: (Int, Int) -> Void
+
+        init(onInput: @escaping (String) -> Void, onResize: @escaping (Int, Int) -> Void) {
+            self.onInput = onInput
+            self.onResize = onResize
+        }
+
+        func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+            onResize(newCols, newRows)
+        }
+
+        func setTerminalTitle(source: TerminalView, title: String) {}
+
+        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+        func send(source: TerminalView, data: ArraySlice<UInt8>) {
+            onInput(String(decoding: data, as: UTF8.self))
+        }
+
+        func scrolled(source: TerminalView, position: Double) {}
+
+        func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+
+        func clipboardCopy(source: TerminalView, content: Data) {}
     }
 }
