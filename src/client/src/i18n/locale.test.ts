@@ -48,9 +48,7 @@ describe("app locale preference", () => {
 
 	it("interpolates message variables", () => {
 		setLocale("en", { persist: false });
-		expect(t("settings.general.description", { target: "Lab" })).toContain(
-			"Lab",
-		);
+		expect(t("settings.packages.empty", { target: "Lab" })).toContain("Lab");
 		setLocale("zh", { persist: false });
 		expect(t("settings.packages.empty", { target: "本机" })).toBe(
 			"本机 上尚未配置 Pi 包。",

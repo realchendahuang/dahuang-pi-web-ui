@@ -10,7 +10,15 @@ import {
 	defaultPiWebDataDir,
 	effectivePiWebConfig,
 	examplePiWebConfig,
+	loadPiWebConfig,
+	savePiWebConfig,
+	type LoadOptions,
 } from "./config.js";
+import {
+	AGENT_RUNTIME_IDS,
+	isAgentRuntimeId,
+	type AgentRuntimeId,
+} from "./shared/agentRuntime.js";
 import {
 	packageVersion,
 	printPiWebVersionReport,
@@ -1485,9 +1493,71 @@ async function waitForServicesRunning(
 	return servicesFullyRunning(backend);
 }
 
+interface UpOptions {
+	noInstall: boolean;
+	noOpen: boolean;
+	defaultRuntime?: AgentRuntimeId;
+}
+
+export function parseUpArgs(args: string[]): UpOptions {
+	const options: UpOptions = { noInstall: false, noOpen: false };
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i];
+		if (arg === undefined) continue;
+		if (arg === "--no-install") {
+			options.noInstall = true;
+		} else if (arg === "--no-open") {
+			options.noOpen = true;
+		} else if (arg === "--default-runtime") {
+			const value = args[i + 1];
+			if (value === undefined)
+				throw new Error("--default-runtime requires a value (pi or omp)");
+			options.defaultRuntime = parseDefaultRuntimeArg(value);
+			i += 1;
+		} else if (arg.startsWith("--default-runtime=")) {
+			options.defaultRuntime = parseDefaultRuntimeArg(
+				arg.slice("--default-runtime=".length),
+			);
+		} else {
+			throw new Error(`Unknown up option: ${arg}`);
+		}
+	}
+	return options;
+}
+
+function parseDefaultRuntimeArg(value: string): AgentRuntimeId {
+	if (!isAgentRuntimeId(value))
+		throw new Error(
+			`--default-runtime must be ${AGENT_RUNTIME_IDS.pi} or ${AGENT_RUNTIME_IDS.omp}, got ${JSON.stringify(value)}`,
+		);
+	return value;
+}
+
+/**
+ * Persist `agentRuntimes.default` for `pi-web up --default-runtime`, merging
+ * with the existing config so sibling keys (e.g. agentRuntimes.omp.command)
+ * survive.
+ */
+export function persistDefaultAgentRuntime(
+	defaultRuntime: AgentRuntimeId,
+	options: LoadOptions = {},
+): void {
+	const loaded = loadPiWebConfig(options);
+	savePiWebConfig(
+		{
+			...loaded.config,
+			agentRuntimes: {
+				...loaded.config.agentRuntimes,
+				default: defaultRuntime,
+			},
+		},
+		options,
+	);
+}
+
 async function up(args: string[]): Promise<void> {
-	const noInstall = args.includes("--no-install");
-	const noOpen = args.includes("--no-open");
+	const { noInstall, noOpen, defaultRuntime } = parseUpArgs(args);
+	if (defaultRuntime !== undefined) persistDefaultAgentRuntime(defaultRuntime);
 	const backend = requireServiceBackend("pi-web up");
 
 	if (!servicesInstalled(backend)) {
@@ -1541,7 +1611,8 @@ function help(): void {
 	console.log(`PI WEB
 
 Usage:
-  pi-web up [--no-open] [--no-install]   Bring UI up (auto service setup + open browser)
+  pi-web up [--no-open] [--no-install] [--default-runtime pi|omp]
+                                       Bring UI up (auto service setup + open browser)
   pi-web open                            Open the Web UI in a browser
   pi-web install [--dev] [--host 127.0.0.1] [--port 31415] [--config ...]
   pi-web uninstall

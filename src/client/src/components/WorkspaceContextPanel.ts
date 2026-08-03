@@ -18,14 +18,14 @@ export class WorkspaceContextPanel extends LitElement {
 	override render() {
     void this.locale.locale;
 		const context = this.context;
-		if (context === undefined) return html`<p class="muted">Loading…</p>`;
+		if (context === undefined) return html`<p class="muted">${t("common.loading")}</p>`;
 		const state = context.state;
 		const session = state.selectedSession;
 		if (session === undefined) {
 			return html`
         <div class="empty-state">
-          <h2>No session selected</h2>
-          <p>Select a session to inspect its model, context usage, and cost.</p>
+          <h2>${t("contextBar.noSessionSelected")}</h2>
+          <p>${t("empty.selectSessionToInspect")}</p>
         </div>
       `;
 		}
@@ -33,11 +33,11 @@ export class WorkspaceContextPanel extends LitElement {
 		return html`
       <div class="sections">
         <section>
-          <h3>Model</h3>
+          <h3>${t("context.model")}</h3>
           <dl>
-            <div><dt>Model</dt><dd>${status?.model?.id ?? "—"}</dd></div>
-            <div><dt>Provider</dt><dd>${status?.model?.provider ?? "—"}</dd></div>
-            <div><dt>Thinking level</dt><dd>${status?.thinkingLevel ?? "—"}</dd></div>
+            <div><dt>${t("context.model")}</dt><dd>${status?.model?.id ?? "—"}</dd></div>
+            <div><dt>${t("context.provider")}</dt><dd>${status?.model?.provider ?? "—"}</dd></div>
+            <div><dt>${t("context.thinkingLevel")}</dt><dd>${status?.thinkingLevel ?? "—"}</dd></div>
           </dl>
         </section>
         <section>
@@ -47,11 +47,11 @@ export class WorkspaceContextPanel extends LitElement {
         <section>
           <h3>${t("context.tokens")}</h3>
           <dl>
-            <div><dt>Input</dt><dd>${formatCount(status?.tokens.input)}</dd></div>
-            <div><dt>Output</dt><dd>${formatCount(status?.tokens.output)}</dd></div>
-            <div><dt>Cache read</dt><dd>${formatCount(status?.tokens.cacheRead)}</dd></div>
-            <div><dt>Cache write</dt><dd>${formatCount(status?.tokens.cacheWrite)}</dd></div>
-            <div><dt>Total</dt><dd>${formatCount(status?.tokens.total)}</dd></div>
+            <div><dt>${t("context.tokensInput")}</dt><dd>${formatCount(status?.tokens.input)}</dd></div>
+            <div><dt>${t("context.tokensOutput")}</dt><dd>${formatCount(status?.tokens.output)}</dd></div>
+            <div><dt>${t("context.tokensCacheRead")}</dt><dd>${formatCount(status?.tokens.cacheRead)}</dd></div>
+            <div><dt>${t("context.tokensCacheWrite")}</dt><dd>${formatCount(status?.tokens.cacheWrite)}</dd></div>
+            <div><dt>${t("context.tokensTotal")}</dt><dd>${formatCount(status?.tokens.total)}</dd></div>
           </dl>
         </section>
         <section>
@@ -60,7 +60,7 @@ export class WorkspaceContextPanel extends LitElement {
             <div><dt>${t("context.cost")}</dt><dd>$${formatCost(status?.cost)}</dd></div>
             <div><dt>${t("context.messages")}</dt><dd>${String(status?.messageCount ?? session.messageCount)}</dd></div>
             <div><dt>${t("context.compaction")}</dt><dd>${status?.isCompacting === true ? t("context.compacting") : t("context.idle")}</dd></div>
-            <div><dt>Streaming</dt><dd>${status?.isStreaming === true ? "Yes" : "No"}</dd></div>
+            <div><dt>${t("context.streaming")}</dt><dd>${status?.isStreaming === true ? t("common.yes") : t("common.no")}</dd></div>
           </dl>
         </section>
       </div>
@@ -83,7 +83,7 @@ export class WorkspaceContextPanel extends LitElement {
         <div class="usage-bar" role="progressbar" aria-valuenow=${Math.round(clampedPercent)} aria-valuemin="0" aria-valuemax="100" aria-label=${t("context.windowUsed")}>
           <div class=${`usage-fill ${clampedPercent >= 90 ? "critical" : clampedPercent >= 70 ? "warn" : ""}`} style=${`width:${String(clampedPercent)}%`}></div>
         </div>
-        <p class="usage-label">${tokens} / ${formatCount(usage?.contextWindow)} tokens · ${clampedPercent.toFixed(1)}% used</p>
+        <p class="usage-label">${t("context.usageLabel", { tokens, window: formatCount(usage?.contextWindow), percent: clampedPercent.toFixed(1) })}</p>
       </div>
     `;
 	}

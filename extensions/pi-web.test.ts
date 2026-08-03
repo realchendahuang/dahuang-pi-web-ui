@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseArgs, resolvePiWebCliArgs } from "./pi-web.js";
+import { parseArgs, resolvePiWebCliArgs } from "./piWebLaunch.js";
 
 describe("parseArgs", () => {
 	it("splits plain words", () => {
@@ -16,16 +16,51 @@ describe("parseArgs", () => {
 });
 
 describe("resolvePiWebCliArgs", () => {
-	it("maps bare /pi-web to up", () => {
-		expect(resolvePiWebCliArgs("")).toEqual(["up"]);
-		expect(resolvePiWebCliArgs("   ")).toEqual(["up"]);
+	it("maps bare /pi-web to up with the launching terminal's default runtime", () => {
+		expect(resolvePiWebCliArgs("", "pi")).toEqual([
+			"up",
+			"--default-runtime",
+			"pi",
+		]);
+		expect(resolvePiWebCliArgs("   ", "pi")).toEqual([
+			"up",
+			"--default-runtime",
+			"pi",
+		]);
+		expect(resolvePiWebCliArgs("", "omp")).toEqual([
+			"up",
+			"--default-runtime",
+			"omp",
+		]);
 	});
 
 	it("ignores other subcommands and only forwards --no-open", () => {
-		expect(resolvePiWebCliArgs("install")).toEqual(["up"]);
-		expect(resolvePiWebCliArgs("status")).toEqual(["up"]);
-		expect(resolvePiWebCliArgs("open")).toEqual(["up"]);
-		expect(resolvePiWebCliArgs("--no-open")).toEqual(["up", "--no-open"]);
-		expect(resolvePiWebCliArgs("up --no-open")).toEqual(["up", "--no-open"]);
+		expect(resolvePiWebCliArgs("install", "pi")).toEqual([
+			"up",
+			"--default-runtime",
+			"pi",
+		]);
+		expect(resolvePiWebCliArgs("status", "omp")).toEqual([
+			"up",
+			"--default-runtime",
+			"omp",
+		]);
+		expect(resolvePiWebCliArgs("open", "pi")).toEqual([
+			"up",
+			"--default-runtime",
+			"pi",
+		]);
+		expect(resolvePiWebCliArgs("--no-open", "pi")).toEqual([
+			"up",
+			"--default-runtime",
+			"pi",
+			"--no-open",
+		]);
+		expect(resolvePiWebCliArgs("up --no-open", "omp")).toEqual([
+			"up",
+			"--default-runtime",
+			"omp",
+			"--no-open",
+		]);
 	});
 });

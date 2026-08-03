@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { agentDirEnvSource, hasAgentDirEnvOverride, hasAgentSessionDirEnvOverride, loadPiWebConfig, parseAgentConfig, parseUploadsConfig, resolveEffectivePiWebConfig, savePiWebConfig, type AgentPathHost, type LoadOptions, type PiWebConfig } from "../config.js";
+import { agentDirEnvSource, hasAgentDirEnvOverride, hasAgentSessionDirEnvOverride, loadPiWebConfig, parseAgentConfig, parseAgentRuntimesConfig, parseUploadsConfig, PI_WEB_DEFAULT_RUNTIME_ENV, PI_WEB_OMP_AGENT_DIR_ENV, PI_WEB_OMP_COMMAND_ENV, resolveEffectivePiWebConfig, savePiWebConfig, type AgentPathHost, type LoadOptions, type PiWebConfig } from "../config.js";
 import type { PiWebAgentDirEnvSource, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues } from "../shared/apiTypes.js";
 import { isPiWebPluginId } from "../shared/pluginIds.js";
 
@@ -16,6 +16,7 @@ export const SELECTED_MACHINE_CONFIG_KEYS = [
   "spawnSessions",
   "subsessions",
   "agent",
+  "agentRuntimes",
 ] as const satisfies readonly (keyof PiWebConfigValues)[];
 
 const SELECTED_MACHINE_CONFIG_KEY_SET = new Set<string>(SELECTED_MACHINE_CONFIG_KEYS);
@@ -132,6 +133,7 @@ function parseConfigRequest(value: unknown, agentPathHost: AgentPathHost = "curr
   const spawnSessions = value["spawnSessions"];
   const subsessions = value["subsessions"];
   const agent = value["agent"];
+  const agentRuntimes = value["agentRuntimes"];
   if (host !== undefined) {
     if (typeof host !== "string") throw new Error("PI WEB config host must be a string");
     config.host = host;
@@ -155,6 +157,7 @@ function parseConfigRequest(value: unknown, agentPathHost: AgentPathHost = "curr
     config.subsessions = subsessions;
   }
   if (agent !== undefined) config.agent = parseAgentRequest(agent, agentPathHost);
+  if (agentRuntimes !== undefined) config.agentRuntimes = parseAgentRuntimesConfig(agentRuntimes, "request", agentPathHost);
   return config;
 }
 
@@ -167,6 +170,7 @@ function pickSelectedMachineConfig(config: PiWebConfigValues): PiWebConfig {
     ...(config.spawnSessions !== undefined ? { spawnSessions: config.spawnSessions } : {}),
     ...(config.subsessions !== undefined ? { subsessions: config.subsessions } : {}),
     ...(config.agent !== undefined ? { agent: config.agent } : {}),
+    ...(config.agentRuntimes !== undefined ? { agentRuntimes: config.agentRuntimes } : {}),
   };
 }
 
@@ -292,6 +296,9 @@ function piWebConfigEnvOverrides(env: NodeJS.ProcessEnv, config: PiWebConfig = {
     agentDir: hasAgentDirEnvOverride(env, command),
     ...(dirEnvSource === undefined ? {} : { agentDirSource: dirEnvSource }),
     agentSessionDir: hasAgentSessionDirEnvOverride(env, command),
+    ompCommand: isEnvSet(env[PI_WEB_OMP_COMMAND_ENV]),
+    ompAgentDir: isEnvSet(env[PI_WEB_OMP_AGENT_DIR_ENV]),
+    defaultRuntime: isEnvSet(env[PI_WEB_DEFAULT_RUNTIME_ENV]),
   };
 }
 

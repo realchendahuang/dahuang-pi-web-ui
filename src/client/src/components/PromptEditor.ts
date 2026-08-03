@@ -41,7 +41,7 @@ import {
 	inputModesEqual,
 	type InputMode,
 } from "../inputModes";
-import { machineSessionKey } from "../machineKeys";
+import { machineRuntimeSessionKey } from "../machineKeys";
 import {
 	detectPromptCompletionTrigger,
 	fileCompletionInsertText,
@@ -67,6 +67,7 @@ import {
 	renderStopIcon,
 	renderThinkingGauge,
 } from "./promptEditorIcons";
+import type { AgentRuntimeId } from "../../../shared/agentRuntime";
 import {
 	thinkingGauge,
 	thinkingLevelLabel,
@@ -79,12 +80,17 @@ type PendingAttachment = CapturedAttachment & { id: string };
 export class PromptEditor extends LitElement {
 	@property({ type: Boolean }) disabled = false;
 	@property() sessionId?: string;
+	@property() runtimeId?: AgentRuntimeId;
 	@property() cwd?: string;
 	@property() machineId = "local";
 	@property() projectId?: string;
 	@property() workspaceId?: string;
 	@property({ type: Boolean }) workspaceScopedFileSuggestions = false;
 	@property({ type: Boolean }) canSteer = false;
+	@property({ type: Boolean }) canAttach = true;
+	@property({ type: Boolean }) canUseCommands = true;
+	@property({ type: Boolean }) canSelectModel = true;
+	@property({ type: Boolean }) canSelectThinking = true;
 	@property({ type: Boolean }) isCompacting = false;
 	@property({ type: Boolean }) canStop = false;
 	@property({ attribute: false }) status?: SessionStatus;
@@ -127,16 +133,32 @@ export class PromptEditor extends LitElement {
 	private explicitShiftKeyActive = false;
 
 	protected override willUpdate(changed: PropertyValues<this>) {
-		if (!changed.has("sessionId") && !changed.has("machineId")) return;
+		if (
+			!changed.has("sessionId") &&
+			!changed.has("runtimeId") &&
+			!changed.has("machineId")
+		)
+			return;
 		const previousSessionId = changed.has("sessionId")
 			? changed.get("sessionId")
 			: this.sessionId;
+		const previousRuntimeId = changed.has("runtimeId")
+			? changed.get("runtimeId")
+			: this.runtimeId;
 		const previousMachineId = changed.has("machineId")
 			? changed.get("machineId")
 			: this.machineId;
-		const previousKey = draftStorageKey(previousMachineId, previousSessionId);
+		const previousKey = draftStorageKey(
+			previousMachineId,
+			previousRuntimeId,
+			previousSessionId,
+		);
 		if (previousKey !== undefined) saveDraft(previousKey, this.draft);
-		const currentKey = draftStorageKey(this.machineId, this.sessionId);
+		const currentKey = draftStorageKey(
+			this.machineId,
+			this.runtimeId,
+			this.sessionId,
+		);
 		this.draft = currentKey !== undefined ? loadDraft(currentKey) : "";
 		this.currentInputMode = inputModeForDraft(this.draft);
 		this.completions = [];
@@ -160,7 +182,11 @@ export class PromptEditor extends LitElement {
 
 	protected override updated(changed: PropertyValues) {
 		if (changed.has("disabled")) this.updateEditorDisabledState();
-		if (changed.has("sessionId") || changed.has("machineId"))
+		if (
+			changed.has("sessionId") ||
+			changed.has("runtimeId") ||
+			changed.has("machineId")
+		)
 			this.syncEditorDoc();
 	}
 
@@ -173,6 +199,7 @@ export class PromptEditor extends LitElement {
 	override render() {
 		void this.locale.locale;
 		this.syncPlaceholder();
+		const composerRuntime = this.runtimeId === "omp" ? "OMP" : "Pi";
 		const shellInputMode =
 			this.currentInputMode.kind === "shell"
 				? this.currentInputMode
@@ -191,13 +218,13 @@ export class PromptEditor extends LitElement {
 				void this.handleDrop(event);
 			}}>
         <div class="editor-wrap">
-          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}`} aria-label=${t("composer.aria")} aria-disabled=${this.disabled ? "true" : "false"}></div>
+          <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}`} aria-label=${t("composer.aria", { runtime: composerRuntime })} aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(
 						event: Event,
 					) => {
 						void this.handleFileInput(event);
 					}} />
-          <button class="editor-attach icon-button" ?disabled=${busy} title=${t("composer.attach")} aria-label=${t("composer.attach")} @click=${() => {
+          <button class="editor-attach icon-button" ?disabled=${busy || !this.canAttach} title=${t("composer.attach")} aria-label=${t("composer.attach")} @click=${() => {
 						this.attachmentInput?.click();
 					}}>${renderAttachIcon()}</button>
           ${shellMode ? html`<div class="mode-hint">${t("composer.shellHint")}${shellInputMode.excludeFromContext ? t("composer.shellExcluded") : ""}</div>` : null}
@@ -233,7 +260,7 @@ export class PromptEditor extends LitElement {
 
 	replaceText(text: string): void {
 		this.draft = text;
-		const key = draftStorageKey(this.machineId, this.sessionId);
+		const key = draftStorageKey(this.machineId, this.runtimeId, this.sessionId);
 		if (key !== undefined) saveDraft(key, text);
 
 		const editor = this.editor;
@@ -271,8 +298,8 @@ export class PromptEditor extends LitElement {
 		const thinking = thinkingLevelLabel(status.thinkingLevel);
 		return html`
       <div class="compact-status" aria-label=${t("composer.statusAria")}>
-        <button class="select-model" title=${t("composer.selectModel")} @click=${() => this.onSelectModel?.()}>${provider}${model}</button>
-        <button class="select-thinking icon-button" title=${t("composer.thinkingLevel", { level: thinking })} aria-label=${t("composer.thinkingLevel", { level: thinking })} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
+        <button class="select-model" ?disabled=${!this.canSelectModel} title=${t("composer.selectModel")} @click=${() => this.onSelectModel?.()}>${provider}${model}</button>
+        <button class="select-thinking icon-button" ?disabled=${!this.canSelectThinking} title=${t("composer.thinkingLevel", { level: thinking })} aria-label=${t("composer.thinkingLevel", { level: thinking })} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
       </div>
     `;
 	}
@@ -429,7 +456,9 @@ export class PromptEditor extends LitElement {
 						blur: () => this.resetEditorModifierState(),
 					}),
 					this.placeholderCompartment.of(
-						placeholder(t("composer.placeholder")),
+						placeholder(t("composer.placeholder", {
+							runtime: this.runtimeId === "omp" ? "OMP" : "Pi",
+						})),
 					),
 					this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
 					this.readOnlyCompartment.of(EditorState.readOnly.of(this.disabled)),
@@ -483,14 +512,16 @@ export class PromptEditor extends LitElement {
 	private syncPlaceholder(): void {
 		this.editor?.dispatch({
 			effects: this.placeholderCompartment.reconfigure(
-				placeholder(t("composer.placeholder")),
+				placeholder(t("composer.placeholder", {
+					runtime: this.runtimeId === "omp" ? "OMP" : "Pi",
+				})),
 			),
 		});
 	}
 
 	private updateDraft(value: string) {
 		this.draft = value;
-		const key = draftStorageKey(this.machineId, this.sessionId);
+		const key = draftStorageKey(this.machineId, this.runtimeId, this.sessionId);
 		if (key !== undefined) saveDraft(key, this.draft);
 		const nextInputMode = inputModeForDraft(this.draft);
 		if (!inputModesEqual(nextInputMode, this.currentInputMode))
@@ -508,13 +539,23 @@ export class PromptEditor extends LitElement {
 		}
 		if (
 			trigger.kind === "command" &&
+			this.canUseCommands &&
 			this.sessionId !== undefined &&
 			this.sessionId !== "" &&
 			this.cwd !== undefined &&
 			this.cwd !== ""
 		) {
 			const commands = await api
-				.commands({ id: this.sessionId, cwd: this.cwd }, this.machineId)
+				.commands(
+					{
+						id: this.sessionId,
+						cwd: this.cwd,
+						...(this.runtimeId === undefined
+							? {}
+							: { runtimeId: this.runtimeId }),
+					},
+					this.machineId,
+				)
 				.catch(emptySlashCommands);
 			if (version !== this.requestVersion) return;
 			this.completions = commands
@@ -706,7 +747,7 @@ export class PromptEditor extends LitElement {
 	private resetComposer() {
 		this.draft = "";
 		this.currentInputMode = { kind: "normal" };
-		const key = draftStorageKey(this.machineId, this.sessionId);
+		const key = draftStorageKey(this.machineId, this.runtimeId, this.sessionId);
 		if (key !== undefined) clearDraft(key);
 		this.completions = [];
 		this.attachments = [];
@@ -739,11 +780,13 @@ function sessionStatusRenderEqual(
 
 function draftStorageKey(
 	machineId: unknown,
+	runtimeId: unknown,
 	sessionId: unknown,
 ): string | undefined {
 	if (typeof machineId !== "string" || machineId === "") return undefined;
+	if (typeof runtimeId !== "string" || runtimeId === "") return undefined;
 	if (typeof sessionId !== "string" || sessionId === "") return undefined;
-	return machineSessionKey(machineId, sessionId);
+	return machineRuntimeSessionKey(machineId, runtimeId, sessionId);
 }
 
 function emptySlashCommands(): SlashCommand[] {

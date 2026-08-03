@@ -5,7 +5,7 @@
 [![Node.js](https://img.shields.io/node/v/@jmfederico/pi-web)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**PI WEB is a web UI for [Pi Coding Agent](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) that keeps agent sessions running in real workspaces on your machine or server.**
+**PI WEB is a persistent web control plane for [Pi Coding Agent](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) and [OMP](https://github.com/can1357/oh-my-pi), running agent sessions in real workspaces on your machine or server.**
 
 Run agents where your code, tools, credentials, and build caches live. Supervise them from any browser.
 
@@ -21,7 +21,7 @@ Agentic development works better when the work environment is persistent.
 
 PI WEB lets you:
 
-- keep Pi Coding Agent sessions alive after browser disconnects;
+- keep Pi and OMP agent sessions alive after browser disconnects;
 - run agents inside real repositories and git worktrees;
 - supervise multiple sessions in parallel;
 - switch between laptop, phone, tablet, and desktop;
@@ -36,7 +36,8 @@ Requirements:
 
 - Node.js 22.19.0 or newer
 - npm
-- Pi Coding Agent `>=0.81.1 <0.82`, configured for your user
+- Pi Coding Agent `>=0.81.1 <0.82`, configured for your user (embedded Pi runtime)
+- OMP installed and configured in its own profile if you want the optional OMP runtime
 - git and the development tools your agents need
 
 ### Plugin-style (recommended with Pi)
@@ -162,32 +163,22 @@ Project-local PI WEB config lives at:
 <project>/.pi-web/config.json
 ```
 
-Common configuration includes host/port, path access, uploads, PI WEB plugin enablement, shortcuts, and session daemon options. In Settings, machine-affecting config targets the selected machine; gateway host/port/allowed-hosts, remote machine registration, tokens, and keyboard shortcuts stay local.
+Common configuration includes host/port, path access, uploads, isolated Pi/OMP runtime profiles, PI WEB plugin enablement, shortcuts, and session daemon options. In Settings, machine-affecting config targets the selected machine; gateway host/port/allowed-hosts, remote machine registration, tokens, and keyboard shortcuts stay local.
 
 Read more: [Configuration reference](https://pi-web.dev/config)
 
 ## Development
 
-Clone the repository and run:
+Clone the repository and run the rapid UI development environment:
 
 ```bash
 npm install
-npm run dev
+npm run dev:ui
 ```
 
-Open the Vite URL, usually:
+Open the Vite URL, usually `http://localhost:31416`. It hot-reloads client changes and uses a separate dev API on port `31417`, leaving the long-lived session daemon running.
 
-```text
-http://localhost:31416
-```
-
-For the split development setup:
-
-```bash
-npm run dev:sessiond
-npm run dev:web
-npm run dev:client
-```
+See [the development workflow](./docs/development.md) for the full service layout, port override, and validation steps.
 
 Validate changes with:
 

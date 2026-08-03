@@ -8,6 +8,7 @@ import {
 import { customElement, property, state } from "lit/decorators.js";
 import {
 	DEFAULT_WORKSPACE_UPLOADS_FOLDER,
+	type AgentRuntimesResponse,
 	type PiWebConfigEnvOverrides,
 	type PiWebConfigResponse,
 	type PiWebConfigValues,
@@ -20,22 +21,24 @@ import {
 	t,
 	type AppLocale,
 } from "../../i18n";
+import type { AgentRuntimeId } from "../../../../shared/agentRuntime";
 import "./SettingsPanelFrame";
 import type { SettingsNotice } from "./SettingsPanelFrame";
 import {
+	agentRuntimesConfigFromDraft,
+	agentRuntimesDefaultConfigPatch,
 	emptyGatewayServerConfigDraft,
 	emptyMachineAccessConfigDraft,
+	emptyOmpRuntimeConfigDraft,
 	gatewayServerConfigFromDraft,
 	gatewayServerDraftFromConfig,
 	machineAccessConfigPatchFromDraft,
 	machineAccessDraftFromConfig,
+	ompRuntimeDraftFromConfig,
 	type GatewayServerConfigDraft,
 	type MachineAccessConfigDraft,
+	type OmpRuntimeConfigDraft,
 } from "./settingsConfigDraft";
-
-function generalDescription(targetLabel: string): string {
-	return t("settings.general.description", { target: targetLabel });
-}
 
 @customElement("settings-general-panel")
 export class SettingsGeneralPanel extends LitElement {
@@ -52,6 +55,9 @@ export class SettingsGeneralPanel extends LitElement {
 	@property() machineError = "";
 	@property() savedMessage = "";
 	@property() targetLabel = "selected machine";
+	@property({ attribute: false }) agentRuntimeCatalog:
+		| AgentRuntimesResponse
+		| undefined;
 	@property({ attribute: false }) onReload?: () => void | Promise<void>;
 	@property({ attribute: false }) onReloadMachine?: () => void | Promise<void>;
 	@property({ attribute: false }) onSave?: (
@@ -64,8 +70,11 @@ export class SettingsGeneralPanel extends LitElement {
 		emptyGatewayServerConfigDraft();
 	@state() private machineDraft: MachineAccessConfigDraft =
 		emptyMachineAccessConfigDraft();
+	@state() private ompDraft: OmpRuntimeConfigDraft =
+		emptyOmpRuntimeConfigDraft();
 	@state() private gatewayLocalError = "";
 	@state() private machineLocalError = "";
+	@state() private runtimesLocalError = "";
 	private readonly locale = new LocaleController(this);
 
 	protected override willUpdate(changed: PropertyValues<this>): void {
@@ -83,6 +92,10 @@ export class SettingsGeneralPanel extends LitElement {
 				this.machineConfigResponse.config,
 			);
 			this.machineLocalError = "";
+			this.ompDraft = ompRuntimeDraftFromConfig(
+				this.machineConfigResponse.config,
+			);
+			this.runtimesLocalError = "";
 		}
 	}
 
@@ -91,7 +104,6 @@ export class SettingsGeneralPanel extends LitElement {
 		return html`
       <settings-panel-frame
         heading=${t("settings.general.heading")}
-        .description=${generalDescription(this.targetLabel)}
         actionLabel=${t("common.reload")}
         .actionDisabled=${this.loading || this.machineLoading}
         .notices=${this.panelNotices()}
@@ -100,6 +112,7 @@ export class SettingsGeneralPanel extends LitElement {
 				}}
       >
         <div class="settings-sections">
+          ${this.renderAgentRuntimeStatus()}
           ${this.renderLanguageSettings()}
           ${this.renderGatewayServerSettings()}
           ${this.renderSelectedMachineAccessSettings()}
@@ -108,13 +121,117 @@ export class SettingsGeneralPanel extends LitElement {
     `;
 	}
 
+	private renderAgentRuntimeStatus(): TemplateResult | null {
+		const catalog = this.agentRuntimeCatalog;
+		if (catalog === undefined) return null;
+		const machineConfig = this.machineConfigResponse;
+		const overrides = machineConfig?.envOverrides;
+		const defaultLocked = overrides?.defaultRuntime === true;
+		const ompCommandLocked = overrides?.ompCommand === true;
+		const ompDirLocked = overrides?.ompAgentDir === true;
+		const effectiveRuntimes = machineConfig?.effectiveConfig.agentRuntimes;
+		const effectiveDefault =
+			effectiveRuntimes?.default ?? catalog.defaultRuntimeId;
+		// When an environment override pins a value, show the effective value
+		// rather than the stale config-file draft (same pattern as the sessiond
+		// panel's locked agent profile fields).
+		const ompCommand = ompCommandLocked
+			? (effectiveRuntimes?.omp?.command ?? this.ompDraft.command)
+			: this.ompDraft.command;
+		const ompDir = ompDirLocked
+			? (effectiveRuntimes?.omp?.dir ?? this.ompDraft.dir)
+			: this.ompDraft.dir;
+		const editingDisabled = this.machineLoading || this.saving;
+		return html`
+			<section class="settings-card" aria-label=${t("settings.general.runtimesHeading")}>
+				<div class="card-heading">
+					<h3>${t("settings.general.runtimesHeading")}</h3>
+				</div>
+				${catalog.runtimes.map(
+					(runtime) => html`
+					<div class="config-path-card runtime-status-card">
+						<span class="runtime-badges">
+							<strong>${runtime.label}</strong>
+							<span class="status-badge">${runtime.available ? t("settings.general.runtimeAvailable") : t("settings.general.runtimeUnavailable")}</span>
+							${runtime.id === catalog.defaultRuntimeId ? html`<span class="status-badge">${t("common.default")}</span>` : null}
+						</span>
+						<code>${runtime.command}</code>
+						<code>${runtime.profileDir}</code>
+						<small>${runtime.version === undefined ? "" : `v${runtime.version} `}${runtime.protocolVersion === undefined ? "" : `RPC v${String(runtime.protocolVersion)} `}${runtime.unavailableReason ?? ""}</small>
+					</div>
+				`,
+				)}
+				${this.renderRuntimeMessages()}
+				${
+					machineConfig === undefined
+						? null
+						: html`
+					<div class="field">
+						<span class="field-heading">
+							<span>${t("settings.general.defaultRuntime")}</span>
+							${defaultLocked ? html`<span class="override-badge">${t("common.envOverride")}</span>` : null}
+						</span>
+						<div class="language-options" role="radiogroup" aria-label=${t("settings.general.defaultRuntime")}>
+							${catalog.runtimes.map(
+								(runtime) => html`
+								<label class=${effectiveDefault === runtime.id ? "language-option selected" : "language-option"}>
+									<input
+										type="radio"
+										name="default-agent-runtime"
+										.value=${runtime.id}
+										.checked=${effectiveDefault === runtime.id}
+										?disabled=${editingDisabled || defaultLocked || !runtime.available}
+										@change=${() => {
+											void this.changeDefaultRuntime(runtime.id);
+										}}
+									>
+									<span>${runtime.label}</span>
+								</label>
+							`,
+							)}
+						</div>
+					</div>
+					<form class="config-form" @submit=${(event: Event) => {
+						void this.saveAgentRuntimesConfig(event);
+					}}>
+						<label class="field">
+							<span class="field-heading">
+								<span>${t("settings.general.ompCommand")}</span>
+								${ompCommandLocked ? html`<span class="override-badge">${t("common.envOverride")}</span>` : null}
+							</span>
+							<input .value=${ompCommand} placeholder="omp" autocomplete="off" spellcheck="false" ?disabled=${editingDisabled || ompCommandLocked} @input=${(
+								event: Event,
+							) => {
+								this.updateOmpDraft({ command: inputValue(event) });
+							}}>
+						</label>
+						<label class="field">
+							<span class="field-heading">
+								<span>${t("settings.general.ompDir")}</span>
+								${ompDirLocked ? html`<span class="override-badge">${t("common.envOverride")}</span>` : null}
+							</span>
+							<input .value=${ompDir} placeholder="~/.omp/agent" autocomplete="off" spellcheck="false" ?disabled=${editingDisabled || ompDirLocked} @input=${(
+								event: Event,
+							) => {
+								this.updateOmpDraft({ dir: inputValue(event) });
+							}}>
+						</label>
+						<footer class="form-actions">
+							<button class="primary" ?disabled=${editingDisabled || (ompCommandLocked && ompDirLocked)}>${this.saving ? t("common.saving") : t("settings.general.saveRuntimes")}</button>
+						</footer>
+					</form>
+				`
+				}
+			</section>
+		`;
+	}
+
 	private renderLanguageSettings(): TemplateResult {
 		const active = getLocale();
 		return html`
       <section class="settings-card" aria-label=${t("settings.language.heading")}>
         <div class="card-heading">
           <h3>${t("settings.language.heading")}</h3>
-          <p>${t("settings.language.description")}</p>
         </div>
         <div class="language-options" role="radiogroup" aria-label=${t("settings.language.heading")}>
           ${APP_LOCALES.map(
@@ -148,7 +265,6 @@ export class SettingsGeneralPanel extends LitElement {
       <section class="settings-card" aria-label=${t("settings.general.gatewayHeading")}>
         <div class="card-heading">
           <h3>${t("settings.general.gatewayHeading")}</h3>
-          <p>${t("settings.general.gatewayIntro")}</p>
         </div>
         ${
 					config === undefined && this.loading
@@ -172,7 +288,6 @@ export class SettingsGeneralPanel extends LitElement {
 							) => {
 								this.updateGatewayDraft({ host: inputValue(event) });
 							}}>
-              <small>${t("settings.general.hostHint")}</small>
             </label>
 
             <label class="field">
@@ -185,7 +300,6 @@ export class SettingsGeneralPanel extends LitElement {
 							) => {
 								this.updateGatewayDraft({ port: inputValue(event) });
 							}}>
-              <small>${t("settings.general.portHint")}</small>
             </label>
 
             <div class="field">
@@ -211,7 +325,6 @@ export class SettingsGeneralPanel extends LitElement {
 									allowedHostsText: textAreaValue(event),
 								});
 							}}></textarea>
-              <small>${t("settings.general.allowedHostsHint")}</small>
             </div>
 
             ${this.renderGatewayEffectiveConfig()}
@@ -232,7 +345,6 @@ export class SettingsGeneralPanel extends LitElement {
       <section class="settings-card" aria-label=${t("settings.general.machineHeading")}>
         <div class="card-heading">
           <h3>${t("settings.general.machineHeading")}</h3>
-          <p>${t("settings.general.machineIntro", { target: this.targetLabel })}</p>
         </div>
         ${this.renderMachineMessages()}
         ${
@@ -258,7 +370,6 @@ export class SettingsGeneralPanel extends LitElement {
 									allowedPathsText: textAreaValue(event),
 								});
 							}}></textarea>
-              <small>${t("settings.general.externalRootsHint")}</small>
             </label>
 
             <label class="field">
@@ -272,7 +383,6 @@ export class SettingsGeneralPanel extends LitElement {
 									uploadDefaultFolder: inputValue(event),
 								});
 							}}>
-              <small>${t("settings.general.uploadFolderHint", { default: DEFAULT_WORKSPACE_UPLOADS_FOLDER })}</small>
             </label>
 
             ${this.renderMachineEffectiveConfig()}
@@ -305,6 +415,11 @@ export class SettingsGeneralPanel extends LitElement {
 		const error = this.machineLocalError || this.machineError;
 		if (error === "") return null;
 		return html`<div class="message error-message">${error}</div>`;
+	}
+
+	private renderRuntimeMessages(): TemplateResult | null {
+		if (this.runtimesLocalError === "") return null;
+		return html`<div class="message error-message">${this.runtimesLocalError}</div>`;
 	}
 
 	private renderOverrideBadge(
@@ -373,6 +488,40 @@ export class SettingsGeneralPanel extends LitElement {
 		}
 	}
 
+	private async saveAgentRuntimesConfig(event: Event): Promise<void> {
+		event.preventDefault();
+		this.runtimesLocalError = "";
+		try {
+			await this.onSaveMachineConfig?.(
+				agentRuntimesConfigFromDraft(
+					this.ompDraft,
+					this.machineConfigResponse?.config ?? {},
+				),
+			);
+		} catch (error) {
+			this.runtimesLocalError = errorMessage(error);
+		}
+	}
+
+	private async changeDefaultRuntime(runtimeId: AgentRuntimeId): Promise<void> {
+		this.runtimesLocalError = "";
+		try {
+			await this.onSaveMachineConfig?.(
+				agentRuntimesDefaultConfigPatch(
+					runtimeId,
+					this.machineConfigResponse?.config ?? {},
+				),
+			);
+		} catch (error) {
+			this.runtimesLocalError = errorMessage(error);
+		}
+	}
+
+	private updateOmpDraft(patch: Partial<OmpRuntimeConfigDraft>): void {
+		this.ompDraft = { ...this.ompDraft, ...patch };
+		this.runtimesLocalError = "";
+	}
+
 	private updateGatewayDraft(patch: Partial<GatewayServerConfigDraft>): void {
 		this.gatewayDraft = { ...this.gatewayDraft, ...patch };
 		this.gatewayLocalError = "";
@@ -411,6 +560,8 @@ export class SettingsGeneralPanel extends LitElement {
     textarea { resize: vertical; min-height: 94px; font-family: var(--pi-control-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     textarea:disabled { opacity: .55; }
     .override-badge { border: 1px solid var(--pi-warning-border); border-radius: 999px; color: var(--pi-warning); background: var(--pi-warning-surface); padding: 2px 7px; font-size: 11px; font-weight: 600; text-transform: none; }
+    .runtime-badges { display: flex; align-items: center; gap: 8px; }
+    .status-badge { border: 1px solid var(--pi-border); border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 600; text-transform: none; }
     .effective-card { display: grid; gap: 10px; }
     .effective-card dl { display: grid; gap: 8px; margin: 0; }
     .effective-card dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; align-items: baseline; }

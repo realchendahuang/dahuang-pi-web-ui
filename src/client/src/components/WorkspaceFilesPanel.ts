@@ -52,8 +52,8 @@ export class WorkspaceFilesPanel extends LitElement {
         @drop=${this.handleDrop}
       >
         <section class="toolbar">
-          <strong>Files</strong>
-          ${context.fileTreeStale ? html`<span class="stale">stale</span>` : null}
+          <strong>${t("panel.files")}</strong>
+          ${context.fileTreeStale ? html`<span class="stale">${t("git.stale")}</span>` : null}
           <div class="toolbar-actions">
             <button @click=${this.openFilePicker}>${t("files.uploadBtn")}</button>
             <button @click=${context.onRefreshFiles}>${t("files.refresh")}</button>
@@ -63,7 +63,7 @@ export class WorkspaceFilesPanel extends LitElement {
         ${this.renderUploadProgress(context)}
         <section class="split">
           <div class="list tree">
-            ${context.fileTree.length === 0 ? html`<p class="muted">No files loaded.</p>` : context.fileTree.map((entry) => this.renderTreeEntry(context, entry, 0))}
+            ${context.fileTree.length === 0 ? html`<p class="muted">${t("empty.noFilesLoaded")}</p>` : context.fileTree.map((entry) => this.renderTreeEntry(context, entry, 0))}
           </div>
           <div class="viewer">
             ${this.renderFileViewer(context)}
@@ -104,7 +104,7 @@ export class WorkspaceFilesPanel extends LitElement {
     const file = context.selectedFileContent;
     // workspaceFileViewerStatusLabel already returned for the undefined/binary
     // cases above; this guard only narrows the type for the code viewer path.
-    if (file === undefined) return html`<p class="muted">Select a file.</p>`;
+    if (file === undefined) return html`<p class="muted">${t("files.selectFile")}</p>`;
     if (file.mediaType === "image") return this.renderImageViewer(context, file);
     loadCodeViewer();
     return html`
@@ -154,7 +154,7 @@ export class WorkspaceFilesPanel extends LitElement {
         <div class="upload-batch-heading">
           <div>
             <strong>${uploadBatchTitle(batch)}</strong>
-            <small>${batch.destinationFolder === "" ? "workspace root" : batch.destinationFolder}</small>
+            <small>${batch.destinationFolder === "" ? t("files.workspaceRoot") : batch.destinationFolder}</small>
           </div>
           <span>${uploadBatchStatusLabel(batch)}</span>
         </div>
@@ -211,7 +211,7 @@ export class WorkspaceFilesPanel extends LitElement {
               </label>
             </div>
             <section class="review-files" aria-label=${t("files.reviewFiles")}>
-              <strong>${fileCount === 1 ? "File" : "Files"}</strong>
+              <strong>${t("files.reviewFiles")}</strong>
               ${review.files.map((file) => html`
                 <div class="review-file">
                   <span>${file.name}</span>
@@ -415,9 +415,9 @@ export function workspaceFileViewerStatusLabel(
 ): string | undefined {
   const file = context.selectedFileContent;
   if (context.selectedFilePath === undefined || context.selectedFilePath === "") return t("files.selectFile");
-  if (file === undefined) return `Loading ${context.selectedFilePath}…`;
+  if (file === undefined) return t("files.loadingFile", { path: context.selectedFilePath });
   if (file.mediaType === "image") return undefined;
-  if (file.binary) return `Binary file: ${file.path} · ${formatFileSize(file.size)}`;
+  if (file.binary) return t("files.binaryFile", { path: file.path, size: formatFileSize(file.size) });
   return undefined;
 }
 
@@ -448,25 +448,25 @@ function isFileDrag(event: DragEvent): boolean {
 
 function uploadSummaryLabel(batches: readonly WorkspaceUploadBatchState[]): string {
   const uploading = batches.filter((batch) => batch.status === "uploading").length;
-  return uploading === 0 ? `${String(batches.length)} recent` : `${String(uploading)} uploading`;
+  return uploading === 0 ? t("files.summaryRecent", { count: batches.length }) : t("files.summaryUploading", { count: uploading });
 }
 
 function uploadBatchTitle(batch: WorkspaceUploadBatchState): string {
   const count = batch.files.length;
-  const files = count === 1 ? "file" : "files";
+  const vars = { count, files: count === 1 ? "file" : "files" };
   switch (batch.status) {
-    case "completed": return `Uploaded ${String(count)} ${files}`;
-    case "error": return `Upload failed for ${String(count)} ${files}`;
-    case "cancelled": return `Upload cancelled for ${String(count)} ${files}`;
-    case "uploading": return `Uploading ${String(count)} ${files}`;
+    case "completed": return t("files.uploadedTitle", vars);
+    case "error": return t("files.uploadFailedTitle", vars);
+    case "cancelled": return t("files.uploadCancelledTitle", vars);
+    case "uploading": return t("files.uploadingTitle", vars);
   }
 }
 
 export function uploadBatchStatusLabel(batch: WorkspaceUploadBatchState): string {
   switch (batch.status) {
-    case "completed": return "Done";
-    case "error": return "Failed";
-    case "cancelled": return "Cancelled";
+    case "completed": return t("common.done");
+    case "error": return t("tool.failed");
+    case "cancelled": return t("tool.cancelled");
     case "uploading": return formatPercent(batch.percent);
   }
 }
@@ -477,17 +477,17 @@ export function uploadBatchProgressValue(batch: WorkspaceUploadBatchState): numb
 
 function uploadFileStatusLabel(file: WorkspaceUploadFileState): string {
   switch (file.status) {
-    case "pending": return "Pending";
+    case "pending": return t("tool.pending");
     case "uploading": return formatPercent(file.percent);
-    case "completed": return "Done";
-    case "error": return "Error";
-    case "cancelled": return "Cancelled";
+    case "completed": return t("common.done");
+    case "error": return t("common.error");
+    case "cancelled": return t("tool.cancelled");
   }
 }
 
 function uploadFileDetail(file: WorkspaceUploadFileState): string {
   if (file.error !== undefined) return file.error;
-  if (file.response !== undefined) return `Wrote ${file.response.path}`;
+  if (file.response !== undefined) return t("files.wrotePath", { path: file.response.path });
   return `${file.path} · ${formatFileSize(file.loaded)} / ${formatFileSize(file.total)}`;
 }
 

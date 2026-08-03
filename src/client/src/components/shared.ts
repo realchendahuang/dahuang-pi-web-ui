@@ -268,6 +268,8 @@ export const listStyles = css`
   .section-toggle .section-selected { display: block; color: var(--pi-text); font-size: 12px; font-weight: 600; line-height: 1.25; text-transform: none; }
   .section-toggle .section-count { flex: 0 0 auto; display: inline; color: var(--pi-muted); font-size: inherit; }
   .section-toggle small { display: inline; color: inherit; font-size: inherit; }
+  .section-name { display: inline-flex; align-items: center; gap: 5px; }
+  .section-name .lucide-icon { flex: 0 0 auto; color: var(--pi-muted); }
   .action-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; margin: 1px 0; cursor: pointer; }
   .action-row:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; border-radius: var(--pi-radius-sm, 8px); }
   .action-row.selected .action-main { background: var(--pi-surface-secondary, var(--pi-selection-bg)); box-shadow: inset 2px 0 0 var(--pi-border-strong, var(--pi-accent)); }

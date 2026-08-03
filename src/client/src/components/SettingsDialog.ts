@@ -9,10 +9,13 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { AppAction } from "../actions";
 import {
 	configApi,
+	ompConfigApi,
 	piPackagesApi,
 	pluginsApi,
+	type AgentRuntimesResponse,
 	type Machine,
 	type MachineRuntime,
+	type OmpConfigResponse,
 	type PiPackageMutationResponse,
 	type PiPackageScope,
 	type PiPackagesResponse,
@@ -25,6 +28,7 @@ import { appIcon, type AppIconName } from "../icons/appIcons";
 import type { SettingsSection } from "../settingsRoute";
 import "./settings/SettingsGeneralPanel";
 import "./settings/SettingsSessiondPanel";
+import "./settings/SettingsOmpPanel";
 import "./settings/SettingsPackagesPanel";
 import "./settings/SettingsPluginsPanel";
 import "./settings/SettingsShortcutsPanel";
@@ -70,6 +74,9 @@ export class SettingsDialog extends LitElement {
 	@property({ attribute: false }) actions: AppAction[] = [];
 	@property({ attribute: false }) machine: Machine | undefined;
 	@property({ attribute: false }) machineRuntime: MachineRuntime | undefined;
+	@property({ attribute: false }) agentRuntimeCatalog:
+		| AgentRuntimesResponse
+		| undefined;
 	@property({ attribute: false }) onNavigate?: (
 		section: SettingsSection,
 	) => void;
@@ -89,11 +96,13 @@ export class SettingsDialog extends LitElement {
 		| undefined;
 	@state() private selectedPluginsResponse: PiWebPluginsResponse | undefined;
 	@state() private packagesResponse: PiPackagesResponse | undefined;
+	@state() private ompConfigResponse: OmpConfigResponse | undefined;
 	@state() private loading = true;
 	@state() private accessLoading = true;
 	@state() private sessiondLoading = true;
 	@state() private pluginLoading = true;
 	@state() private packageLoading = true;
+	@state() private ompLoading = true;
 	@state() private saving = false;
 	@state() private packageOperation: PiPackageOperationState | undefined;
 	@state() private error = "";
@@ -101,6 +110,7 @@ export class SettingsDialog extends LitElement {
 	@state() private sessiondError = "";
 	@state() private pluginError = "";
 	@state() private packageError = "";
+	@state() private ompError = "";
 	@state() private savedMessage = "";
 	@state() private packageMessage = "";
 	private savedMessageTimer: number | undefined;
@@ -109,6 +119,7 @@ export class SettingsDialog extends LitElement {
 	private sessiondLoadRequestSeq = 0;
 	private pluginLoadRequestSeq = 0;
 	private packageLoadRequestSeq = 0;
+	private ompLoadRequestSeq = 0;
 	private packageMutationSeq = 0;
 	private readonly locale = new LocaleController(this);
 
@@ -119,6 +130,7 @@ export class SettingsDialog extends LitElement {
 		void this.reloadSessiondState();
 		void this.loadPluginsForTarget();
 		void this.loadPackagesForTarget();
+		void this.loadOmpConfigForTarget();
 	}
 
 	override disconnectedCallback(): void {
@@ -143,6 +155,8 @@ export class SettingsDialog extends LitElement {
 				if (this.isConnected) void this.loadPluginsForTarget(currentTarget);
 				this.resetPackageStateForTargetChange();
 				if (this.isConnected) void this.loadPackagesForTarget(currentTarget);
+				this.resetOmpStateForTargetChange();
+				if (this.isConnected) void this.loadOmpConfigForTarget(currentTarget);
 				return;
 			}
 		}
@@ -161,6 +175,8 @@ export class SettingsDialog extends LitElement {
 				void this.loadSessiondConfigForTarget(currentTarget);
 			this.resetPluginStateForTargetChange();
 			if (this.isConnected) void this.loadPluginsForTarget(currentTarget);
+			this.resetOmpStateForTargetChange();
+			if (this.isConnected) void this.loadOmpConfigForTarget(currentTarget);
 		}
 		if (
 			!this.packageManagementSupportNeedsReload(
@@ -186,8 +202,7 @@ export class SettingsDialog extends LitElement {
 				}}>
           <header class="settings-header">
             <div>
-              <span class="eyebrow">${t("settings.eyebrow")}</span>
-              <h1>PI WEB</h1>
+              <h1>${t("settings.title")}</h1>
             </div>
             <button class="close-button" title=${t("settings.close")} aria-label=${t("settings.close")} @click=${() => this.onClose?.()}>×</button>
           </header>
@@ -198,6 +213,7 @@ export class SettingsDialog extends LitElement {
               ${this.renderNavButton("packages", t("settings.section.packages"), t("settings.section.packagesHint"), "package")}
               ${this.renderNavButton("plugins", t("settings.section.plugins"), t("settings.section.pluginsHint"), "box")}
               ${this.renderNavButton("shortcuts", t("settings.section.shortcuts"), t("settings.section.shortcutsHint"), "keyboard")}
+              ${this.renderNavButton("omp", t("settings.section.omp"), t("settings.section.ompHint"), "terminal")}
             </nav>
             <main class="settings-content">
               ${this.renderActiveSection()}
@@ -274,6 +290,21 @@ export class SettingsDialog extends LitElement {
         ></settings-plugins-panel>
       `;
 		}
+		if (this.section === "omp") {
+			return html`
+        <settings-omp-panel
+          .ompResponse=${this.ompConfigResponse}
+          .loading=${this.ompLoading}
+          .saving=${this.saving}
+          .error=${this.ompError}
+          .savedMessage=${this.savedMessage}
+          .targetLabel=${settingsMachineTargetLabel(this.settingsTarget())}
+          .support=${this.selectedMachineSettingsSupport()}
+          .onReload=${() => this.loadOmpConfigForTarget()}
+          .onSave=${(values: Record<string, unknown>) => this.saveOmpConfig(values)}
+        ></settings-omp-panel>
+      `;
+		}
 		return html`
       <settings-general-panel
         .configResponse=${this.configResponse}
@@ -285,6 +316,7 @@ export class SettingsDialog extends LitElement {
         .machineError=${this.accessError}
         .savedMessage=${this.savedMessage}
         .targetLabel=${settingsMachineTargetLabel(this.settingsTarget())}
+        .agentRuntimeCatalog=${this.agentRuntimeCatalog}
         .onReload=${() => this.loadConfig()}
         .onReloadMachine=${() => this.loadAccessConfigForTarget()}
         .onSave=${(config: PiWebConfigValues) => this.saveConfig(config)}
@@ -448,6 +480,61 @@ export class SettingsDialog extends LitElement {
 		} finally {
 			if (this.isCurrentPluginLoad(requestSeq, target))
 				this.pluginLoading = false;
+		}
+	}
+
+	private async loadOmpConfigForTarget(
+		target = this.settingsTarget(),
+	): Promise<void> {
+		const requestSeq = ++this.ompLoadRequestSeq;
+		const support = this.selectedMachineSettingsSupport(target);
+		if (isSelectedMachineSettingsUnsupported(support)) {
+			this.ompConfigResponse = undefined;
+			this.ompLoading = false;
+			this.ompError =
+				support.message ??
+				`Selected-machine settings are not available on ${settingsMachineTargetLabel(target)}.`;
+			return;
+		}
+		this.ompLoading = true;
+		this.ompError = "";
+		try {
+			const response = await ompConfigApi.config(target.id);
+			if (!this.isCurrentOmpLoad(requestSeq, target)) return;
+			this.ompConfigResponse = response;
+		} catch (error) {
+			if (this.isCurrentOmpLoad(requestSeq, target)) {
+				this.ompError = `Failed to load OMP settings from ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
+			}
+		} finally {
+			if (this.isCurrentOmpLoad(requestSeq, target)) this.ompLoading = false;
+		}
+	}
+
+	private async saveOmpConfig(values: Record<string, unknown>): Promise<void> {
+		if (this.saving) return;
+		const target = this.settingsTarget();
+		const support = this.selectedMachineSettingsSupport(target);
+		if (isSelectedMachineSettingsUnsupported(support)) {
+			this.ompError =
+				support.message ??
+				`Selected-machine settings are not available on ${settingsMachineTargetLabel(target)}.`;
+			return;
+		}
+		this.saving = true;
+		this.ompError = "";
+		this.savedMessage = "";
+		try {
+			const response = await ompConfigApi.saveConfig(values, target.id);
+			if (!this.isCurrentSettingsTarget(target)) return;
+			this.ompConfigResponse = response;
+			this.showSavedMessage();
+		} catch (error) {
+			if (this.isCurrentSettingsTarget(target)) {
+				this.ompError = `Failed to save OMP settings on ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
+			}
+		} finally {
+			this.saving = false;
 		}
 	}
 
@@ -816,6 +903,16 @@ export class SettingsDialog extends LitElement {
 		);
 	}
 
+	private isCurrentOmpLoad(
+		requestSeq: number,
+		target: SettingsMachineTarget,
+	): boolean {
+		return (
+			requestSeq === this.ompLoadRequestSeq &&
+			this.isCurrentSettingsTarget(target)
+		);
+	}
+
 	private isCurrentPackageLoad(
 		requestSeq: number,
 		target: PiPackageTargetContext,
@@ -866,6 +963,14 @@ export class SettingsDialog extends LitElement {
 		this.pluginError = "";
 		this.selectedPluginConfigResponse = undefined;
 		this.selectedPluginsResponse = undefined;
+		this.savedMessage = "";
+	}
+
+	private resetOmpStateForTargetChange(): void {
+		this.ompLoadRequestSeq += 1;
+		this.ompLoading = false;
+		this.ompError = "";
+		this.ompConfigResponse = undefined;
 		this.savedMessage = "";
 	}
 
@@ -941,7 +1046,8 @@ export type SettingsPanelTag =
 	| "settings-sessiond-panel"
 	| "settings-packages-panel"
 	| "settings-plugins-panel"
-	| "settings-shortcuts-panel";
+	| "settings-shortcuts-panel"
+	| "settings-omp-panel";
 
 /**
  * The single custom-element panel the settings dialog renders for a section.
@@ -963,6 +1069,8 @@ export function activeSettingsPanelTag(
 			return "settings-plugins-panel";
 		case "shortcuts":
 			return "settings-shortcuts-panel";
+		case "omp":
+			return "settings-omp-panel";
 		case "general":
 			return "settings-general-panel";
 	}

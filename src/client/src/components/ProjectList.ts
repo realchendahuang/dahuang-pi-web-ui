@@ -12,6 +12,7 @@ import {
 	handleSelectableRowKeyboard,
 } from "./selectableRow";
 import { listStyles } from "./shared";
+import { appIcon } from "../icons/appIcons";
 
 @customElement("project-list")
 export class ProjectList
@@ -157,12 +158,13 @@ export class ProjectList
 
 	private renderHeading() {
 		void this.locale.locale;
-		if (!this.collapsible) return html`<span>${t("nav.projects")}</span>`;
+		if (!this.collapsible)
+			return html`<span class="section-name">${appIcon("folder", { className: "lucide-icon", size: 14 })}${t("nav.projects")}</span>`;
 		const selectedSummary = this.selected?.name ?? t("nav.projects");
 		const selectedTitle = this.selected?.path ?? selectedSummary;
 		return html`<button class="section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
 			this.onToggleCollapsed?.();
-		}}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} ${t("nav.projects")}</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.projects.length}</small></button>`;
+		}}><span class="section-title"><span class="section-name">${appIcon(this.collapsed ? "chevronRight" : "chevronDown", { className: "lucide-icon", size: 14 })}${appIcon("folder", { className: "lucide-icon", size: 14 })}${t("nav.projects")}</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.projects.length}</small></button>`;
 	}
 
 	private renderActivity(project: Project) {

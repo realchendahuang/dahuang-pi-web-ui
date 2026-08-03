@@ -5,6 +5,7 @@
     "src/plugin-api.ts",
     "src/plugin-api/unstable.ts",
     "extensions/pi-web.ts",
+    "extensions/omp-web.ts",
     "pi-web-plugins/**/pi-web-plugin.ts",
     "scripts/*.mjs"
   ],

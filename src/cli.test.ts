@@ -1,6 +1,7 @@
 import {
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -17,6 +18,8 @@ import {
 	isCliEntrypoint,
 	launchdRuntimeDetails,
 	nodeVersionCheck,
+	parseUpArgs,
+	persistDefaultAgentRuntime,
 	regularFileExists,
 	serviceBackendForPlatform,
 } from "./cli.js";
@@ -145,6 +148,74 @@ describe("agentCommandForChecks", () => {
 					PI_WEB_AGENT_DIR: join(dir, "environment-agent-state"),
 				}),
 			).toBe("environment-agent");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("parseUpArgs", () => {
+	it("defaults to installing services and opening the browser", () => {
+		expect(parseUpArgs([])).toEqual({ noInstall: false, noOpen: false });
+	});
+
+	it("parses boolean flags and a default runtime", () => {
+		expect(
+			parseUpArgs(["--no-open", "--no-install", "--default-runtime", "omp"]),
+		).toEqual({ noInstall: true, noOpen: true, defaultRuntime: "omp" });
+	});
+
+	it("accepts --default-runtime=value", () => {
+		expect(parseUpArgs(["--default-runtime=pi"]).defaultRuntime).toBe("pi");
+	});
+
+	it("rejects invalid or missing runtime values and unknown options", () => {
+		expect(() => parseUpArgs(["--default-runtime", "taco"])).toThrow(
+			/--default-runtime must be pi or omp/u,
+		);
+		expect(() => parseUpArgs(["--default-runtime"])).toThrow(
+			/requires a value/u,
+		);
+		expect(() => parseUpArgs(["--bogus"])).toThrow(/Unknown up option/u);
+	});
+});
+
+describe("persistDefaultAgentRuntime", () => {
+	it("merges agentRuntimes.default without clobbering sibling keys", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-cli-test-"));
+		try {
+			const configPath = join(dir, "config.json");
+			writeFileSync(
+				configPath,
+				`${JSON.stringify({ agentRuntimes: { omp: { command: "omp-dev" } }, port: 3210 })}\n`,
+			);
+			persistDefaultAgentRuntime("omp", {
+				env: { PI_WEB_CONFIG: configPath },
+				cwd: dir,
+			});
+			const saved: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+			expect(saved).toEqual({
+				agentRuntimes: {
+					default: "omp",
+					omp: { command: "omp-dev" },
+				},
+				port: 3210,
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("writes the default runtime into a fresh config", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-cli-test-"));
+		try {
+			const configPath = join(dir, "config.json");
+			persistDefaultAgentRuntime("pi", {
+				env: { PI_WEB_CONFIG: configPath },
+				cwd: dir,
+			});
+			const saved: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+			expect(saved).toEqual({ agentRuntimes: { default: "pi" } });
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

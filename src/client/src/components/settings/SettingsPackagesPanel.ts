@@ -68,7 +68,6 @@ export class SettingsPackagesPanel extends LitElement {
 		return html`
       <settings-panel-frame
         heading=${t("settings.packages.heading")}
-        .description=${packagesDescription(targetLabel)}
         actionLabel=${t("common.reload")}
         actionTitle=${packageManagementUnavailable ? this.packageManagementUnavailableMessage(targetLabel) : t("settings.packages.reloadTitle", { target: targetLabel })}
         .actionDisabled=${this.loading || this.isOperating || packageManagementUnavailable}
@@ -114,12 +113,12 @@ export class SettingsPackagesPanel extends LitElement {
 			return html`<div class="loading-card">${this.loading ? t("settings.packages.loading", { target: targetLabel }) : t("settings.packages.listUnavailable", { target: targetLabel })}</div>`;
 		}
 		return html`
-      ${this.renderInstallForm(targetLabel)}
+			${this.renderInstallForm()}
       ${this.renderPackageList(packages, target)}
     `;
 	}
 
-	private renderInstallForm(targetLabel: string): TemplateResult {
+	private renderInstallForm(): TemplateResult {
 		return html`
       <form class="install-card" @submit=${(event: Event) => {
 				void this.installPackage(event);
@@ -134,7 +133,6 @@ export class SettingsPackagesPanel extends LitElement {
           <button type="submit" title=${t("settings.packages.install")} ?disabled=${this.isOperating}>${isPiPackageOperationPending(this.operation, "install") ? t("settings.packages.installing") : t("settings.packages.install")}</button>
         </div>
         ${this.validationMessage === "" ? null : html`<div class="field-error">${this.validationMessage}</div>`}
-        <small>${t("settings.packages.installHint", { target: targetLabel })}</small>
       </form>
     `;
 	}
@@ -157,7 +155,6 @@ export class SettingsPackagesPanel extends LitElement {
         <div class="package-toolbar">
           <div>
             <h3>${t("settings.packages.configured")}</h3>
-            <p>${t("settings.packages.listFrom", { target: targetLabel })}</p>
           </div>
           <button class="secondary" title=${updateAllTitle} ?disabled=${this.isOperating || updateAllReason !== undefined} @click=${() => {
 						void this.updatePackage();
@@ -323,8 +320,4 @@ export class SettingsPackagesPanel extends LitElement {
       .package-main strong, .package-main small { white-space: normal; }
     }
   `;
-}
-
-function packagesDescription(targetLabel: string): string {
-	return t("settings.packages.description", { target: targetLabel });
 }

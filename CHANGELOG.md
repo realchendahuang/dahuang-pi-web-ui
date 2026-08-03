@@ -1,5 +1,18 @@
 # @realchendahuang/dahuang-pi-web-ui
 
+## 0.202608.0
+
+### Patch Changes
+
+- Simplify settings panels by removing repeated explanatory copy while retaining safety and recovery guidance.
+- Add Pi/OMP dual-mode polish: an OMP settings panel editing the full `omp config` surface (444 schema-driven settings with typed controls), a default-runtime switcher with OMP command/profile fields in General settings, `/pi-web` entries for both Pi and OMP that pin the matching default runtime, and reliable OMP executable resolution when service PATHs miss user-level bin dirs. Fixes `agentRuntimes` being silently dropped on config saves, and unifies the UI language/icons (Lucide section icons, no duplicate headings, runtime-aware composer placeholder).
+- Add an isolated hot-reload UI development command that leaves active session daemons running.
+- b46d580: Remove the GitHub Actions workflows (`ci.yml` and `publish.yml`) and switch to local npm publishing.
+
+  PI WEB no longer publishes through GitHub Actions and will not use GitHub Actions for any workflow going forward. Releases are now cut locally: add a changeset, run `npm run release:version`, commit, then `npm publish --access public` (authenticated by a granular npm access token in `~/.npmrc` that bypasses 2FA, scoped to `@realchendahuang`). The `npm-release-via-github-actions` agent skill was rewritten as `npm-release-local` to document this flow.
+
+- Add concurrent embedded Pi and external OMP session runtimes with isolated profiles, runtime-aware session transport, and a runtime picker/status UI.
+
 ## 0.202607.2
 
 ### Patch Changes

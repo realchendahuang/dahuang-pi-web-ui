@@ -1,3 +1,4 @@
+import type { AgentRuntimeId } from "../../../../shared/agentRuntime";
 import type { PiWebConfigValues } from "../../api";
 
 export interface GatewayServerConfigDraft {
@@ -17,6 +18,11 @@ export interface AgentProfileConfigDraft {
   dir: string;
 }
 
+export interface OmpRuntimeConfigDraft {
+  command: string;
+  dir: string;
+}
+
 export function emptyGatewayServerConfigDraft(): GatewayServerConfigDraft {
   return { host: "", port: "", allowedHostsMode: "list", allowedHostsText: "" };
 }
@@ -26,6 +32,10 @@ export function emptyMachineAccessConfigDraft(): MachineAccessConfigDraft {
 }
 
 export function emptyAgentProfileConfigDraft(): AgentProfileConfigDraft {
+  return { command: "", dir: "" };
+}
+
+export function emptyOmpRuntimeConfigDraft(): OmpRuntimeConfigDraft {
   return { command: "", dir: "" };
 }
 
@@ -67,6 +77,41 @@ export function agentProfileDraftMatchesConfig(draft: AgentProfileConfigDraft, c
   const normalizedDraft = agentProfileConfigPatchFromDraft(draft).agent ?? {};
   const configured = config.agent ?? {};
   return normalizedDraft.command === configured.command && normalizedDraft.dir === configured.dir;
+}
+
+export function ompRuntimeDraftFromConfig(config: PiWebConfigValues): OmpRuntimeConfigDraft {
+  return {
+    command: config.agentRuntimes?.omp?.command ?? "",
+    dir: config.agentRuntimes?.omp?.dir ?? "",
+  };
+}
+
+// Selected-machine saves shallow-merge top-level config keys, so every
+// agentRuntimes patch must carry the whole object; otherwise an OMP profile
+// save would drop the configured default runtime (and vice versa).
+export function agentRuntimesConfigFromDraft(draft: OmpRuntimeConfigDraft, baseConfig: PiWebConfigValues = {}): PiWebConfigValues {
+  const command = draft.command.trim();
+  const dir = draft.dir.trim();
+  const configuredDefault = baseConfig.agentRuntimes?.default;
+  return {
+    agentRuntimes: {
+      ...(configuredDefault === undefined ? {} : { default: configuredDefault }),
+      omp: {
+        ...(command === "" ? {} : { command }),
+        ...(dir === "" ? {} : { dir }),
+      },
+    },
+  };
+}
+
+export function agentRuntimesDefaultConfigPatch(runtime: AgentRuntimeId, baseConfig: PiWebConfigValues = {}): PiWebConfigValues {
+  const configuredOmp = baseConfig.agentRuntimes?.omp;
+  return {
+    agentRuntimes: {
+      default: runtime,
+      ...(configuredOmp === undefined ? {} : { omp: { ...configuredOmp } }),
+    },
+  };
 }
 
 export function gatewayServerConfigFromDraft(draft: GatewayServerConfigDraft, baseConfig: PiWebConfigValues = {}): PiWebConfigValues {

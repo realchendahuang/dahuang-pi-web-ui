@@ -3,7 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import type { Workspace } from "../api";
 import type { QualifiedContributionId, QualifiedWorkspacePanelContribution, WorkspacePanelContext } from "../plugins/types";
 import { workspacePanelStyles } from "./shared";
-import { t } from "../i18n";
+import { LocaleController, t } from "../i18n";
 
 export interface WorkspacePanelEmptyState {
   title: string;
@@ -48,16 +48,19 @@ export class WorkspacePanel extends LitElement {
     super.disconnectedCallback();
   }
 
+  private readonly locale = new LocaleController(this);
+
   override render() {
+    void this.locale.locale;
     const workspace = this.workspace;
     if (workspace === undefined) return this.renderEmptyState(this.emptyState ?? {
-      title: "Select a workspace",
+      title: t("empty.selectWorkspace"),
       body: t("empty.chooseWorkspaceGeneric"),
     });
     const context = this.panelContext;
     if (context === undefined) return this.renderEmptyState({
-      title: "Workspace tools unavailable",
-      body: "Try selecting the workspace again.",
+      title: t("empty.workspaceToolsUnavailable"),
+      body: t("empty.workspaceToolsUnavailableBody"),
     });
     const visiblePanels = this.panels;
     const selectedPanel = visiblePanels.find((panel) => panel.id === this.tool) ?? visiblePanels[0];
@@ -83,8 +86,8 @@ export class WorkspacePanel extends LitElement {
         </header>
       `}
       ${selectedPanel === undefined ? this.renderEmptyState({
-        title: "No workspace tools available",
-        body: "No tools are available for this workspace.",
+        title: t("empty.noWorkspaceTools"),
+        body: t("empty.noWorkspaceToolsBody"),
       }) : html`
         <div class="panel-content">
           ${selectedPanel.render(context)}
@@ -121,7 +124,7 @@ export class WorkspacePanel extends LitElement {
   private renderEmptyState(state: WorkspacePanelEmptyState): TemplateResult {
     return html`
       <section class="empty-state" role="status">
-        <h2>${state.title}</h2>
+        ${state.title === "" ? null : html`<h2>${state.title}</h2>`}
         ${state.body === undefined ? null : html`<p>${state.body}</p>`}
       </section>
     `;

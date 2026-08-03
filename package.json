@@ -1,6 +1,6 @@
 {
   "name": "@realchendahuang/dahuang-pi-web-ui",
-  "version": "0.202607.2",
+  "version": "0.202608.0",
   "description": "Pi Studio — Web UI for Pi Coding Agent (fork of pi-web with Studio UI and /pi-web slash entry).",
   "license": "MIT",
   "author": "Kim <realchendahuang@gmail.com>",
@@ -26,6 +26,7 @@
   "scripts": {
     "dev": "bash -c 'trap \"kill 0\" EXIT; npm run dev:sessiond & npm run dev:web & npm run dev:client & wait'",
     "dev:sessiond": "tsx watch src/server/sessiond.ts",
+    "dev:ui": "bash -c 'set -e; port=\"${PI_WEB_DEV_API_PORT:-31417}\"; trap \"kill 0\" EXIT; PI_WEB_PORT=\"$port\" npm run dev:web & PI_WEB_PORT=\"$port\" npm run dev:client & wait'",
     "dev:web": "bash -c 'set -e; npm run build:plugins; trap \"kill 0\" EXIT; npm run dev:plugins & tsx watch src/server/index.ts & wait'",
     "dev:server": "npm run dev:web",
     "dev:client": "vite --host 0.0.0.0",
@@ -142,5 +143,10 @@
       "./extensions/pi-web.ts"
     ],
     "image": "https://raw.githubusercontent.com/realchendahuang/dahuang-pi-web-ui/ui-rebuild/docs/assets/pi-web-banner.png"
+  },
+  "omp": {
+    "extensions": [
+      "./extensions/omp-web.ts"
+    ]
   }
 }

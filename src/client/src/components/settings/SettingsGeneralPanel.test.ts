@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TemplateResult } from "lit";
-import type { PiWebConfigResponse, PiWebConfigValues } from "../../api";
+import type {
+	AgentRuntimesResponse,
+	PiWebConfigEnvOverrides,
+	PiWebConfigResponse,
+	PiWebConfigValues,
+} from "../../api";
 import { DEFAULT_LOCALE, resetLocaleForTests, setLocale, t } from "../../i18n";
 import { SettingsGeneralPanel } from "./SettingsGeneralPanel";
 import type {
 	GatewayServerConfigDraft,
 	MachineAccessConfigDraft,
+	OmpRuntimeConfigDraft,
 } from "./settingsConfigDraft";
 
 afterEach(() => {
@@ -13,7 +19,7 @@ afterEach(() => {
 });
 
 describe("settings-general-panel copy", () => {
-	it("uses factual scope copy for gateway and selected-machine settings", () => {
+	it("renders the compact settings frame without explanatory copy", () => {
 		setLocale("en", { persist: false });
 		const panel = new SettingsGeneralPanel();
 		panel.targetLabel = "Lab Mac (remote machine)";
@@ -28,15 +34,8 @@ describe("settings-general-panel copy", () => {
 		const values = collectTemplateValues(template);
 
 		expect(strings).toContain("<settings-panel-frame");
-		expect(values).toContain(
-			t("settings.general.description", { target: "Lab Mac (remote machine)" }),
-		);
-		expect(values).toContain(t("settings.general.gatewayIntro"));
-		expect(values).toContain(
-			t("settings.general.machineIntro", {
-				target: "Lab Mac (remote machine)",
-			}),
-		);
+		expect(values).toContain(t("settings.general.gatewayHeading"));
+		expect(values).toContain(t("settings.general.machineHeading"));
 		expect(
 			values.filter((value) => value === "Lab Mac (remote machine)"),
 		).toHaveLength(0);
@@ -261,6 +260,44 @@ function isSettingsNoticeArray(
 	);
 }
 
+// TemplateResult binding extraction (testing-guide escape hatch): these tests
+// run in Node without a DOM, so checking that env overrides disable the
+// runtime controls means inspecting the rendered template. The lookup anchors
+// on stable user-facing markup (the radio group name / input placeholder) and
+// reads only the boolean `?disabled=` bindings that follow, in template order.
+function disabledBindingsAnchoredAt(
+	template: TemplateResult,
+	anchor: string,
+): boolean[] {
+	const bindings: boolean[] = [];
+	visit(template);
+	if (bindings.length === 0)
+		throw new Error(`No ?disabled= bindings found near ${anchor}`);
+	return bindings;
+
+	function visit(current: TemplateResult): void {
+		const strings = templateStrings(current);
+		const values = templateValues(current);
+		if (strings.some((chunk) => chunk.includes(anchor))) {
+			strings.forEach((chunk, index) => {
+				if (!chunk.endsWith("?disabled=")) return;
+				const value = values[index];
+				if (typeof value !== "boolean")
+					throw new Error(`Expected a boolean ?disabled= binding near ${anchor}`);
+				bindings.push(value);
+			});
+		}
+		for (const value of values) {
+			if (Array.isArray(value)) {
+				for (const item of value)
+					if (isTemplateResult(item)) visit(item);
+			} else if (isTemplateResult(value)) {
+				visit(value);
+			}
+		}
+	}
+}
+
 function isStringArray(value: unknown): value is string[] {
 	return (
 		Array.isArray(value) &&
@@ -317,7 +354,174 @@ function isPanelMethod(
 	return typeof value === "function";
 }
 
-function configResponse(config: PiWebConfigValues): PiWebConfigResponse {
+describe("settings-general-panel agent runtimes", () => {
+	it("renders localized runtime status badges and availability details", () => {
+		setLocale("en", { persist: false });
+		const panel = new SettingsGeneralPanel();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+
+		const values = collectTemplateValues(panel.render());
+
+		expect(values).toContain(t("settings.general.runtimesHeading"));
+		expect(values).toContain(t("settings.general.runtimeAvailable"));
+		expect(values).toContain(t("settings.general.runtimeUnavailable"));
+		expect(values).toContain("/usr/local/bin/omp");
+		expect(values).toContain("~/.omp/agent");
+		expect(values).toContain("omp executable not found on PATH");
+	});
+
+	it("switches the default runtime through the selected-machine save callback, preserving the OMP profile", async () => {
+		const panel = new SettingsGeneralPanel();
+		const onSaveMachineConfig = vi.fn();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+		panel.machineConfigResponse = configResponse({
+			agentRuntimes: { default: "pi", omp: { command: "omp-dev" } },
+		});
+		panel.onSaveMachineConfig = onSaveMachineConfig;
+
+		await callPanelPromise(panel, "changeDefaultRuntime", "omp");
+
+		expect(onSaveMachineConfig.mock.calls).toEqual([
+			[{ agentRuntimes: { default: "omp", omp: { command: "omp-dev" } } }],
+		]);
+		expect(getPanelProperty(panel, "runtimesLocalError")).toBe("");
+	});
+
+	it("saves OMP command/dir drafts through the selected-machine save callback, preserving the default runtime", async () => {
+		const panel = new SettingsGeneralPanel();
+		const onSaveMachineConfig = vi.fn();
+		const event = new Event("submit", { cancelable: true });
+		panel.agentRuntimeCatalog = runtimeCatalog();
+		panel.machineConfigResponse = configResponse({
+			agentRuntimes: { default: "pi" },
+		});
+		panel.onSaveMachineConfig = onSaveMachineConfig;
+		setPanelProperty(panel, "ompDraft", {
+			command: " omp-dev ",
+			dir: " ~/omp-profiles/dev ",
+		} satisfies OmpRuntimeConfigDraft);
+
+		await callPanelPromise(panel, "saveAgentRuntimesConfig", event);
+
+		expect(event.defaultPrevented).toBe(true);
+		expect(onSaveMachineConfig.mock.calls).toEqual([
+			[
+				{
+					agentRuntimes: {
+						default: "pi",
+						omp: { command: "omp-dev", dir: "~/omp-profiles/dev" },
+					},
+				},
+			],
+		]);
+		expect(getPanelProperty(panel, "runtimesLocalError")).toBe("");
+	});
+
+	it("keeps runtime save errors local and does not report them as machine access errors", async () => {
+		const panel = new SettingsGeneralPanel();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+		panel.machineConfigResponse = configResponse({});
+		panel.onSaveMachineConfig = () => Promise.reject(new Error("save failed"));
+
+		await callPanelPromise(
+			panel,
+			"saveAgentRuntimesConfig",
+			new Event("submit", { cancelable: true }),
+		);
+
+		expect(getPanelProperty(panel, "runtimesLocalError")).toBe("save failed");
+		expect(getPanelProperty(panel, "machineLocalError")).toBe("");
+		expect(collectTemplateValues(panel.render())).toContain("save failed");
+	});
+
+	it("locks the default runtime radios and OMP inputs when environment overrides pin them", () => {
+		setLocale("en", { persist: false });
+		const panel = new SettingsGeneralPanel();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+		panel.machineConfigResponse = configResponse(
+			{},
+			{ ompCommand: true, ompAgentDir: true, defaultRuntime: true },
+		);
+
+		const template = panel.render();
+
+		expect(
+			disabledBindingsAnchoredAt(template, 'name="default-agent-runtime"'),
+		).toEqual([true, true]);
+		expect(disabledBindingsAnchoredAt(template, 'placeholder="omp"')).toEqual([
+			true,
+			true,
+			true,
+		]);
+		const values = collectTemplateValues(template);
+		expect(values.filter((value) => value === t("common.envOverride"))).toHaveLength(3);
+	});
+
+	it("leaves runtime editing enabled when no environment overrides apply", () => {
+		setLocale("en", { persist: false });
+		const panel = new SettingsGeneralPanel();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+		panel.machineConfigResponse = configResponse({});
+
+		const template = panel.render();
+
+		// The unavailable OMP runtime cannot be selected as the default.
+		expect(
+			disabledBindingsAnchoredAt(template, 'name="default-agent-runtime"'),
+		).toEqual([false, true]);
+		expect(disabledBindingsAnchoredAt(template, 'placeholder="omp"')).toEqual([
+			false,
+			false,
+			false,
+		]);
+	});
+
+	it("hides runtime editing when the selected-machine config is unavailable", () => {
+		const panel = new SettingsGeneralPanel();
+		panel.agentRuntimeCatalog = runtimeCatalog();
+
+		const template = panel.render();
+		const strings = collectTemplateStrings(template).join("");
+		const values = collectTemplateValues(template);
+
+		expect(values).toContain(t("settings.general.runtimesHeading"));
+		expect(strings).not.toContain('name="default-agent-runtime"');
+		expect(strings).not.toContain('placeholder="omp"');
+	});
+});
+
+function runtimeCatalog(): AgentRuntimesResponse {
+	return {
+		defaultRuntimeId: "pi",
+		runtimes: [
+			{
+				id: "pi",
+				kind: "pi-embedded",
+				label: "Pi",
+				available: true,
+				command: "pi",
+				profileDir: "~/.pi/agent",
+				capabilities: [],
+				version: "1.2.3",
+			},
+			{
+				id: "omp",
+				kind: "omp-rpc",
+				label: "OMP",
+				available: false,
+				command: "/usr/local/bin/omp",
+				profileDir: "~/.omp/agent",
+				capabilities: [],
+				unavailableReason: "omp executable not found on PATH",
+			},
+		],
+	};
+}
+
+function configResponse(
+	config: PiWebConfigValues,
+	envOverrides: Partial<PiWebConfigEnvOverrides> = {},
+): PiWebConfigResponse {
 	return {
 		path: "/tmp/pi-web/config.json",
 		exists: true,
@@ -332,6 +536,7 @@ function configResponse(config: PiWebConfigValues): PiWebConfigResponse {
 			agentCommand: false,
 			agentDir: false,
 			agentSessionDir: false,
+			...envOverrides,
 		},
 	};
 }

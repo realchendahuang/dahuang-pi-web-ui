@@ -68,7 +68,6 @@ describe("settings-packages-panel layout", () => {
 
 		expectTextOrder(rendered, [
 			t("settings.packages.heading"),
-			t("settings.packages.description", { target: targetLabel }),
 			t("settings.packages.trustWarning"),
 			t("settings.packages.source"),
 			t("settings.packages.configured"),

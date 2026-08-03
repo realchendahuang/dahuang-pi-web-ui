@@ -99,13 +99,13 @@ export class WorkspaceGitPanel extends LitElement {
 		void this.locale.locale;
 		const context = this.context;
 		if (context === undefined)
-			return html`<p class="muted">Git unavailable.</p>`;
+			return html`<p class="muted">${t("git.unavailable")}</p>`;
 		const status = context.gitStatus;
 		const viewState = this.computeViewState(status);
 		return html`
       <section class="toolbar">
-        <strong>Git</strong>
-        ${context.gitStale ? html`<span class="stale">stale</span>` : null}
+        <strong>${t("panel.git")}</strong>
+        ${context.gitStale ? html`<span class="stale">${t("git.stale")}</span>` : null}
         <div class="toolbar-actions">
           ${viewState.expandablePaths.length > 0 ? this.renderExpandCollapseAll(viewState.expandablePaths) : null}
           ${this.renderViewToggle()}
@@ -161,9 +161,9 @@ export class WorkspaceGitPanel extends LitElement {
 		viewState: GitViewState,
 	): TemplateResult {
 		if (status === undefined)
-			return html`<p class="muted">No status loaded.</p>`;
+			return html`<p class="muted">${t("empty.noStatusLoaded")}</p>`;
 		if (!status.isGitRepo)
-			return html`<p class="muted">Not a git repository.</p>`;
+			return html`<p class="muted">${t("empty.notGitRepo")}</p>`;
 		const summary = html`<p class="summary">${gitSummary(status)}</p>`;
 		if (status.files.length === 0)
 			return html`${summary}<p class="muted">${t("changes.noChanges")}</p>`;
@@ -336,14 +336,14 @@ function submoduleBadge(): TemplateResult {
 
 function renderDiffViewer(context: WorkspacePanelContext): TemplateResult {
 	if (context.selectedDiffPath === undefined || context.selectedDiffPath === "")
-		return html`<p class="muted">Select a changed file.</p>`;
+		return html`<p class="muted">${t("changes.selectDiff")}</p>`;
 	const unstaged = context.selectedDiff;
 	const staged = context.selectedStagedDiff;
 	if (unstaged === undefined || staged === undefined)
-		return html`<p class="muted">Loading diff…</p>`;
+		return html`<p class="muted">${t("changes.loadingDiff")}</p>`;
 	const diffs = [staged, unstaged].filter((diff) => diff.diff !== "");
 	if (diffs.length === 0)
-		return html`<p class="muted">No staged or unstaged diff.</p>`;
+		return html`<p class="muted">${t("changes.noDiff")}</p>`;
 	return html`
     <div class=${diffs.length === 1 ? "diffs single" : "diffs"}>
       ${diffs.map((diff) => renderDiffSection(diff))}
@@ -366,7 +366,7 @@ function loadUnifiedDiffViewer(): void {
 }
 
 function gitSummary(status: GitStatusResponse): string {
-	const branch = status.branch ?? "detached";
+	const branch = status.branch ?? t("git.detached");
 	const ahead = status.ahead ?? 0;
 	const behind = status.behind ?? 0;
 	return ahead === 0 && behind === 0

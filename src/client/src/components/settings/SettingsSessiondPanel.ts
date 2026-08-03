@@ -105,7 +105,6 @@ export class SettingsSessiondPanel extends LitElement {
 		return html`
       <settings-panel-frame
         heading=${t("settings.sessiond.heading")}
-        .description=${sessiondDescription(this.targetLabel)}
         actionLabel=${t("common.reload")}
         .actionDisabled=${this.loading}
         .notices=${this.panelNotices(config)}
@@ -142,7 +141,6 @@ export class SettingsSessiondPanel extends LitElement {
 									this.updateAgentDraft({ command: inputValue(event) });
 								}}
               >
-              <small>${t("settings.sessiond.cliHint")}</small>
             </label>
             <label class="field">
               <span class="field-heading">
@@ -161,7 +159,6 @@ export class SettingsSessiondPanel extends LitElement {
 									this.updateAgentDraft({ dir: inputValue(event) });
 								}}
               >
-              <small>${t("settings.sessiond.profileDirHint")}</small>
             </label>
             <footer class="form-actions">
               <button class="primary" type="submit" ?disabled=${this.loading || this.saving || !profileEditingSupported || (agentCommandOverridden && agentDirLocked)}>${this.saving ? t("common.saving") : t("settings.sessiond.saveProfile")}</button>
@@ -183,7 +180,6 @@ export class SettingsSessiondPanel extends LitElement {
               >
               <span>${t("settings.sessiond.spawnToggle")}</span>
             </label>
-            <small>${t("settings.sessiond.spawnHint")}</small>
           </div>
           <div class="field">
             <span class="field-heading">
@@ -202,7 +198,6 @@ export class SettingsSessiondPanel extends LitElement {
               >
               <span>${t("settings.sessiond.subsessionToggle")}</span>
             </label>
-            <small>${t("settings.sessiond.subsessionHint")}</small>
           </div>
           <section class="effective-card" aria-label=${t("settings.sessiond.effectiveHeading")}>
             <h3>${t("settings.sessiond.effectiveHeading")}</h3>
@@ -330,10 +325,6 @@ function inputValue(event: Event): string {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
-}
-
-export function sessiondDescription(targetLabel: string): string {
-	return t("settings.sessiond.description", { target: targetLabel });
 }
 
 export interface SessiondPanelNoticeContext {

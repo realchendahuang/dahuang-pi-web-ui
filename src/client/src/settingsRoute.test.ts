@@ -42,6 +42,7 @@ describe("settings route helpers", () => {
     expect(parseSettingsSection("plugins")).toBe("plugins");
     expect(parseSettingsSection("shortcuts")).toBe("shortcuts");
     expect(parseSettingsSection("keyboard")).toBe("shortcuts");
+    expect(parseSettingsSection("omp")).toBe("omp");
     expect(parseSettingsSection("unknown")).toBeUndefined();
   });
 

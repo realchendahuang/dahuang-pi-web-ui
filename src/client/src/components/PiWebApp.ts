@@ -26,6 +26,12 @@ import type { AppAction } from "../actions";
 import { initialAppState, type AppState } from "../appState";
 import { isSessionActive } from "../../../shared/activity";
 import {
+	AGENT_RUNTIME_CAPABILITIES,
+	supportsAgentRuntimeCapability,
+	type AgentRuntimeCapability,
+	type AgentRuntimeId,
+} from "../../../shared/agentRuntime";
+import {
 	PI_WEB_CAPABILITIES,
 	supportsPiWebCapability,
 } from "../../../shared/capabilities";
@@ -1810,7 +1816,11 @@ export class PiWebApp extends LitElement {
 		const runtime = this.selectedMachineRuntime();
 		return (
 			runtime?.ok === true &&
-			supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.sessionsClearQueue)
+			supportsPiWebCapability(
+				runtime,
+				PI_WEB_CAPABILITIES.sessionsClearQueue,
+			) &&
+			this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.clearQueue)
 		);
 	}
 
@@ -1855,6 +1865,40 @@ export class PiWebApp extends LitElement {
 
 	private selectedMachineRuntime() {
 		return this.state.machineRuntimes[selectedMachineId(this.state)];
+	}
+
+	private selectedAgentRuntimeCatalog() {
+		return this.state.agentRuntimeCatalogs[selectedMachineId(this.state)];
+	}
+
+	private selectedAgentRuntimeId(): AgentRuntimeId | undefined {
+		const machineId = selectedMachineId(this.state);
+		return (
+			this.state.selectedAgentRuntimeIds[machineId] ??
+			this.state.agentRuntimeCatalogs[machineId]?.defaultRuntimeId
+		);
+	}
+
+	private canStartSelectedAgentRuntime(): boolean {
+		if (this.state.selectedWorkspace === undefined) return false;
+		const catalog = this.selectedAgentRuntimeCatalog();
+		if (catalog === undefined) return true;
+		const runtimeId = this.selectedAgentRuntimeId();
+		return catalog.runtimes.some(
+			(runtime) => runtime.id === runtimeId && runtime.available,
+		);
+	}
+
+	private selectedSessionSupports(capability: AgentRuntimeCapability): boolean {
+		const session = this.state.selectedSession;
+		if (session === undefined) return false;
+		const catalog = this.selectedAgentRuntimeCatalog();
+		if (catalog === undefined) return true;
+		return supportsAgentRuntimeCapability(
+			catalog,
+			session.runtimeId,
+			capability,
+		);
 	}
 
 	private openSessionCleanupDialog(): void {
@@ -1985,7 +2029,10 @@ export class PiWebApp extends LitElement {
         .unreadSessionIds=${this.unreadSessionIds}
         .selectedSession=${this.state.selectedSession}
         .startingSessionCount=${this.state.startingSessionCount}
-        .canStartSession=${!!this.state.selectedWorkspace}
+        .canStartSession=${this.canStartSelectedAgentRuntime()}
+        .agentRuntimeCatalog=${this.selectedAgentRuntimeCatalog()}
+        .agentRuntimeCatalogError=${this.state.agentRuntimeCatalogErrors[selectedMachineId(this.state)] ?? ""}
+        .selectedAgentRuntimeId=${this.selectedAgentRuntimeId()}
         .canDeleteArchivedSessions=${this.canDeleteArchivedSessions()}
         .canReloadSessions=${this.canReloadSessions()}
         .canCleanupSessions=${this.canCleanupSessions()}
@@ -2020,7 +2067,10 @@ export class PiWebApp extends LitElement {
         .onArchivedCollapsed=${() => {
 					this.sessions.clearSelectionAfterArchivedCollapse();
 				}}
-        .onStartSession=${() => this.startSessionFromNavigation()}
+        .onStartSession=${(runtimeId: AgentRuntimeId) => this.startSessionFromNavigation(runtimeId)}
+        .onSelectAgentRuntime=${(runtimeId: AgentRuntimeId) => {
+					this.machines.selectAgentRuntime(runtimeId);
+				}}
         .onSelectSession=${(session: SessionInfo) => this.selectNavigationItem("sessions", "chat", () => this.sessions.selectSession(session))}
         .onArchiveSession=${(session: SessionInfo) => this.sessions.archiveSession(session)}
         .onArchiveSessionWithDescendants=${(session: SessionInfo) => this.sessions.archiveSessionWithDescendants(session)}
@@ -2077,22 +2127,27 @@ export class PiWebApp extends LitElement {
 		await this.focusNavigationTarget(nextTarget);
 	}
 
-	private async startSessionFromNavigation(): Promise<void> {
+	private async startSessionFromNavigation(
+		runtimeId: AgentRuntimeId,
+	): Promise<void> {
 		const seq = ++this.navigationSelectionSeq;
 		const isCurrentSelection = () => seq === this.navigationSelectionSeq;
 
 		this.navigationSections.advanceAfterSelection("sessions");
-		await this.startSessionAndOpenChat(isCurrentSelection);
+		await this.startSessionAndOpenChat(isCurrentSelection, runtimeId);
 	}
 
 	private async startSessionAndOpenChat(
 		shouldComplete: () => boolean = () => true,
+		runtimeId = this.selectedAgentRuntimeId(),
 	): Promise<void> {
 		// `startSession()` remains in flight until the backend session resolves;
 		// open the chat as soon as the controller has inserted the temporary row.
-		const start = this.sessions.startSession().catch((error: unknown) => {
-			if (shouldComplete()) this.setState({ error: String(error) });
-		});
+		const start = this.sessions
+			.startSession(runtimeId)
+			.catch((error: unknown) => {
+				if (shouldComplete()) this.setState({ error: String(error) });
+			});
 		if (shouldComplete()) await this.focusChatComposer();
 		void start;
 	}
@@ -2184,48 +2239,49 @@ export class PiWebApp extends LitElement {
 		const project = this.state.selectedProject;
 		if (this.state.isLoadingProjects) {
 			return {
-				title: "Loading projects…",
-				body: "Looking for projects you have added to PI WEB.",
+				title: t("empty.loadingProjects"),
+				body: t("empty.loadingProjectsBody"),
 			};
 		}
 		if (project === undefined) {
 			return this.state.projects.length === 0
 				? {
-						title: "No projects yet",
+						title: t("empty.noProjectsYet"),
 						body: t("empty.noProject"),
 					}
 				: {
-						title: "Select a project",
+						// 中间区域已给操作指引，右侧面板只留一句提示，不重复大标题。
+						title: "",
 						body: t("empty.chooseProject"),
 					};
 		}
 		if (this.state.isLoadingWorkspaces) {
 			return {
-				title: "Loading workspaces…",
-				body: `Preparing workspace tools for ${project.name}.`,
+				title: t("empty.loadingWorkspaces"),
+				body: t("empty.loadingWorkspacesBody", { project: project.name }),
 			};
 		}
 		if (this.state.workspaces.length === 0) {
 			return {
-				title: "No workspaces found",
-				body: `${project.name} does not have any available workspaces. Try selecting the project again or re-adding it.`,
+				title: t("empty.noWorkspacesFound"),
+				body: t("empty.noWorkspacesFoundBody", { project: project.name }),
 			};
 		}
 		return {
-			title: "Select a workspace",
+			title: t("empty.selectWorkspace"),
 			body: t("empty.chooseWorkspace", { project: project.name }),
 		};
 	}
 
 	private sessionEmptyMessage(): string {
-		if (this.state.isLoadingProjects) return "Loading projects…";
+		if (this.state.isLoadingProjects) return t("empty.loadingProjects");
 		if (this.state.selectedWorkspace !== undefined)
-			return "Select or start a session.";
+			return t("empty.noSession");
 		if (this.state.selectedProject !== undefined)
-			return "Select a workspace to start a session.";
+			return t("empty.selectWorkspaceToStart");
 		if (this.state.projects.length === 0)
-			return "Add a project to start a session.";
-		return "Select a project and workspace to start a session.";
+			return t("empty.addProjectToStart");
+		return t("empty.selectProjectAndWorkspace");
 	}
 
 	private mobilePanelBadge(
@@ -2880,7 +2936,11 @@ export class PiWebApp extends LitElement {
 		const url = URL.parse(machine.baseUrl);
 		if (url === null || (url.protocol !== "http:" && url.protocol !== "https:"))
 			return;
-		window.open(url.href, "_blank", "noopener,noreferrer");
+		const link = document.createElement("a");
+		link.href = url.href;
+		link.target = "_blank";
+		link.rel = "noopener noreferrer";
+		link.click();
 	}
 
 	private runAction(action: AppAction): void {
@@ -3259,7 +3319,7 @@ export class PiWebApp extends LitElement {
 						state.selectedSession
 							? html`
             ${this.renderChatView(state, state.selectedSession)}
-            <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
+            <prompt-editor .sessionId=${state.selectedSession.id} .runtimeId=${state.selectedSession.runtimeId} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true && this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.steering)} .canAttach=${this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.promptAttachments)} .canUseCommands=${this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.commands)} .canSelectModel=${this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.models)} .canSelectThinking=${this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.thinkingLevels)} .isCompacting=${state.status?.isCompacting === true} .canStop=${this.selectedSessionSupports(AGENT_RUNTIME_CAPABILITIES.abort) && (state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0)} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
             ${this.renderStatusBar(state)}
             ${
 							state.commandDialog !== undefined
@@ -3377,7 +3437,7 @@ export class PiWebApp extends LitElement {
 				}
         ${
 					this.settingsSection !== undefined
-						? html`<settings-dialog .section=${this.settingsSection} .machine=${state.selectedMachine} .machineRuntime=${this.selectedMachineRuntime()} .actions=${this.getDefaultActions()} .onNavigate=${(
+						? html`<settings-dialog .section=${this.settingsSection} .machine=${state.selectedMachine} .machineRuntime=${this.selectedMachineRuntime()} .agentRuntimeCatalog=${this.selectedAgentRuntimeCatalog()} .actions=${this.getDefaultActions()} .onNavigate=${(
 								section: SettingsSection,
 							) => {
 								this.navigateSettings(section);

@@ -19,12 +19,12 @@ export class WorkspaceChangesPanel extends LitElement {
 	override render() {
 		void this.locale.locale;
 		const context = this.context;
-		if (context === undefined) return html`<p class="muted">Loading…</p>`;
+		if (context === undefined) return html`<p class="muted">${t("common.loading")}</p>`;
 		const status = context.gitStatus;
 		return html`
       <div class="toolbar">
         <strong>${branchLabel(status)}</strong>
-        ${context.gitStale ? html`<span class="stale">stale</span>` : null}
+        ${context.gitStale ? html`<span class="stale">${t("git.stale")}</span>` : null}
         <button type="button" @click=${() => {
 					context.onRefreshGit();
 				}}>${t("files.refresh")}</button>
@@ -38,9 +38,9 @@ export class WorkspaceChangesPanel extends LitElement {
 		status: GitStatusResponse | undefined,
 	) {
 		if (status === undefined)
-			return html`<p class="muted">No status loaded.</p>`;
+			return html`<p class="muted">${t("empty.noStatusLoaded")}</p>`;
 		if (!status.isGitRepo)
-			return html`<p class="muted">Not a git repository.</p>`;
+			return html`<p class="muted">${t("empty.notGitRepo")}</p>`;
 		if (status.files.length === 0) {
 			return html`
         <div class="empty-state">
@@ -53,7 +53,7 @@ export class WorkspaceChangesPanel extends LitElement {
 		return html`
       <section class="split">
         <div class="list">
-          <p class="summary">${String(status.files.length)} changed ${status.files.length === 1 ? "file" : "files"}</p>
+          <p class="summary">${t("changes.changedCount", { count: status.files.length, files: status.files.length === 1 ? "file" : "files" })}</p>
           ${groups.map(
 						(group) => html`
             <h3 class="group-heading">${group.label} · ${String(group.files.length)}</h3>

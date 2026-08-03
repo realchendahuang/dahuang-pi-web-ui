@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
-import { machineSessionKey } from "../machineKeys";
+import { machineRuntimeSessionKey } from "../machineKeys";
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import type { CommandResult, SessionTreeSnapshot } from "../api";
 import { SessionController } from "./sessionController";
@@ -102,7 +102,11 @@ describe("SessionController session tree navigation", () => {
 		const stalePage = deferred<MessagePage>();
 		const staleStatus = deferred<SessionStatus>();
 		const freshPage = page("fresh branch", 2);
-		const cacheKey = machineSessionKey("local", oldSession.id);
+		const cacheKey = machineRuntimeSessionKey(
+			"local",
+			oldSession.runtimeId,
+			oldSession.id,
+		);
 		const cachedPages = new Map<string, MessagePage>();
 		const removedKeys: string[] = [];
 		let messageCalls = 0;
@@ -267,7 +271,11 @@ describe("SessionController session tree navigation", () => {
 	});
 
 	it("retains the navigator when the authoritative post-navigation refresh fails", async () => {
-		const cacheKey = machineSessionKey("local", oldSession.id);
+		const cacheKey = machineRuntimeSessionKey(
+			"local",
+			oldSession.runtimeId,
+			oldSession.id,
+		);
 		let state: AppState = {
 			...initialAppState(),
 			selectedWorkspace: workspace,
@@ -355,7 +363,11 @@ describe("SessionController session tree navigation", () => {
 	});
 
 	it("explicitly clears the editor draft when navigating to a non-user entry", async () => {
-		const cacheKey = machineSessionKey("local", oldSession.id);
+		const cacheKey = machineRuntimeSessionKey(
+			"local",
+			oldSession.runtimeId,
+			oldSession.id,
+		);
 		saveDraft(cacheKey, "stale editor text");
 		let state: AppState = {
 			...initialAppState(),
@@ -645,9 +657,14 @@ describe("SessionController session tree navigation", () => {
 			cancelled: false;
 			editorText: string;
 		}>();
-		const oldCacheKey = machineSessionKey("local", oldSession.id);
-		const replacementCacheKey = machineSessionKey(
+		const oldCacheKey = machineRuntimeSessionKey(
 			"local",
+			oldSession.runtimeId,
+			oldSession.id,
+		);
+		const replacementCacheKey = machineRuntimeSessionKey(
+			"local",
+			replacementSession.runtimeId,
 			replacementSession.id,
 		);
 		const cachedPages = new Map<string, MessagePage>([

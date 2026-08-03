@@ -30,12 +30,14 @@ describe("settings-plugins-panel layout", () => {
 
 		expectTextOrder(rendered, [
 			t("settings.plugins.heading"),
-			t("settings.plugins.description", { target: "Lab Mac (remote machine)" }),
 			"Failed to load PI WEB plugin settings from Lab Mac: PI WEB plugins: timed out.",
 			"Config saved.",
 			t("settings.plugins.trustWarning"),
 			"remote-enabled",
 		]);
+		expect(rendered).not.toContain("plugin-note");
+		expect(rendered).not.toContain("Config enabled");
+		expect(rendered).not.toContain("remote · user");
 	});
 
 	it("does not show a false empty state when the plugin response is missing", () => {

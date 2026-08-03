@@ -1413,6 +1413,7 @@ function testSession(patch: Partial<SessionInfo> = {}): SessionInfo {
 		messageCount: 1,
 		firstMessage: "Hello",
 		...patch,
+		runtimeId: patch.runtimeId ?? "pi",
 	};
 }
 

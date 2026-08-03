@@ -6,7 +6,8 @@ import type {
 	SessionStatus,
 	Workspace,
 } from "../api";
-import { machineSessionKey } from "../machineKeys";
+import { AGENT_RUNTIME_IDS } from "../../../shared/agentRuntime";
+import { machineRuntimeSessionKey } from "../machineKeys";
 import type { SessionUiEvent } from "../sessionSocket";
 import type { SessionEventSocket } from "./sessionController";
 
@@ -116,6 +117,7 @@ export const oldSession: SessionInfo = {
 	id: "old-session",
 	path: "/tmp/old-session.jsonl",
 	cwd: "/repo",
+	runtimeId: AGENT_RUNTIME_IDS.pi,
 	created: "2026-05-15T00:00:00.000Z",
 	modified: "2026-05-15T00:00:00.000Z",
 	messageCount: 0,
@@ -209,8 +211,8 @@ export function runPendingAnimationFrames(): void {
 	for (const frame of frames) frame();
 }
 
-export function sessionKey(sessionId: string): string {
-	return machineSessionKey("local", sessionId);
+export function sessionKey(sessionId: string, runtimeId = "pi"): string {
+	return machineRuntimeSessionKey("local", runtimeId, sessionId);
 }
 
 export function sessionLookupId(session: string | SessionRef): string {

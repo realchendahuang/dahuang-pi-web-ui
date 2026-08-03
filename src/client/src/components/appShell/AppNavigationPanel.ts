@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query } from "lit/decorators.js";
 import type {
+	AgentRuntimesResponse,
 	Machine,
 	MachineHealth,
 	Project,
@@ -10,6 +11,10 @@ import type {
 	Workspace,
 	WorkspaceActivity,
 } from "../../api";
+import {
+	AGENT_RUNTIME_IDS,
+	type AgentRuntimeId,
+} from "../../../../shared/agentRuntime";
 import type { WorkspaceLabelItem } from "../../plugins/types";
 import type { NavigationSection } from "../../appShell/navigationState";
 import { NAVIGATION_SECTION_ORDER } from "../../appShell/navigationState";
@@ -74,6 +79,9 @@ export class AppNavigationPanel extends LitElement {
 	@property({ type: Boolean }) sessionsCollapsed = false;
 	@property({ type: Number }) startingSessionCount = 0;
 	@property({ type: Boolean }) canStartSession = false;
+	@property({ attribute: false }) agentRuntimeCatalog?: AgentRuntimesResponse;
+	@property({ type: String }) agentRuntimeCatalogError = "";
+	@property({ type: String }) selectedAgentRuntimeId?: AgentRuntimeId;
 	@property({ type: Boolean }) canDeleteArchivedSessions = false;
 	@property({ type: Boolean }) canReloadSessions = false;
 	@property({ type: Boolean }) canCleanupSessions = false;
@@ -99,7 +107,12 @@ export class AppNavigationPanel extends LitElement {
 	@property({ attribute: false }) onDeleteWorkspace?: (
 		workspace: Workspace,
 	) => void | Promise<void>;
-	@property({ attribute: false }) onStartSession?: () => void | Promise<void>;
+	@property({ attribute: false }) onStartSession?: (
+		runtimeId: AgentRuntimeId,
+	) => void | Promise<void>;
+	@property({ attribute: false }) onSelectAgentRuntime?: (
+		runtimeId: AgentRuntimeId,
+	) => void;
 	@property({ attribute: false }) onSelectSession?: (
 		session: SessionInfo,
 	) => void | Promise<void>;
@@ -212,7 +225,11 @@ export class AppNavigationPanel extends LitElement {
       </header>
       <div class="new-task">
         <button class="new-task-button" ?disabled=${!this.canStartSession} title=${this.canStartSession ? t("nav.newTaskTitle") : t("nav.newTaskDisabled")} @click=${() => {
-					void this.onStartSession?.();
+					const runtimeId =
+						this.selectedAgentRuntimeId ??
+						this.agentRuntimeCatalog?.defaultRuntimeId ??
+						AGENT_RUNTIME_IDS.pi;
+					void this.onStartSession?.(runtimeId);
 				}}>
           <span class="new-task-plus" aria-hidden="true">${appIcon("plus", { size: 14 })}</span> ${t("nav.newTask")}
         </button>
@@ -296,6 +313,9 @@ export class AppNavigationPanel extends LitElement {
         .selected=${this.selectedSession}
         .startingCount=${this.startingSessionCount}
         .canStart=${this.canStartSession}
+        .runtimeCatalog=${this.agentRuntimeCatalog}
+        .runtimeCatalogError=${this.agentRuntimeCatalogError}
+        .selectedRuntimeId=${this.selectedAgentRuntimeId}
         .canDeleteArchived=${this.canDeleteArchivedSessions}
         .canReload=${this.canReloadSessions}
         .canCleanup=${this.canCleanupSessions}
@@ -308,7 +328,8 @@ export class AppNavigationPanel extends LitElement {
 					this.onToggleSessions?.();
 				}}
         .onArchivedCollapsed=${() => this.onArchivedCollapsed?.()}
-        .onStart=${() => this.onStartSession?.()}
+        .onStart=${(runtimeId: AgentRuntimeId) => this.onStartSession?.(runtimeId)}
+        .onRuntimeSelect=${(runtimeId: AgentRuntimeId) => this.onSelectAgentRuntime?.(runtimeId)}
         .onSelect=${(session: SessionInfo) => this.onSelectSession?.(session)}
         .onArchive=${(session: SessionInfo) => this.onArchiveSession?.(session)}
         .onArchiveWithDescendants=${(session: SessionInfo) => this.onArchiveSessionWithDescendants?.(session)}
@@ -395,7 +416,7 @@ export class AppNavigationPanel extends LitElement {
     .new-task-plus { display: inline-grid; place-items: center; line-height: 1; }
     .new-task-plus .lucide-icon { width: 14px; height: 14px; }
     .nav-footer { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--pi-border-muted); }
-    .footer-button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 5px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+    .footer-button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: var(--pi-radius-xs, 6px); background: transparent; color: var(--pi-text-secondary); padding: 5px 7px; font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
     .footer-button:hover { background: var(--pi-surface-hover); color: var(--pi-text); }
     .footer-status { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin-left: auto; color: var(--pi-muted); font-size: 12px; }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-muted); }

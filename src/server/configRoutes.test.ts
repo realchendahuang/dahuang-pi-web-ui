@@ -64,6 +64,37 @@ describe("config routes", () => {
     expect(response.json<PiWebConfigResponse>().config).toEqual(expectedConfig);
   });
 
+  it("persists agentRuntimes updates instead of silently dropping them", async () => {
+    const requestedConfig: PiWebConfigValues = {
+      agentRuntimes: {
+        default: "omp",
+        omp: { command: "omp", dir: "~/agent-profiles/omp" },
+      },
+    };
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { config: requestedConfig },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(savedConfig).toEqual(requestedConfig);
+  });
+
+  it("accepts agentRuntimes in selected-machine config updates", async () => {
+    savedConfig = fullConfig();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/machines/local/config",
+      payload: { config: { agentRuntimes: { default: "omp" } } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(savedConfig.agentRuntimes).toEqual({ default: "omp" });
+  });
+
   it("rejects invalid config payloads before writing", async () => {
     const response = await app.inject({
       method: "PUT",

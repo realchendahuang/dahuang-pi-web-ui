@@ -222,24 +222,24 @@ function machineContextTitle(machine: Machine | undefined): string {
 }
 
 function projectContextLabel(project: Project | undefined): string {
-	return project?.name ?? "No project";
+	return project?.name ?? t("contextBar.noProject");
 }
 
 function projectContextTitle(project: Project | undefined): string {
 	return project === undefined
-		? "No project selected"
+		? t("project.noneSelected")
 		: `${project.name} — ${project.path}`;
 }
 
 function workspaceContextLabel(workspace: Workspace | undefined): string {
 	return workspace === undefined
-		? "No workspace"
+		? t("contextBar.noWorkspace")
 		: `${workspace.label}${workspace.isMain ? " · main" : ""}`;
 }
 
 function workspaceContextTitle(workspace: Workspace | undefined): string {
 	return workspace === undefined
-		? "No workspace selected"
+		? t("workspace.noneSelected")
 		: `${workspace.label}${workspace.isMain ? " · main" : ""} — ${workspace.path}`;
 }
 
@@ -251,10 +251,10 @@ function sessionContextLabel(session: SessionInfo | undefined): string {
 		: firstMessage !== undefined && firstMessage !== ""
 			? firstMessage
 			: session === undefined
-				? "No session"
+				? t("contextBar.noSession")
 				: shortSessionId(session.id);
 }
 
 function sessionContextTitle(session: SessionInfo | undefined): string {
-	return session === undefined ? "No session selected" : session.path;
+	return session === undefined ? t("contextBar.noSessionSelected") : session.path;
 }

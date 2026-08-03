@@ -1,6 +1,15 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
+import type {
+	AgentRuntimesResponse,
+	SessionActivity,
+	SessionInfo,
+	SessionStatus,
+} from "../api";
+import {
+	AGENT_RUNTIME_IDS,
+	type AgentRuntimeId,
+} from "../../../shared/agentRuntime";
 import { isCachedNewSessionInfo } from "../cachedNewSessions";
 import { LocaleController, t } from "../i18n";
 import { shortSessionId } from "../sessionLabels";
@@ -26,6 +35,7 @@ import {
 	sessionMatchesQuery,
 } from "../sessionGrouping";
 import { listStyles } from "./shared";
+import { appIcon } from "../icons/appIcons";
 
 function sessionLabel(session: SessionInfo): string {
 	if (session.name !== undefined && session.name !== "") return session.name;
@@ -57,18 +67,26 @@ export class SessionList
 	@property({ attribute: false }) selected?: SessionInfo;
 	@property({ type: Number }) startingCount = 0;
 	@property({ type: Boolean }) canStart = false;
+	@property({ attribute: false }) runtimeCatalog?: AgentRuntimesResponse;
+	@property({ type: String }) runtimeCatalogError = "";
+	@property({ type: String }) selectedRuntimeId?: AgentRuntimeId;
 	@property({ type: Boolean }) canDeleteArchived = false;
 	@property({ type: Boolean }) canReload = false;
 	@property({ type: Boolean }) canCleanup = false;
 	@property({ type: Boolean }) authoritativeSessionPersistence = false;
-	@property({ type: String }) archivedDeleteUnavailableMessage =
-		t("session.capabilityDelete");
-	@property({ type: String }) cleanupUnavailableMessage =
-		t("session.capabilityCleanup");
+	@property({ type: String }) archivedDeleteUnavailableMessage = t(
+		"session.capabilityDelete",
+	);
+	@property({ type: String }) cleanupUnavailableMessage = t(
+		"session.capabilityCleanup",
+	);
 	@property({ type: Boolean, reflect: true }) collapsible = false;
 	@property({ type: Boolean, reflect: true }) collapsed = false;
 	@property({ attribute: false }) onSelect?: (session: SessionInfo) => void;
-	@property({ attribute: false }) onStart?: () => void;
+	@property({ attribute: false }) onStart?: (runtimeId: AgentRuntimeId) => void;
+	@property({ attribute: false }) onRuntimeSelect?: (
+		runtimeId: AgentRuntimeId,
+	) => void;
 	@property({ attribute: false }) onToggleCollapsed?: () => void;
 	@property({ attribute: false }) onArchivedCollapsed?: () => void;
 	@property({ attribute: false })
@@ -269,10 +287,11 @@ export class SessionList
 		if (!this.collapsible) {
 			return html`
         <h2>
-          <span class="plain-heading">${t("nav.sessions")}</span>
+          <span class="plain-heading section-name">${appIcon("message", { className: "lucide-icon", size: 14 })}${t("nav.sessions")}</span>
           ${this.renderCurrentSelectionButton(currentSessions)}
           ${this.renderUnreadCount(unreadCount)}
           ${this.renderCleanupButton()}
+          ${this.renderRuntimeSelector()}
           ${this.renderStartButton()}
         </h2>
       `;
@@ -286,11 +305,12 @@ export class SessionList
       <h2>
         <button class="section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
 					this.onToggleCollapsed?.();
-				}}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} ${t("nav.sessions")}</span>${this.collapsed ? html`<small class="section-selected" dir="auto" title=${selectedTitle}>${selectedSummary}</small>` : null}</span></button>
+				}}><span class="section-title"><span class="section-name">${appIcon(this.collapsed ? "chevronRight" : "chevronDown", { className: "lucide-icon", size: 14 })}${appIcon("message", { className: "lucide-icon", size: 14 })}${t("nav.sessions")}</span>${this.collapsed ? html`<small class="section-selected" dir="auto" title=${selectedTitle}>${selectedSummary}</small>` : null}</span></button>
         ${this.renderCurrentSelectionButton(currentSessions)}
         ${this.renderUnreadCount(unreadCount)}
         <small class="section-count">${sessionCount}</small>
         ${this.renderCleanupButton()}
+        ${this.renderRuntimeSelector()}
         ${this.renderStartButton()}
       </h2>
     `;
@@ -322,14 +342,51 @@ export class SessionList
 		}}>${t("session.cleanup")}</button>`;
 	}
 
+	private renderRuntimeSelector() {
+		const catalog = this.runtimeCatalog;
+		if (catalog === undefined || catalog.runtimes.length <= 1) return null;
+		const selected = this.selectedRuntimeId ?? catalog.defaultRuntimeId;
+		const selectedRuntime = catalog.runtimes.find(
+			(runtime) => runtime.id === selected,
+		);
+		const title =
+			selectedRuntime === undefined
+				? "Select agent runtime"
+				: `${selectedRuntime.label} · ${selectedRuntime.command} · ${selectedRuntime.profileDir}`;
+		return html`
+			<select class="runtime-selector" aria-label="Agent runtime" title=${title} .value=${selected} @click=${(
+				event: MouseEvent,
+			) => {
+				event.stopPropagation();
+			}} @change=${(event: Event) => {
+				const target = event.target;
+				if (!(target instanceof HTMLSelectElement)) return;
+				const runtime = catalog.runtimes.find(
+					(candidate) => candidate.id === target.value,
+				);
+				if (runtime?.available === true) this.onRuntimeSelect?.(runtime.id);
+			}}>
+				${catalog.runtimes.map((runtime) => html`<option value=${runtime.id} ?disabled=${!runtime.available}>${runtime.label}${runtime.available ? "" : " — unavailable"}</option>`)}
+			</select>
+		`;
+	}
+
 	private renderStartButton() {
 		const title =
-			this.startingCount > 0 ? t("session.startAnother") : t("session.startNew");
+			this.runtimeCatalogError !== ""
+				? this.runtimeCatalogError
+				: this.startingCount > 0
+					? t("session.startAnother")
+					: t("session.startNew");
+		const runtimeId =
+			this.selectedRuntimeId ??
+			this.runtimeCatalog?.defaultRuntimeId ??
+			AGENT_RUNTIME_IDS.pi;
 		return html`<button class="start-session-button" title=${title} aria-label=${title} ?disabled=${!this.canStart} @click=${(
 			event: MouseEvent,
 		) => {
 			event.stopPropagation();
-			this.onStart?.();
+			this.onStart?.(runtimeId);
 		}}>+</button>`;
 	}
 
@@ -351,7 +408,7 @@ export class SessionList
       <h2 class="subheading">
         <button class="section-toggle" aria-expanded=${String(this.archivedExpanded)} @click=${() => {
 					this.toggleArchived();
-				}}><span>${this.archivedExpanded ? "▾" : "▸"} ${t("session.archivedHeading")}</span></button>
+				}}><span class="section-name">${appIcon(this.archivedExpanded ? "chevronDown" : "chevronRight", { className: "lucide-icon", size: 14 })}${appIcon("archive", { className: "lucide-icon", size: 14 })}${t("session.archivedHeading")}</span></button>
         ${
 					this.archivedExpanded
 						? html`<button class="bulk-select-entry ${active ? "selected" : ""}" title=${active ? t("session.closeSelectArchived") : t("session.selectArchived")} aria-label=${active ? t("session.closeSelectArchived") : t("session.selectArchived")} aria-expanded=${String(active)} aria-pressed=${String(active)} @click=${() => {
@@ -458,11 +515,9 @@ export class SessionList
 			this.unreadSessionIds.has(session.id),
 		);
 		const persistenceOptions = this.sessionPersistenceOptions();
-		const canArchive = isArchivableSessionInfo(
-			session,
-			status,
-			persistenceOptions,
-		);
+		const canArchive =
+			session.runtimeId !== AGENT_RUNTIME_IDS.omp &&
+			isArchivableSessionInfo(session, status, persistenceOptions);
 		const canDeleteTransient = isTransientNewSessionInfo(
 			session,
 			status,
@@ -496,7 +551,7 @@ export class SessionList
 								}}>`
 							: null
 					}
-          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">${t("session.depth", { depth: row.depth })}</span>` : null}${row.hasMissingParent ? html` <span class="badge">${t("session.parentUnavailable")}</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${formatRelativeTime(session.modified)} · ${t("session.messagesCount", { count: session.messageCount })}</small>
+          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)} <span class="badge runtime-badge">${this.runtimeLabel(session.runtimeId)}</span>${row.depth > 2 ? html` <span class="badge">${t("session.depth", { depth: row.depth })}</span>` : null}${row.hasMissingParent ? html` <span class="badge">${t("session.parentUnavailable")}</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${formatRelativeTime(session.modified)} · ${t("session.messagesCount", { count: session.messageCount })}</small>
           ${this.renderActivity(indicatorKind)}
         </div>
         <div class="action-menu">
@@ -792,6 +847,13 @@ export class SessionList
 			?.scrollIntoView({ block: "nearest" });
 	}
 
+	private runtimeLabel(runtimeId: AgentRuntimeId): string {
+		return (
+			this.runtimeCatalog?.runtimes.find((runtime) => runtime.id === runtimeId)
+				?.label ?? runtimeId.toUpperCase()
+		);
+	}
+
 	private renderSessionMetaPrefix(
 		session: SessionInfo,
 		status: SessionStatus | undefined,
@@ -841,6 +903,8 @@ export class SessionList
     .list-empty { margin: 12px 2px; color: var(--pi-muted); font-size: 13px; }
     .bulk-select-entry { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; font-size: 13px; line-height: 1; text-transform: none; }
     .start-session-button { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 9px; }
+    .runtime-selector { box-sizing: border-box; flex: 0 1 92px; min-width: 58px; height: 30px; border: 1px solid var(--pi-border); border-radius: var(--pi-radius-sm, 8px); background: var(--pi-surface-secondary, var(--pi-surface)); color: var(--pi-text); padding: 0 6px; font: inherit; font-size: 11px; text-transform: none; }
+    .runtime-badge { margin-inline-start: 4px; font-size: 9px; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
     .cleanup-entry { flex: 0 0 auto; padding: 5px 7px; font-size: 12px; text-transform: none; }
     .bulk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
     .bulk-row button { padding: 5px 7px; font-size: 12px; }

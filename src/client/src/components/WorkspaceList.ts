@@ -21,6 +21,7 @@ import {
 	handleSelectableRowKeyboard,
 } from "./selectableRow";
 import { listStyles } from "./shared";
+import { appIcon } from "../icons/appIcons";
 import { renderWorkspaceLabelInlineItems } from "./workspaceLabel";
 
 @customElement("workspace-list")
@@ -137,7 +138,8 @@ export class WorkspaceList
 
 	private renderHeading() {
 		void this.locale.locale;
-		if (!this.collapsible) return html`<span>${t("nav.workspaces")}</span>`;
+		if (!this.collapsible)
+			return html`<span class="section-name">${appIcon("git", { className: "lucide-icon", size: 14 })}${t("nav.workspaces")}</span>`;
 		const selectedSummary =
 			this.selected === undefined
 				? t("nav.workspaces")
@@ -145,7 +147,7 @@ export class WorkspaceList
 		const selectedTitle = this.selected?.path ?? selectedSummary;
 		return html`<button class="section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
 			this.onToggleCollapsed?.();
-		}}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} ${t("nav.workspaces")}</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.workspaces.length}</small></button>`;
+		}}><span class="section-title"><span class="section-name">${appIcon(this.collapsed ? "chevronRight" : "chevronDown", { className: "lucide-icon", size: 14 })}${appIcon("git", { className: "lucide-icon", size: 14 })}${t("nav.workspaces")}</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.workspaces.length}</small></button>`;
 	}
 
 	private renderActivity(workspace: Workspace): TemplateResult | undefined {

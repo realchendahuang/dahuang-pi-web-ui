@@ -3,10 +3,13 @@ import {
   agentProfileConfigPatchFromDraft,
   agentProfileDraftFromConfig,
   agentProfileDraftMatchesConfig,
+  agentRuntimesConfigFromDraft,
+  agentRuntimesDefaultConfigPatch,
   gatewayServerConfigFromDraft,
   gatewayServerDraftFromConfig,
   machineAccessConfigPatchFromDraft,
   machineAccessDraftFromConfig,
+  ompRuntimeDraftFromConfig,
 } from "./settingsConfigDraft";
 
 describe("settings config drafts", () => {
@@ -102,6 +105,45 @@ describe("settings config drafts", () => {
     expect(machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "" })).toEqual({
       pathAccess: { allowedPaths: [] },
       uploads: {},
+    });
+  });
+
+  it("round-trips the OMP runtime draft while preserving the configured default runtime", () => {
+    const config = {
+      agentRuntimes: {
+        default: "omp" as const,
+        omp: { command: "omp-dev", dir: "~/omp-profiles/dev" },
+      },
+    };
+
+    const draft = ompRuntimeDraftFromConfig(config);
+    expect(draft).toEqual({ command: "omp-dev", dir: "~/omp-profiles/dev" });
+    expect(agentRuntimesConfigFromDraft(draft, config)).toEqual(config);
+  });
+
+  it("builds OMP runtime patches that keep the default runtime and trim fields", () => {
+    expect(agentRuntimesConfigFromDraft(
+      { command: " omp-dev ", dir: " ~/omp-profiles/dev " },
+      { agentRuntimes: { default: "pi" } },
+    )).toEqual({
+      agentRuntimes: { default: "pi", omp: { command: "omp-dev", dir: "~/omp-profiles/dev" } },
+    });
+    expect(agentRuntimesConfigFromDraft({ command: " ", dir: " " }, { agentRuntimes: { default: "omp" } })).toEqual({
+      agentRuntimes: { default: "omp", omp: {} },
+    });
+    expect(agentRuntimesConfigFromDraft({ command: "omp-dev", dir: "" })).toEqual({
+      agentRuntimes: { omp: { command: "omp-dev" } },
+    });
+  });
+
+  it("builds default-runtime patches that keep the configured OMP profile", () => {
+    expect(agentRuntimesDefaultConfigPatch("omp", {
+      agentRuntimes: { default: "pi", omp: { command: "omp-dev", dir: "~/omp-profiles/dev" } },
+    })).toEqual({
+      agentRuntimes: { default: "omp", omp: { command: "omp-dev", dir: "~/omp-profiles/dev" } },
+    });
+    expect(agentRuntimesDefaultConfigPatch("pi")).toEqual({
+      agentRuntimes: { default: "pi" },
     });
   });
 

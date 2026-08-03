@@ -36,6 +36,10 @@ import {
 	registerLocalMachineConfigRoutes,
 	type PiWebConfigService,
 } from "./configRoutes.js";
+import {
+	registerLocalMachineOmpConfigRoutes,
+	registerOmpConfigRoutes,
+} from "./ompConfigRoutes.js";
 import { PiWebPluginService } from "./piWebPluginService.js";
 import {
 	createActiveProfilePiPackageService,
@@ -381,6 +385,8 @@ export async function buildApp(
 	);
 	registerConfigRoutes(app, invalidatingConfigService);
 	registerLocalMachineConfigRoutes(app, invalidatingConfigService);
+	registerOmpConfigRoutes(app);
+	registerLocalMachineOmpConfigRoutes(app);
 
 	registerMachineRoutes(app, machines);
 	registerMachinePluginProxyRoutes(app, machines);

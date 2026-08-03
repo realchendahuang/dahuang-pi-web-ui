@@ -43,7 +43,6 @@ const zhCore = {
 	"nav.languageToggleTitle": "切换界面语言",
 
 	"settings.title": "设置",
-	"settings.eyebrow": "设置",
 	"settings.close": "关闭设置",
 	"settings.navAria": "设置分区",
 	"settings.section.general": "通用",
@@ -54,71 +53,55 @@ const zhCore = {
 	"settings.section.packagesHint": "当前机器",
 	"settings.section.plugins": "PI WEB 插件",
 	"settings.section.pluginsHint": "当前机器",
+	"settings.section.omp": "OMP",
+	"settings.section.ompHint": "当前机器",
 	"settings.section.shortcuts": "快捷键",
 	"settings.section.shortcutsHint": "网关快捷键",
 	"settings.noticesAria": "设置通知",
 	"settings.panelAria": "设置面板",
 
 	"settings.language.heading": "界面语言",
-	"settings.language.description": "切换中文 / English。默认中文。",
 	"settings.language.zh": "中文",
 	"settings.language.en": "English",
 
 	"settings.general.heading": "通用配置",
-	"settings.general.description":
-		"网关字段编辑本机；文件访问与上传默认值编辑 {target}。",
 	"settings.general.gatewayHeading": "网关服务器",
-	"settings.general.gatewayIntro":
-		"主机、端口与允许的 Host 保存在网关配置。改地址后需重启 Web 服务。",
 	"settings.general.gatewayConfigFile": "网关配置文件",
 	"settings.general.host": "主机",
-	"settings.general.hostHint": "Web 服务绑定地址。留空使用默认值。",
 	"settings.general.port": "端口",
-	"settings.general.portHint": "TCP 端口 1–65535。留空使用默认值。",
 	"settings.general.allowedHosts": "允许的 Host",
 	"settings.general.allowedHostsList": "仅列表中的 Host",
 	"settings.general.allowedHostsAll": "允许全部 Host",
-	"settings.general.allowedHostsHint":
-		"每行一个 Host；或选「允许全部」写入 true。",
 	"settings.general.saveGateway": "保存网关配置",
 	"settings.general.gatewayEffective": "生效的网关设置（含环境变量）",
 	"settings.general.machineHeading": "当前机器：文件访问与上传",
-	"settings.general.machineIntro":
-		"外部文件系统根目录与上传默认值保存在 {target}。",
 	"settings.general.machineConfigFile": "当前机器配置文件",
 	"settings.general.machineUnavailable":
 		"当前机器文件访问配置不可用。请重新加载后再保存。",
 	"settings.general.machineLoading": "正在加载当前机器文件访问配置…",
 	"settings.general.gatewayLoading": "正在加载网关配置…",
 	"settings.general.externalRoots": "外部文件系统根目录",
-	"settings.general.externalRootsHint":
-		"允许在工作区外做 @ 补全与文件浏览的绝对路径（或 ~/）。每行一个；留空则默认拒绝。",
 	"settings.general.uploadFolder": "默认上传目录",
-	"settings.general.uploadFolderHint":
-		"工作区相对路径。留空使用默认 {default}。",
 	"settings.general.saveMachine": "保存文件/上传配置",
 	"settings.general.machineEffective": "生效的当前机器设置",
 	"settings.general.externalDenied": "默认拒绝外部路径",
 	"settings.general.noticeGateway": "网关服务器",
+	"settings.general.runtimesHeading": "Agent Runtime",
+	"settings.general.runtimeAvailable": "可用",
+	"settings.general.runtimeUnavailable": "不可用",
+	"settings.general.defaultRuntime": "默认 Runtime",
+	"settings.general.ompCommand": "OMP 命令",
+	"settings.general.ompDir": "OMP 配置目录",
+	"settings.general.saveRuntimes": "保存 Runtime 配置",
 
 	"settings.sessiond.heading": "会话守护进程",
-	"settings.sessiond.description":
-		"为 {target} 选择 Pi 兼容 Agent 配置与 companion CLI。保存后需重启该机器的 session daemon 才生效。",
 	"settings.sessiond.cliCommand": "Companion CLI 命令",
-	"settings.sessiond.cliHint":
-		"用于 doctor / 更新检查的 Pi 兼容 CLI。嵌入运行时仍使用 PI WEB 自带 SDK。",
 	"settings.sessiond.profileDir": "配置状态目录",
-	"settings.sessiond.profileDirHint":
-		"PI WEB 读取的 auth、模型、设置与会话目录。命令与目录一起保存。",
 	"settings.sessiond.saveProfile": "保存 Agent 配置",
 	"settings.sessiond.spawnLabel": "允许 Agent 启动会话",
 	"settings.sessiond.spawnToggle": "启用 spawn_session 工具",
-	"settings.sessiond.spawnHint":
-		"开启后，模型可在同一项目的工作区启动会话（默认开）。",
 	"settings.sessiond.subsessionLabel": "允许 Agent 启动可跟踪子会话",
 	"settings.sessiond.subsessionToggle": "启用 spawn_subsession 工具",
-	"settings.sessiond.subsessionHint":
-		"测试版。需先开启「允许 Agent 启动会话」（默认关）。",
 	"settings.sessiond.effectiveHeading": "期望值（含环境变量）与当前值",
 	"settings.sessiond.desiredCommand": "期望命令",
 	"settings.sessiond.desiredState": "期望状态目录",
@@ -142,8 +125,6 @@ const zhCore = {
 		"无法对比期望配置与运行中的 daemon。daemon 可用后请重新加载。",
 
 	"settings.packages.heading": "Pi 包",
-	"settings.packages.description":
-		"在 {target} 上安装、更新或移除 Pi 包（扩展、技能、主题、插件等）。",
 	"settings.packages.reloadTitle": "从 {target} 重新加载 Pi 包",
 	"settings.packages.trustWarning":
 		"信任警告：Pi 包与 PI WEB 插件以你的用户权限运行，只安装可信来源。",
@@ -152,10 +133,7 @@ const zhCore = {
 		"npm:@scope/package、git URL 或本地路径",
 	"settings.packages.install": "安装",
 	"settings.packages.installing": "安装中…",
-	"settings.packages.installHint":
-		"在 {target} 上执行，等同 pi install <source>。",
 	"settings.packages.configured": "已配置的 Pi 包",
-	"settings.packages.listFrom": "列表来自 {target} 上 Pi 的包管理设置。",
 	"settings.packages.updateAll": "全部更新",
 	"settings.packages.updating": "更新中…",
 	"settings.packages.update": "更新",
@@ -171,13 +149,25 @@ const zhCore = {
 	"settings.packages.managementUnavailable": "{target} 上不可用 Pi 包管理。",
 
 	"settings.plugins.heading": "PI WEB 插件",
-	"settings.plugins.description":
-		"在 {target} 上启用或禁用已发现的浏览器插件（与安装 Pi 包无关）。改完后刷新页面生效。",
 	"settings.plugins.trustWarning":
 		"信任警告：插件与 Pi 包以你的用户权限运行，只启用来自可信来源的插件。",
 	"settings.plugins.loading": "正在加载 PI WEB 插件…",
 	"settings.plugins.listUnavailable": "{target} 的插件列表不可用。请重新加载。",
 	"settings.plugins.empty": "{target} 上未发现浏览器插件。",
+
+	"settings.omp.heading": "OMP 设置",
+	"settings.omp.loading": "正在加载 OMP 设置…",
+	"settings.omp.unavailable": "{target} 的 OMP 设置不可用。请重新加载。",
+	"settings.omp.searchPlaceholder": "搜索设置（key 或描述）…",
+	"settings.omp.searchAria": "搜索 OMP 设置",
+	"settings.omp.empty": "{target} 上没有 OMP 设置。",
+	"settings.omp.noMatches": "没有匹配 “{query}” 的设置。",
+	"settings.omp.otherTab": "其他",
+	"settings.omp.ungrouped": "未分组",
+	"settings.omp.invalidJson": "无效 JSON：{message}",
+	"settings.omp.defaultLabel": "默认：{value}",
+	"settings.omp.configFile": "配置文件：{path}",
+	"settings.omp.saveChanges": "保存修改",
 
 	"settings.shortcuts.heading": "键盘快捷键",
 	"settings.shortcuts.description":
@@ -251,8 +241,8 @@ const zhCore = {
 	"session.depth": "深度 {depth}",
 
 	"composer.placeholder":
-		"给 pi 发消息… 用 / 命令，@ 跟踪文件，@ 空格 全部文件",
-	"composer.aria": "给 pi 发消息",
+		"给 {runtime} 发消息… 用 / 命令，@ 跟踪文件，@ 空格 全部文件",
+	"composer.aria": "给 {runtime} 发消息",
 	"composer.attach": "附加文件",
 	"composer.send": "发送",
 	"composer.queue": "排队",
@@ -347,6 +337,58 @@ const zhCore = {
 	"action.sessionDelete": "删除新会话",
 	"action.sessionDeleteDesc": "删除所选临时新会话",
 	"action.sessionStop": "停止当前工作",
+
+	"contextBar.noProject": "无项目",
+	"contextBar.noWorkspace": "无工作区",
+	"contextBar.noSession": "无会话",
+	"contextBar.noSessionSelected": "未选择会话",
+
+	"empty.loadingProjects": "正在加载项目…",
+	"empty.loadingProjectsBody": "正在查找你添加到 PI WEB 的项目。",
+	"empty.noProjectsYet": "还没有项目",
+	"empty.loadingWorkspaces": "正在加载工作区…",
+	"empty.loadingWorkspacesBody": "正在为 {project} 准备工作区工具。",
+	"empty.noWorkspacesFound": "未找到工作区",
+	"empty.noWorkspacesFoundBody":
+		"{project} 没有可用的工作区。重新选择项目或重新添加试试。",
+	"empty.selectWorkspace": "选择一个工作区",
+	"empty.selectWorkspaceToStart": "选择工作区以开始会话。",
+	"empty.addProjectToStart": "添加项目以开始会话。",
+	"empty.selectProjectAndWorkspace": "选择项目和工作区以开始会话。",
+	"empty.workspaceToolsUnavailable": "工作区工具不可用",
+	"empty.workspaceToolsUnavailableBody": "重新选择工作区试试。",
+	"empty.noWorkspaceTools": "没有可用的工作区工具",
+	"empty.noWorkspaceToolsBody": "此工作区没有可用工具。",
+	"empty.selectSessionToInspect": "选择会话以查看模型、上下文用量与费用。",
+	"empty.noFilesLoaded": "没有加载文件。",
+	"empty.selectFile": "选择一个文件。",
+	"empty.noStatusLoaded": "没有加载状态。",
+	"empty.notGitRepo": "不是 Git 仓库。",
+
+	"context.thinkingLevel": "思考级别",
+	"context.tokensInput": "输入",
+	"context.tokensOutput": "输出",
+	"context.tokensCacheRead": "缓存读取",
+	"context.tokensCacheWrite": "缓存写入",
+	"context.tokensTotal": "总计",
+	"context.streaming": "流式",
+	"context.usageLabel": "{tokens} / {window} tokens · 已用 {percent}%",
+
+	"files.loadingFile": "正在加载 {path}…",
+	"files.workspaceRoot": "工作区根目录",
+	"files.binaryFile": "二进制文件：{path} · {size}",
+	"files.summaryRecent": "{count} 个近期",
+	"files.summaryUploading": "{count} 个上传中",
+	"files.uploadedTitle": "已上传 {count} 个文件",
+	"files.uploadFailedTitle": "{count} 个文件上传失败",
+	"files.uploadCancelledTitle": "已取消上传 {count} 个文件",
+	"files.uploadingTitle": "正在上传 {count} 个文件",
+	"files.wrotePath": "已写入 {path}",
+
+	"git.unavailable": "Git 不可用。",
+	"git.stale": "已过期",
+
+	"changes.changedCount": "{count} 个变更文件",
 } as const;
 
 export const zhMessages = { ...zhCore, ...zhUi } as const;
@@ -394,7 +436,6 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 	"nav.languageToggleTitle": "Switch UI language",
 
 	"settings.title": "Settings",
-	"settings.eyebrow": "Settings",
 	"settings.close": "Close settings",
 	"settings.navAria": "Settings sections",
 	"settings.section.general": "General",
@@ -405,40 +446,29 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 	"settings.section.packagesHint": "Selected machine",
 	"settings.section.plugins": "PI WEB plugins",
 	"settings.section.pluginsHint": "Selected machine",
+	"settings.section.omp": "OMP",
+	"settings.section.ompHint": "Selected machine",
 	"settings.section.shortcuts": "Keyboard",
 	"settings.section.shortcutsHint": "Gateway shortcuts",
 	"settings.noticesAria": "Settings notices",
 	"settings.panelAria": "Settings panel",
 
 	"settings.language.heading": "UI language",
-	"settings.language.description":
-		"Switch between Chinese and English. Default is Chinese.",
 	"settings.language.zh": "中文",
 	"settings.language.en": "English",
 
 	"settings.general.heading": "General configuration",
-	"settings.general.description":
-		"Gateway fields edit this local gateway. File access and upload defaults edit {target}.",
 	"settings.general.gatewayHeading": "Gateway server",
-	"settings.general.gatewayIntro":
-		"Host, port, and allowed hosts are saved in the gateway config. Address changes need a web service restart.",
 	"settings.general.gatewayConfigFile": "Gateway config file",
 	"settings.general.host": "Host",
-	"settings.general.hostHint":
-		"Address the web server binds to. Leave empty for the default.",
 	"settings.general.port": "Port",
-	"settings.general.portHint": "TCP port 1–65535. Leave empty for the default.",
 	"settings.general.allowedHosts": "Allowed hosts",
 	"settings.general.allowedHostsList": "Only listed hosts",
 	"settings.general.allowedHostsAll": "Allow every host",
-	"settings.general.allowedHostsHint":
-		"One host per line, or choose “Allow every host” to write true.",
 	"settings.general.saveGateway": "Save gateway server config",
 	"settings.general.gatewayEffective":
 		"Effective gateway settings after environment overrides",
 	"settings.general.machineHeading": "Selected machine file access and uploads",
-	"settings.general.machineIntro":
-		"External filesystem roots and upload defaults are saved on {target}.",
 	"settings.general.machineConfigFile": "Selected machine config file",
 	"settings.general.machineUnavailable":
 		"Selected-machine file access config is unavailable. Reload before saving.",
@@ -446,35 +476,28 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 		"Loading selected-machine file access config…",
 	"settings.general.gatewayLoading": "Loading gateway configuration…",
 	"settings.general.externalRoots": "External filesystem roots",
-	"settings.general.externalRootsHint":
-		"Allowlist for absolute @ completions and file explorer reads outside a workspace. One absolute or ~/ path per line. Empty denies external paths.",
 	"settings.general.uploadFolder": "Default upload folder",
-	"settings.general.uploadFolderHint":
-		"Workspace-relative folder for uploads. Leave empty for default {default}.",
 	"settings.general.saveMachine": "Save file/upload config",
 	"settings.general.machineEffective": "Effective selected-machine settings",
 	"settings.general.externalDenied": "External paths denied",
 	"settings.general.noticeGateway": "Gateway server",
+	"settings.general.runtimesHeading": "Agent runtimes",
+	"settings.general.runtimeAvailable": "available",
+	"settings.general.runtimeUnavailable": "unavailable",
+	"settings.general.defaultRuntime": "Default runtime",
+	"settings.general.ompCommand": "OMP command",
+	"settings.general.ompDir": "OMP profile directory",
+	"settings.general.saveRuntimes": "Save runtime config",
 
 	"settings.sessiond.heading": "Session daemon",
-	"settings.sessiond.description":
-		"Select the Pi-compatible agent profile and companion CLI for {target}. Saved immediately; takes effect after that machine’s session daemon restarts.",
 	"settings.sessiond.cliCommand": "Companion CLI command",
-	"settings.sessiond.cliHint":
-		"Pi-compatible CLI for doctor and update checks. Embedded runtime still uses PI WEB’s bundled SDK.",
 	"settings.sessiond.profileDir": "Profile state directory",
-	"settings.sessiond.profileDirHint":
-		"Auth, models, settings, and sessions PI WEB reads. Command and directory are saved together.",
 	"settings.sessiond.saveProfile": "Save agent profile",
 	"settings.sessiond.spawnLabel": "Allow agents to start sessions",
 	"settings.sessiond.spawnToggle": "Enable the spawn_session tool",
-	"settings.sessiond.spawnHint":
-		"When on, agents can start sessions in a workspace of the same project (on by default).",
 	"settings.sessiond.subsessionLabel":
 		"Allow agents to start tracked subsessions",
 	"settings.sessiond.subsessionToggle": "Enable the spawn_subsession tools",
-	"settings.sessiond.subsessionHint":
-		"Beta. Requires “Allow agents to start sessions” (off by default).",
 	"settings.sessiond.effectiveHeading": "Desired after environment overrides",
 	"settings.sessiond.desiredCommand": "Desired command",
 	"settings.sessiond.desiredState": "Desired state",
@@ -500,8 +523,6 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 		"Cannot compare the desired profile with the running session daemon. Reload after the daemon is available.",
 
 	"settings.packages.heading": "Pi packages",
-	"settings.packages.description":
-		"Install, update, or remove Pi packages on {target} (extensions, skills, themes, plugins, and more).",
 	"settings.packages.reloadTitle": "Reload Pi packages from {target}",
 	"settings.packages.trustWarning":
 		"Trusted code warning: Pi packages and PI WEB plugins run with your user permissions. Install only from sources you trust.",
@@ -510,10 +531,7 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 		"npm:@scope/package, git URL, or local path",
 	"settings.packages.install": "Install",
 	"settings.packages.installing": "Installing…",
-	"settings.packages.installHint":
-		"Runs on {target}, equivalent to pi install <source>.",
 	"settings.packages.configured": "Configured Pi packages",
-	"settings.packages.listFrom": "From Pi package manager settings on {target}.",
 	"settings.packages.updateAll": "Update all",
 	"settings.packages.updating": "Updating…",
 	"settings.packages.update": "Update",
@@ -531,14 +549,28 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 		"Pi package management is not available on {target}.",
 
 	"settings.plugins.heading": "PI WEB plugins",
-	"settings.plugins.description":
-		"Enable or disable discovered browser plugins on {target} (separate from Pi packages). Reload the tab to apply.",
 	"settings.plugins.trustWarning":
 		"Trusted code warning: PI WEB plugins and Pi packages run with your user permissions. Enable only from sources you trust.",
 	"settings.plugins.loading": "Loading PI WEB plugins…",
 	"settings.plugins.listUnavailable":
 		"PI WEB plugin list unavailable for {target}. Reload to try again.",
 	"settings.plugins.empty": "No PI WEB browser plugins discovered on {target}.",
+
+	"settings.omp.heading": "OMP settings",
+	"settings.omp.loading": "Loading OMP settings…",
+	"settings.omp.unavailable":
+		"OMP settings are unavailable for {target}. Reload to try again.",
+	"settings.omp.searchPlaceholder": "Search settings (key or description)…",
+	"settings.omp.searchAria": "Search OMP settings",
+	"settings.omp.empty": "No OMP settings on {target}.",
+	"settings.omp.noMatches": "No settings match “{query}”.",
+	"settings.omp.otherTab": "Other",
+	"settings.omp.ungrouped": "Ungrouped",
+	"settings.omp.invalidJson": "Invalid JSON: {message}",
+	"settings.omp.defaultLabel": "Default: {value}",
+	"settings.omp.configFile": "Config file: {path}",
+	"settings.omp.saveChanges": "Save changes",
+
 
 	"settings.shortcuts.heading": "Keyboard shortcuts",
 	"settings.shortcuts.description":
@@ -613,8 +645,8 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 	"session.depth": "depth {depth}",
 
 	"composer.placeholder":
-		"Message pi... Use / for commands, @ for tracked files, @ space for all files",
-	"composer.aria": "Message pi",
+		"Message {runtime}... Use / for commands, @ for tracked files, @ space for all files",
+	"composer.aria": "Message {runtime}",
 	"composer.attach": "Attach files",
 	"composer.send": "Send message",
 	"composer.queue": "Queue message",
@@ -716,6 +748,60 @@ const enCore: { [K in keyof typeof zhCore]: string } = {
 	"action.sessionDelete": "Delete New Session",
 	"action.sessionDeleteDesc": "Delete the selected transient new session",
 	"action.sessionStop": "Stop Active Work",
+
+	"contextBar.noProject": "No project",
+	"contextBar.noWorkspace": "No workspace",
+	"contextBar.noSession": "No session",
+	"contextBar.noSessionSelected": "No session selected",
+
+	"empty.loadingProjects": "Loading projects…",
+	"empty.loadingProjectsBody": "Looking for projects you have added to PI WEB.",
+	"empty.noProjectsYet": "No projects yet",
+	"empty.loadingWorkspaces": "Loading workspaces…",
+	"empty.loadingWorkspacesBody": "Preparing workspace tools for {project}.",
+	"empty.noWorkspacesFound": "No workspaces found",
+	"empty.noWorkspacesFoundBody":
+		"{project} does not have any available workspaces. Try selecting the project again or re-adding it.",
+	"empty.selectWorkspace": "Select a workspace",
+	"empty.selectWorkspaceToStart": "Select a workspace to start a session.",
+	"empty.addProjectToStart": "Add a project to start a session.",
+	"empty.selectProjectAndWorkspace":
+		"Select a project and workspace to start a session.",
+	"empty.workspaceToolsUnavailable": "Workspace tools unavailable",
+	"empty.workspaceToolsUnavailableBody": "Try selecting the workspace again.",
+	"empty.noWorkspaceTools": "No workspace tools available",
+	"empty.noWorkspaceToolsBody": "No tools are available for this workspace.",
+	"empty.selectSessionToInspect":
+		"Select a session to inspect its model, context usage, and cost.",
+	"empty.noFilesLoaded": "No files loaded.",
+	"empty.selectFile": "Select a file.",
+	"empty.noStatusLoaded": "No status loaded.",
+	"empty.notGitRepo": "Not a git repository.",
+
+	"context.thinkingLevel": "Thinking level",
+	"context.tokensInput": "Input",
+	"context.tokensOutput": "Output",
+	"context.tokensCacheRead": "Cache read",
+	"context.tokensCacheWrite": "Cache write",
+	"context.tokensTotal": "Total",
+	"context.streaming": "Streaming",
+	"context.usageLabel": "{tokens} / {window} tokens · {percent}% used",
+
+	"files.loadingFile": "Loading {path}…",
+	"files.workspaceRoot": "workspace root",
+	"files.binaryFile": "Binary file: {path} · {size}",
+	"files.summaryRecent": "{count} recent",
+	"files.summaryUploading": "{count} uploading",
+	"files.uploadedTitle": "Uploaded {count} {files}",
+	"files.uploadFailedTitle": "Upload failed for {count} {files}",
+	"files.uploadCancelledTitle": "Upload cancelled for {count} {files}",
+	"files.uploadingTitle": "Uploading {count} {files}",
+	"files.wrotePath": "Wrote {path}",
+
+	"git.unavailable": "Git unavailable.",
+	"git.stale": "stale",
+
+	"changes.changedCount": "{count} changed {files}",
 };
 
 export const enMessages: Record<MessageKey, string> = {

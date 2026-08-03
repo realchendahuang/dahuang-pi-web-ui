@@ -13,7 +13,10 @@ import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { SessionNotificationStore } from "./sessions/sessionNotificationStore.js";
-import { FileSessionUnreadPersistence, SessionUnreadStore } from "./sessions/sessionUnreadStore.js";
+import {
+	FileSessionUnreadPersistence,
+	SessionUnreadStore,
+} from "./sessions/sessionUnreadStore.js";
 import { ProjectScopedSpawnTargetResolver } from "./sessions/spawnTargetResolver.js";
 import { ProjectService } from "./projects/projectService.js";
 import { ProjectStore } from "./storage/projectStore.js";
@@ -23,121 +26,196 @@ import { TerminalService } from "./terminals/terminalService.js";
 import { registerTerminalRoutes } from "./terminals/terminalRoutes.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
 import { SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
-import { agentSessionDirEnvKeys, effectivePiWebConfig, maxUploadBytes } from "../config.js";
+import {
+	agentSessionDirEnvKeys,
+	defaultAgentRuntimeId,
+	effectiveOmpRuntimeConfig,
+	effectivePiWebConfig,
+	maxUploadBytes,
+} from "../config.js";
 import { createActiveAgentProfileDescriptor } from "../sessiond/activeAgentProfile.js";
 import { runSessionDaemonStartup } from "./sessiond/sessionDaemonStartup.js";
+import { MultiRuntimeSessionService } from "./runtimes/multiRuntimeSessionService.js";
+import { OmpSessionService } from "./runtimes/omp/ompSessionService.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const { config } = effectivePiWebConfig({ env: daemonEnvironment });
 const activeAgentProfile = createActiveAgentProfileDescriptor({
-  command: config.agent.command,
-  dir: config.agent.dir,
-  sessionDirEnvKeys: agentSessionDirEnvKeys(config.agent.command),
+	command: config.agent.command,
+	dir: config.agent.dir,
+	sessionDirEnvKeys: agentSessionDirEnvKeys(config.agent.command),
 });
-const app = Fastify({ logger: true, bodyLimit: maxUploadBytes(daemonEnvironment, config) });
+const defaultRuntimeValue = defaultAgentRuntimeId(daemonEnvironment, config);
+const ompRuntime = effectiveOmpRuntimeConfig(daemonEnvironment, config);
+const app = Fastify({
+	logger: true,
+	bodyLimit: maxUploadBytes(daemonEnvironment, config),
+});
 await app.register(fastifyWebsocket);
 
 await runSessionDaemonStartup({
-  logger: app.log,
-  async createRuntime() {
-    const eventHub = new SessionEventHub();
-    const notificationStore = new SessionNotificationStore();
-    const unreadStore = new SessionUnreadStore({
-      persistence: new FileSessionUnreadPersistence(),
-      onPersistenceError(operation, error) {
-        app.log.error({ err: error, operation }, "session unread persistence failed");
-      },
-    });
-    await unreadStore.load();
-    const workspaceActivity = new WorkspaceActivityService(eventHub);
-    const auth = await AuthService.create({ agentDir: activeAgentProfile.dir, logger: app.log });
-    // Capture providers registered by global extensions while the runtime is
-    // still mutable, then freeze every later extension-provider mutation before
-    // any real session can load project resources.
-    await bootstrapAndFreezeGlobalExtensionProviders(auth.runtime, activeAgentProfile.dir, app.log);
-    const spawnTargets = config.spawnSessions
-      ? new ProjectScopedSpawnTargetResolver({ projects: new ProjectService(new ProjectStore()), workspaces: new WorkspaceService() })
-      : undefined;
-    const sessions = new PiSessionService(eventHub, {
-      modelRuntime: auth.runtime,
-      agentDir: activeAgentProfile.dir,
-      workspaceActivity,
-      logger: app.log,
-      ...(spawnTargets === undefined ? {} : { spawnTargets }),
-      subsessionsEnabled: spawnTargets !== undefined && config.subsessions,
-      notificationStore,
-      unreadStore,
-      sessionManager: createPiSessionManagerGateway({
-        agentDir: activeAgentProfile.dir,
-        env: daemonEnvironment,
-        sessionDirEnvKeys: activeAgentProfile.sessionDirEnvKeys,
-      }),
-    });
-    auth.subscribe((change) => { sessions.applyAuthChange(change); });
-    const terminals = new TerminalService(eventHub, workspaceActivity);
-    const runtimeComponent = Object.freeze({
-      ...getPiWebRuntimeComponent("sessiond", SESSIOND_RUNTIME_CAPABILITIES),
-      activeAgentProfile,
-    });
-    return { eventHub, workspaceActivity, auth, sessions, terminals, unreadStore, activeAgentProfile, runtimeComponent };
-  },
-  registerRoutes({ eventHub, workspaceActivity, auth, sessions, terminals, runtimeComponent }) {
-    registerWorkspaceActivityRoutes(app, workspaceActivity);
-    registerAuthRoutes(app, auth);
-    registerSessionRoutes(app, sessions, eventHub);
-    registerTerminalRoutes(app, terminals);
+	logger: app.log,
+	async createRuntime() {
+		const eventHub = new SessionEventHub();
+		const notificationStore = new SessionNotificationStore();
+		const unreadStore = new SessionUnreadStore({
+			persistence: new FileSessionUnreadPersistence(),
+			onPersistenceError(operation, error) {
+				app.log.error(
+					{ err: error, operation },
+					"session unread persistence failed",
+				);
+			},
+		});
+		await unreadStore.load();
+		const workspaceActivity = new WorkspaceActivityService(eventHub);
+		const auth = await AuthService.create({
+			agentDir: activeAgentProfile.dir,
+			logger: app.log,
+		});
+		// Capture providers registered by global extensions while the runtime is
+		// still mutable, then freeze every later extension-provider mutation before
+		// any real session can load project resources.
+		await bootstrapAndFreezeGlobalExtensionProviders(
+			auth.runtime,
+			activeAgentProfile.dir,
+			app.log,
+		);
+		const spawnTargets = config.spawnSessions
+			? new ProjectScopedSpawnTargetResolver({
+					projects: new ProjectService(new ProjectStore()),
+					workspaces: new WorkspaceService(),
+				})
+			: undefined;
+		const piSessions = new PiSessionService(eventHub, {
+			modelRuntime: auth.runtime,
+			agentDir: activeAgentProfile.dir,
+			agentCommand: activeAgentProfile.command,
+			workspaceActivity,
+			logger: app.log,
+			...(spawnTargets === undefined ? {} : { spawnTargets }),
+			subsessionsEnabled: spawnTargets !== undefined && config.subsessions,
+			notificationStore,
+			unreadStore,
+			sessionManager: createPiSessionManagerGateway({
+				agentDir: activeAgentProfile.dir,
+				env: daemonEnvironment,
+				sessionDirEnvKeys: activeAgentProfile.sessionDirEnvKeys,
+			}),
+		});
+		const ompSessions = new OmpSessionService(eventHub, {
+			command: ompRuntime.command,
+			agentDir: ompRuntime.dir,
+			env: daemonEnvironment,
+			workspaceActivity,
+		});
+		const sessions = new MultiRuntimeSessionService(
+			piSessions,
+			ompSessions,
+			defaultRuntimeValue,
+		);
+		auth.subscribe((change) => {
+			sessions.applyAuthChange(change);
+		});
+		const terminals = new TerminalService(eventHub, workspaceActivity);
+		const runtimeComponent = Object.freeze({
+			...getPiWebRuntimeComponent("sessiond", SESSIOND_RUNTIME_CAPABILITIES),
+			activeAgentProfile,
+		});
+		return {
+			eventHub,
+			workspaceActivity,
+			auth,
+			sessions,
+			terminals,
+			unreadStore,
+			activeAgentProfile,
+			runtimeComponent,
+		};
+	},
+	registerRoutes({
+		eventHub,
+		workspaceActivity,
+		auth,
+		sessions,
+		terminals,
+		runtimeComponent,
+	}) {
+		registerWorkspaceActivityRoutes(app, workspaceActivity);
+		registerAuthRoutes(app, auth);
+		registerSessionRoutes(app, sessions, eventHub);
+		registerTerminalRoutes(app, terminals);
 
-    app.get("/health", () => ({
-      ok: true,
-      activeSessions: sessions.activeCount(),
-      checkedAt: new Date().toISOString(),
-      version: {
-        component: runtimeComponent.component,
-        label: runtimeComponent.label,
-        ...(runtimeComponent.runtimeVersion === undefined ? {} : { runtimeVersion: runtimeComponent.runtimeVersion }),
-        stale: false,
-        available: runtimeComponent.available,
-      },
-    }));
+		app.get("/health", () => ({
+			ok: true,
+			activeSessions: sessions.activeCount(),
+			checkedAt: new Date().toISOString(),
+			version: {
+				component: runtimeComponent.component,
+				label: runtimeComponent.label,
+				...(runtimeComponent.runtimeVersion === undefined
+					? {}
+					: { runtimeVersion: runtimeComponent.runtimeVersion }),
+				stale: false,
+				available: runtimeComponent.available,
+			},
+		}));
 
-    app.get("/runtime", () => runtimeComponent);
-  },
-  async listen({ auth, sessions, terminals, unreadStore }) {
-    let shuttingDown = false;
-    async function shutdown(signal: NodeJS.Signals): Promise<void> {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      app.log.info({ signal }, "shutting down session daemon");
-      const attempt = async (operation: string, run: () => void | Promise<void>): Promise<void> => {
-        try {
-          await run();
-        } catch (error: unknown) {
-          process.exitCode = 1;
-          app.log.error({ err: error, operation }, "session daemon shutdown operation failed");
-        }
-      };
-      await attempt("dispose terminals", () => { terminals.dispose(); });
-      await attempt("dispose auth", () => { auth.dispose(); });
-      await attempt("dispose sessions", () => sessions.dispose());
-      await attempt("flush session unread state", () => unreadStore.flush());
-      await attempt("close server", () => app.close());
-    }
+		app.get("/runtime", () => runtimeComponent);
+	},
+	async listen({ auth, sessions, terminals, unreadStore }) {
+		let shuttingDown = false;
+		async function shutdown(signal: NodeJS.Signals): Promise<void> {
+			if (shuttingDown) return;
+			shuttingDown = true;
+			app.log.info({ signal }, "shutting down session daemon");
+			const attempt = async (
+				operation: string,
+				run: () => void | Promise<void>,
+			): Promise<void> => {
+				try {
+					await run();
+				} catch (error: unknown) {
+					process.exitCode = 1;
+					app.log.error(
+						{ err: error, operation },
+						"session daemon shutdown operation failed",
+					);
+				}
+			};
+			await attempt("dispose terminals", () => {
+				terminals.dispose();
+			});
+			await attempt("dispose auth", () => {
+				auth.dispose();
+			});
+			await attempt("dispose sessions", () => sessions.dispose());
+			await attempt("flush session unread state", () => unreadStore.flush());
+			await attempt("close server", () => app.close());
+		}
 
-    process.once("SIGINT", (signal) => { void shutdown(signal); });
-    process.once("SIGTERM", (signal) => { void shutdown(signal); });
+		process.once("SIGINT", (signal) => {
+			void shutdown(signal);
+		});
+		process.once("SIGTERM", (signal) => {
+			void shutdown(signal);
+		});
 
-    const portValue = daemonEnvironment["PI_WEB_SESSIOND_PORT"];
-    const port = portValue !== undefined && portValue !== "" ? Number(portValue) : undefined;
-    const host = daemonEnvironment["PI_WEB_SESSIOND_HOST"] ?? "127.0.0.1";
+		const portValue = daemonEnvironment["PI_WEB_SESSIOND_PORT"];
+		const port =
+			portValue !== undefined && portValue !== ""
+				? Number(portValue)
+				: undefined;
+		const host = daemonEnvironment["PI_WEB_SESSIOND_HOST"] ?? "127.0.0.1";
 
-    if (port !== undefined) {
-      await app.listen({ port, host });
-    } else {
-      const path = sessiondSocketPath();
-      await mkdir(dirname(path), { recursive: true });
-      await rm(path, { force: true });
-      await app.listen({ path });
-      process.on("exit", () => void rm(path, { force: true }));
-    }
-  },
+		if (port !== undefined) {
+			await app.listen({ port, host });
+		} else {
+			const path = sessiondSocketPath();
+			await mkdir(dirname(path), { recursive: true });
+			await rm(path, { force: true });
+			await app.listen({ path });
+			process.on("exit", () => void rm(path, { force: true }));
+		}
+	},
 });

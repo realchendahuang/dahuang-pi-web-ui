@@ -33,13 +33,13 @@ defaults → global config file → environment overrides
 
 Supported project-local settings are then applied for that project's workspaces. For upload defaults, `<project>/.pi-web/config.json` overrides the global value.
 
-Environment overrides include `PI_WEB_HOST`, `PI_WEB_PORT` / `PORT`, `PI_WEB_ALLOWED_HOSTS`, `PI_WEB_MAX_UPLOAD_BYTES`, `PI_WEB_AGENT_COMMAND`, `PI_WEB_AGENT_DIR`, `PI_WEB_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` for Pi compatibility, `PI_WEB_SPAWN_SESSIONS`, and `PI_WEB_SUBSESSIONS`.
+Environment overrides include `PI_WEB_HOST`, `PI_WEB_PORT` / `PORT`, `PI_WEB_ALLOWED_HOSTS`, `PI_WEB_MAX_UPLOAD_BYTES`, `PI_WEB_AGENT_COMMAND`, `PI_WEB_AGENT_DIR`, `PI_WEB_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` for Pi compatibility, `PI_WEB_DEFAULT_RUNTIME`, `PI_WEB_OMP_COMMAND`, `PI_WEB_OMP_AGENT_DIR`, `PI_WEB_SPAWN_SESSIONS`, and `PI_WEB_SUBSESSIONS`.
 
 Process restarts depend on the key:
 
 - `host` / `port`: restart the gateway web/API service or process.
 - `maxUploadBytes`: restart both the web/API process and the session daemon on that machine.
-- `agent.command` / `agent.dir` / `spawnSessions` / `subsessions`: restart the session daemon on that machine.
+- `agent.command` / `agent.dir` / `agentRuntimes` / `spawnSessions` / `subsessions`: restart the session daemon on that machine.
 - `pathAccess`: applies on the next request; existing file views may need a browser refresh.
 - `uploads.defaultFolder`: applies to newly opened Files upload dialogs and new direct drag/drop batches after config/workspace refresh.
 - `plugins`: reload the browser tab after changing PI WEB plugin enablement.
@@ -62,6 +62,13 @@ Process restarts depend on the key:
   "agent": {
     "command": "pi",
     "dir": "~/agent-profiles/research"
+  },
+  "agentRuntimes": {
+    "default": "pi",
+    "omp": {
+      "command": "omp",
+      "dir": "~/.omp/agent"
+    }
   },
   "spawnSessions": true,
   "subsessions": false,
@@ -105,7 +112,7 @@ Rows with JSON key `—` are runtime-only environment variables, not config-file
 
 | Config | JSON key | Env var | Scope | Project-local behavior | Applies / restart |
 | --- | --- | --- | --- | --- | --- |
-| **Config-file keys** |  |  |  |  |  |
+| **Config-file keys** | | | | | |
 | Web/API bind host | `host` | `PI_WEB_HOST` | Global | Not supported locally | Restart web/API |
 | Web/API port | `port` | `PI_WEB_PORT`, `PORT` | Global | Not supported locally | Restart web/API |
 | Dev-server allowed hosts | `allowedHosts` | `PI_WEB_ALLOWED_HOSTS` | Global | Not supported locally | Restart dev web/UI |
@@ -113,13 +120,16 @@ Rows with JSON key `—` are runtime-only environment variables, not config-file
 | Manual file upload default folder | `uploads.defaultFolder` | — | Global + project | **Overrides**: project value wins for workspaces in that project; otherwise global/default applies | New Upload dialogs and direct drag/drop batches after config/workspace refresh |
 | Upload/body limit | `maxUploadBytes` | `PI_WEB_MAX_UPLOAD_BYTES` | Global | Not supported locally | Restart web/API and session daemon on that machine |
 | Companion CLI command | `agent.command` | `PI_WEB_AGENT_COMMAND` | Global/session daemon | Not supported locally | Restart session daemon on that machine; affects doctor/status/update checks |
-| Agent profile state directory | `agent.dir` | `PI_WEB_AGENT_DIR` (`PI_CODING_AGENT_DIR` for Pi compatibility) | Global/session daemon | Not supported locally | Restart session daemon on that machine; affects auth, models, settings, sessions, Pi packages, and Pi-package-backed PI WEB plugins |
+| Embedded Pi profile state directory | `agent.dir` | `PI_WEB_AGENT_DIR` (`PI_CODING_AGENT_DIR` for Pi compatibility) | Global/session daemon | Not supported locally | Restart session daemon on that machine; affects embedded Pi auth, models, settings, sessions, Pi packages, and Pi-package-backed PI WEB plugins |
+| Default agent runtime | `agentRuntimes.default` | `PI_WEB_DEFAULT_RUNTIME` | Global/session daemon | Not supported locally | `pi` or `omp`; restart session daemon |
+| OMP RPC command | `agentRuntimes.omp.command` | `PI_WEB_OMP_COMMAND` | Global/session daemon | Not supported locally | Restart session daemon; safe bare executable or host-absolute path |
+| OMP profile state directory | `agentRuntimes.omp.dir` | `PI_WEB_OMP_AGENT_DIR` | Global/session daemon | Not supported locally | Restart session daemon; defaults to `~/.omp/agent` |
 | Agent can spawn sessions | `spawnSessions` | `PI_WEB_SPAWN_SESSIONS` | Global/session daemon | Not supported locally | Restart session daemon on that machine |
 | Tracked subsessions (beta) | `subsessions` | `PI_WEB_SUBSESSIONS` | Global/session daemon | Not supported locally; also requires `spawnSessions` | Restart session daemon on that machine |
 | Plugin enablement/settings | `plugins.<id>.enabled`, `plugins.<id>.settings` | — | Global | Not core local config; plugins may read their own project files | Reload browser tab |
 | Keyboard shortcuts | `shortcuts.<actionId>` | — | Global | Not supported locally | Applies after settings save/config refresh |
 | Project config version | `version` | — | Project | Project-local only; must be `1` when present | Next project-config read |
-| **Runtime-only environment variables** |  |  |  |  |  |
+| **Runtime-only environment variables** | | | | | |
 | Global config file path | — | `PI_WEB_CONFIG` (`XDG_CONFIG_HOME` affects the default path) | Process/env | Selects the global config file; not a project config | Restart services/processes after changing env |
 | Managed data directory | — | `PI_WEB_DATA_DIR` | Process/env | Not supported locally | Restart web/API and session daemon |
 | Session daemon socket | — | `PI_WEB_SESSIOND_SOCKET` | Web/API + session daemon env | Not supported locally | Restart daemon and web/API; both must match |
@@ -185,7 +195,7 @@ The per-request size limit is still controlled by `maxUploadBytes` / `PI_WEB_MAX
 
 ### Pi-compatible agent profile and companion CLI
 
-`agent.command` selects the Pi-compatible companion CLI used by `pi-web doctor` and, when it can be generated safely, package-managed update commands. It defaults to `pi`. This setting does **not** replace the embedded runtime: every session continues to use PI WEB's bundled Pi SDK.
+`agent.command` selects the Pi-compatible companion CLI used by `pi-web doctor` and, when it can be generated safely, package-managed update commands. It defaults to `pi`. It also identifies the companion CLI for PI WEB's embedded Pi runtime; OMP has separate settings under `agentRuntimes.omp`.
 
 `agent.dir` selects the Pi-compatible state profile used for auth providers, models, settings, sessions, Pi packages, and Pi-package-backed PI WEB plugin discovery. It defaults to `~/.pi/agent` only for a canonical Pi companion command. The directory must use the data layout supported by the bundled Pi SDK; PI WEB does not load or convert incompatible fork formats, migrate profile data, or repartition PI WEB-managed archives when the profile changes.
 
@@ -205,6 +215,30 @@ Environment variables take precedence over the config file. `PI_WEB_AGENT_COMMAN
 The session daemon resolves the persisted desired values plus its environment once at startup. That secret-free active profile stays fixed for the daemon lifetime. **Settings → Session daemon** saves command and directory together as desired configuration and shows whether the profile is active, needs a restart, or cannot be compared. Until the daemon restarts, sessions, Pi package operations, Pi-package-backed PI WEB plugin discovery, status/install detection, and update planning continue to use the daemon-owned active profile; a web/API restart recovers that same active profile instead of applying the newly saved values.
 
 If the session daemon cannot report a valid active profile, profile-dependent Pi package and PI WEB plugin operations report unavailable instead of falling back to independently resolved config. A package-managed update command is shown only when PI WEB can preserve the active profile with a recognized, safe Pi companion CLI; otherwise the command is omitted. Remote profile editing likewise requires advertised support, and the gateway rejects a remote save if the target does not return the requested profile. Restart the session daemon on the selected machine to establish the next active profile.
+
+### Pi and OMP agent runtimes
+
+PI WEB can run embedded Pi sessions and external [OMP](https://github.com/can1357/oh-my-pi) sessions concurrently. The session list's runtime selector chooses the owner of each new session; the runtime badge identifies existing sessions. Runtime ownership is immutable because Pi and OMP use different session formats and state profiles.
+
+The embedded Pi runtime uses `agent.command` and `agent.dir`. OMP runs out of process through `omp --mode rpc-ui`, with one supervised process per active session. Configure its executable and isolated profile independently:
+
+```json
+{
+  "agentRuntimes": {
+    "default": "pi",
+    "omp": {
+      "command": "omp",
+      "dir": "~/.omp/agent"
+    }
+  }
+}
+```
+
+`agentRuntimes.default` accepts `pi` or `omp`. `agentRuntimes.omp.command` must be a safe bare executable or host-absolute path, and `agentRuntimes.omp.dir` must be host-absolute or start with `~`. Environment overrides are `PI_WEB_DEFAULT_RUNTIME`, `PI_WEB_OMP_COMMAND`, and `PI_WEB_OMP_AGENT_DIR`. OMP must already be installed and configured with models/auth in its own profile. PI WEB never loads OMP packages into the embedded Pi process and never shares or converts Pi and OMP session files.
+
+These settings are resolved when `pi-web-sessiond.service` starts. Restart the session daemon after changing them. A web/UI restart is not sufficient. Settings → General reports each runtime's command, profile, availability, version, and RPC protocol when discoverable.
+
+Current OMP support covers prompting, streaming text/thinking, tools, shell, commands, models, thinking levels, queue controls, branching, attachments, and persisted-session discovery. Pi-only archive, unread, and notification features remain disabled for OMP sessions instead of mutating OMP files through Pi's storage code.
 
 ### Pi extension provider baseline
 

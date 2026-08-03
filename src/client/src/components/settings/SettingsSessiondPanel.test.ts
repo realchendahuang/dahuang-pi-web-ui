@@ -7,7 +7,6 @@ import type {
 import { DEFAULT_LOCALE, resetLocaleForTests, setLocale, t } from "../../i18n";
 import {
 	SettingsSessiondPanel,
-	sessiondDescription,
 	sessiondPanelNotices,
 	type SessiondPanelNoticeContext,
 } from "./SettingsSessiondPanel";
@@ -18,15 +17,15 @@ afterEach(() => {
 
 // This suite asserts the session-daemon panel's dynamic behavior through public
 // seams rather than by inspecting rendered Lit `TemplateResult` internals:
-// notice composition/ordering and the description string come from the exported
-// `sessiondPanelNotices`/`sessiondDescription` helpers, and profile-save and
+// notice composition/ordering comes from the exported `sessiondPanelNotices`
+// helper, and profile-save and
 // draft-preservation behavior are observed via injected callbacks and public
 // state. Static labels and layout are intentionally not asserted here (no DOM
 // harness); per the testing-guide skill those are not verified by scraping
 // template internals.
 
 describe("session daemon panel notices", () => {
-	it("names the selected machine in the scope description and restart notice", () => {
+	it("names the selected machine in the restart notice", () => {
 		setLocale("en", { persist: false });
 		const targetLabel = "Lab Mac (remote machine)";
 		const config = configResponse({
@@ -34,10 +33,6 @@ describe("session daemon panel notices", () => {
 			spawnSessions: true,
 			subsessions: false,
 		});
-
-		expect(sessiondDescription(targetLabel)).toContain(
-			"Lab Mac (remote machine)",
-		);
 
 		const notices = sessiondPanelNotices(
 			config,
