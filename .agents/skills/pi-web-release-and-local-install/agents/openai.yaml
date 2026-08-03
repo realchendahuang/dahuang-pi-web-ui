@@ -1,0 +1,4 @@
+interface:
+  display_name: "PI WEB Release and Install"
+  short_description: "Release PI WEB locally and verify its local install."
+  default_prompt: "Use $pi-web-release-and-local-install to publish the current PI WEB changes, install the release locally, and report any required restart."
