@@ -1,5 +1,7 @@
 node_modules/
 dist/
+macos/PiAgent/.build/
+build/macos/
 
 # local dev artifacts
 .tmp-*.png

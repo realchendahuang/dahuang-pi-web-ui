@@ -1,5 +1,7 @@
 # UI Rebuild Plan (Pi Studio)
 
+> Future product direction: [Pi Agent for macOS native app plan](macos-native-app-plan.md).
+
 > Working document for the frontend rebuild. Upstream base: `jmfederico/pi-web` @ `83e9014`.
 > Branch: `ui-rebuild`. Status: Phase 0 complete.
 
