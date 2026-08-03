@@ -1,12 +1,12 @@
 # Pi Agent for macOS：彻底原生化方案
 
-> 状态：Phase 0 vertical slice 已落地，完整原生产品仍在实施中。
+> 状态：Phase 0 已落地，Phase 1 单机 vertical slice 已开始落地，完整原生产品仍在实施中。
 >
 > 目标：把 PI WEB 改造成真正的 macOS 原生桌面应用 **Pi Agent**。产品主界面、窗口、菜单、设置、通知、权限、更新与安装全部使用 macOS 原生能力；不使用 Electron、Tauri 或 WebView 作为产品界面。现有 TypeScript/Node 会话核心作为 App 内嵌运行时保留，逐步从浏览器控制面中解耦。
 >
 > 开源与产品调研快照：**2026-08-03**。外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
 
-当前已经可验证的切片位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health contract、Unix-socket client、显式 RuntimeSupervisor、contract-check executable，以及本地 `.app` 组装/签名/验证脚本。它还不是可分发的稳定 DMG，不改变现有 Web UI 或 sessiond 的事实所有权。
+当前已经可验证的切片位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health contract、Unix-socket client、显式 RuntimeSupervisor、项目目录选择、session projection、消息/状态读取、真实 Prompt 提交与 settle 轮询、contract-check executable，以及本地 `.app` 组装/签名/验证脚本。它还不是可分发的稳定 DMG，不改变现有 Web UI 或 sessiond 的事实所有权；流式 WebSocket、内嵌 Runtime、签名公证和完整项目/工作区投影仍在后续阶段。
 
 ## 1. 结论
 
