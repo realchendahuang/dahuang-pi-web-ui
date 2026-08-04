@@ -140,36 +140,39 @@ export async function gitDiff(cwd: string, options: { path?: string; staged?: bo
   return { ...(path === undefined ? {} : { path }), staged, hash: hash(result.stdout), diff: result.stdout, truncated: result.truncated };
 }
 
-/** Stage the selected root-worktree paths. Git process ownership stays in the Runtime. */
+/** Stage selected project-relative paths in their owning Git worktree. Git process ownership stays in the Runtime. */
 export async function gitStage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
   const normalized = normalizeGitMutationPaths(paths);
-	await requireRootWorktreePaths(cwd, normalized);
-  await requireGitSuccess(cwd, ["add", "--", ...normalized], "git stage failed");
+  for (const worktree of await partitionGitPathsByWorktree(cwd, normalized)) {
+    await requireGitSuccess(worktree.cwd, ["add", "--", ...worktree.paths], "git stage failed");
+  }
   return gitStatus(cwd);
 }
 
-/** Remove selected root-worktree paths from the index without touching their working-tree content. */
+/** Remove selected paths from their owning index without touching working-tree content. */
 export async function gitUnstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
   const normalized = normalizeGitMutationPaths(paths);
-	await requireRootWorktreePaths(cwd, normalized);
-  await requireGitSuccess(cwd, ["reset", "--mixed", "HEAD", "--", ...normalized], "git unstage failed");
+  for (const worktree of await partitionGitPathsByWorktree(cwd, normalized)) {
+    await requireGitSuccess(worktree.cwd, ["reset", "--mixed", "HEAD", "--", ...worktree.paths], "git unstage failed");
+  }
   return gitStatus(cwd);
 }
 
 /**
- * Discard only already-tracked, unstaged root-worktree edits. It deliberately
- * excludes untracked files, index changes, renames, and submodules so this
- * narrow native action cannot turn into a destructive general Git shell.
+ * Discard only already-tracked, unstaged file edits. Direct-submodule files
+ * are addressed from their owning worktree, but a submodule pointer itself is
+ * never restored: changing a submodule HEAD is a repository-level operation
+ * with different recovery semantics. Untracked files, index changes, and
+ * renames remain outside this narrow native action.
  */
 export async function gitDiscard(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
 	const normalized = normalizeGitMutationPaths(paths);
-	await requireRootWorktreePaths(cwd, normalized);
 	const status = await gitStatus(cwd);
 	if (!status.isGitRepo) throw new Error("This project is not a Git repository.");
 	for (const path of normalized) {
 		const file = status.files.find((candidate) => candidate.path === path);
 		if (file === undefined) {
-			throw new Error(`Only a tracked, unstaged, non-renamed root-worktree change can be discarded: ${path}`);
+			throw new Error(`Only a tracked, unstaged, non-renamed file change can be discarded: ${path}`);
 		}
 		if (
 			file.index !== "unmodified" ||
@@ -178,10 +181,12 @@ export async function gitDiscard(cwd: string, paths: readonly string[]): Promise
 			file.oldPath !== undefined ||
 			status.submodules.includes(path)
 		) {
-			throw new Error(`Only a tracked, unstaged, non-renamed root-worktree change can be discarded: ${path}`);
+			throw new Error(`Only a tracked, unstaged, non-renamed file change can be discarded: ${path}`);
 		}
 	}
-	await requireGitSuccess(cwd, ["restore", "--source=HEAD", "--worktree", "--", ...normalized], "git discard failed");
+	for (const worktree of await partitionGitPathsByWorktree(cwd, normalized)) {
+		await requireGitSuccess(worktree.cwd, ["restore", "--source=HEAD", "--worktree", "--", ...worktree.paths], "git discard failed");
+	}
 	return gitStatus(cwd);
 }
 
@@ -313,12 +318,23 @@ async function trackingPushTarget(cwd: string, branch: string): Promise<{ remote
 	return { remote, localRef, upstreamRef };
 }
 
-async function requireRootWorktreePaths(cwd: string, paths: readonly string[]): Promise<void> {
+/**
+ * Routes a superproject-relative file projection to the owning Git worktree.
+ * `submoduleForPath` intentionally identifies only strict descendants, so a
+ * direct submodule pointer such as `vendor/agent` stays a root-worktree path;
+ * it is never confused with a file inside that nested repository.
+ */
+async function partitionGitPathsByWorktree(cwd: string, paths: readonly string[]): Promise<{ cwd: string; paths: string[] }[]> {
+	const byWorktree = new Map<string, string[]>();
 	for (const path of paths) {
-		if (await submoduleForPath(cwd, path) !== undefined) {
-			throw new Error("Staging files inside a submodule is not available in the native inspector yet. Stage the submodule in its own checkout first.");
-		}
+		const owner = await submoduleForPath(cwd, path);
+		const worktreeCwd = owner === undefined ? cwd : join(cwd, owner);
+		const worktreePath = owner === undefined ? path : normalizeRelativePath(path.slice(owner.length + 1));
+		const existing = byWorktree.get(worktreeCwd);
+		if (existing === undefined) byWorktree.set(worktreeCwd, [worktreePath]);
+		else existing.push(worktreePath);
 	}
+	return [...byWorktree.entries()].map(([worktreeCwd, worktreePaths]) => ({ cwd: worktreeCwd, paths: worktreePaths }));
 }
 
 /**

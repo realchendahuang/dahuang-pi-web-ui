@@ -252,6 +252,32 @@ describe("Runtime-owned Git mutations", () => {
 		await gitStage(dir, ["tracked.txt"]);
 		await expect(gitDiscard(dir, ["tracked.txt"])).rejects.toThrow("Only a tracked, unstaged");
 	});
+
+	it("stages, unstages, and discards tracked direct-submodule files in their owning worktree", async () => {
+		const { dir } = createFixture();
+		const submodule = join(dir, "HARL");
+		writeFileSync(join(submodule, "a.txt"), "changed in submodule\n");
+
+		const staged = await gitStage(dir, ["HARL/a.txt"]);
+		expect(staged.files).toEqual(expect.arrayContaining([
+			expect.objectContaining({ path: "HARL/a.txt", index: "modified", workingTree: "unmodified" }),
+		]));
+		const unstaged = await gitUnstage(dir, ["HARL/a.txt"]);
+		expect(unstaged.files).toEqual(expect.arrayContaining([
+			expect.objectContaining({ path: "HARL/a.txt", index: "unmodified", workingTree: "modified" }),
+		]));
+
+		const discarded = await gitDiscard(dir, ["HARL/a.txt"]);
+		expect(discarded.files).toEqual([]);
+		expect(readFileSync(join(submodule, "a.txt"), "utf8")).toBe("v2\n");
+	});
+
+	it("keeps submodule pointers outside the destructive discard operation", async () => {
+		const { dir, c1 } = createFixture();
+		git(join(dir, "HARL"), ["checkout", c1]);
+
+		await expect(gitDiscard(dir, ["HARL"])).rejects.toThrow("Only a tracked, unstaged");
+	});
 });
 
 describe("Runtime-owned latest-commit undo", () => {

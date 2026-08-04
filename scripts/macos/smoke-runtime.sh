@@ -12,14 +12,30 @@ test -f "$launcher_path"
 
 runtime_test_dir="$(mktemp -d /tmp/pi-agent-runtime-smoke.XXXXXX)"
 workspace_project_dir="$runtime_test_dir/workspace-project"
+submodule_origin_dir="$runtime_test_dir/submodule-origin"
 runtime_pid=""
 project_capability_token="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
-mkdir -p "$workspace_project_dir"
+mkdir -p "$workspace_project_dir" "$submodule_origin_dir"
 printf 'seed file\n' >"$workspace_project_dir/seed.txt"
 # Tiny PNG signature fixture: it verifies the Native Contract returns image
 # bytes from an authorized workspace without granting the Swift client a path.
 printf '\211PNG\r\n\032\n\000' >"$workspace_project_dir/preview.png"
+# The bundled Runtime smoke also needs a real superproject/submodule boundary.
+# Keep every repository local to the temporary directory; no user Git config,
+# remote, credentials or project checkout is involved.
+git -C "$submodule_origin_dir" init --quiet -b main
+git -C "$submodule_origin_dir" config user.name "Pi Agent Runtime Smoke"
+git -C "$submodule_origin_dir" config user.email "runtime-smoke@example.invalid"
+printf 'submodule baseline\n' >"$submodule_origin_dir/tracked.txt"
+git -C "$submodule_origin_dir" add tracked.txt
+git -C "$submodule_origin_dir" commit --quiet -m "submodule baseline"
+git -C "$workspace_project_dir" init --quiet -b main
+git -C "$workspace_project_dir" config user.name "Pi Agent Runtime Smoke"
+git -C "$workspace_project_dir" config user.email "runtime-smoke@example.invalid"
+git -C "$workspace_project_dir" -c protocol.file.allow=always submodule add --quiet "$submodule_origin_dir" Modules/runtime-smoke
+git -C "$workspace_project_dir" add .
+git -C "$workspace_project_dir" commit --quiet -m "workspace baseline"
 
 cleanup() {
   if [[ -n "$runtime_pid" ]]; then
@@ -112,6 +128,47 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --data "$workspace_authorize_payload" \
   http://pi-agent/runtime/projects/authorize >"$runtime_test_dir/workspace-authorize-receipt.json"
+printf 'submodule changed\n' >"$workspace_project_dir/Modules/runtime-smoke/tracked.txt"
+submodule_stage_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+submodule_stage_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], paths: ["Modules/runtime-smoke/tracked.txt"], commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$workspace_project_dir" "$submodule_stage_command_id" "$runtime_epoch")"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$submodule_stage_payload" \
+  http://pi-agent/git/stage >"$runtime_test_dir/submodule-stage-receipt.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$submodule_stage_payload" \
+  http://pi-agent/git/stage >"$runtime_test_dir/submodule-stage-retry.json"
+submodule_unstage_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+submodule_unstage_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], paths: ["Modules/runtime-smoke/tracked.txt"], commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$workspace_project_dir" "$submodule_unstage_command_id" "$runtime_epoch")"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$submodule_unstage_payload" \
+  http://pi-agent/git/unstage >"$runtime_test_dir/submodule-unstage-receipt.json"
+submodule_discard_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+submodule_discard_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], paths: ["Modules/runtime-smoke/tracked.txt"], confirmed: true, commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$workspace_project_dir" "$submodule_discard_command_id" "$runtime_epoch")"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$submodule_discard_payload" \
+  http://pi-agent/git/discard >"$runtime_test_dir/submodule-discard-receipt.json"
+"$node_path" --input-type=module -e '
+import { readFile } from "node:fs/promises";
+const [stagePath, stageRetryPath, unstagePath, discardPath] = process.argv.slice(1);
+const stage = JSON.parse(await readFile(stagePath, "utf8"));
+const stageRetry = JSON.parse(await readFile(stageRetryPath, "utf8"));
+const unstage = JSON.parse(await readFile(unstagePath, "utf8"));
+const discard = JSON.parse(await readFile(discardPath, "utf8"));
+const path = "Modules/runtime-smoke/tracked.txt";
+const file = (receipt) => receipt.result?.status?.files?.find((candidate) => candidate.path === path);
+if (stage.kind !== "stage-git-paths" || stage.status !== "completed" || stage.result?.staged !== true || file(stage)?.index !== "modified" || file(stage)?.workingTree !== "unmodified") throw new Error("Bundled Runtime did not stage the direct-submodule file");
+if (JSON.stringify(stageRetry) !== JSON.stringify(stage)) throw new Error("Bundled Runtime did not make direct-submodule staging receipt-safe");
+if (unstage.kind !== "unstage-git-paths" || unstage.status !== "completed" || unstage.result?.unstaged !== true || file(unstage)?.index !== "unmodified" || file(unstage)?.workingTree !== "modified") throw new Error("Bundled Runtime did not unstage the direct-submodule file");
+if (discard.kind !== "discard-git-paths" || discard.status !== "completed" || discard.result?.discarded !== true || discard.result?.status?.files?.some((candidate) => candidate.path === path)) throw new Error("Bundled Runtime did not discard the direct-submodule file");
+' "$runtime_test_dir/submodule-stage-receipt.json" "$runtime_test_dir/submodule-stage-retry.json" "$runtime_test_dir/submodule-unstage-receipt.json" "$runtime_test_dir/submodule-discard-receipt.json"
 workspace_write_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 workspace_write_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], path: "Notes/agent.txt", content: "native edit\\n", overwrite: false, commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$workspace_project_dir" "$workspace_write_command_id" "$runtime_epoch")"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \

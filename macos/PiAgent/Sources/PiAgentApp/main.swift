@@ -1428,6 +1428,9 @@ final class AppModel: ObservableObject {
 
 	func canDiscardGitFile(_ file: RuntimeGitFile) -> Bool {
 		guard let status = gitStatus else { return false }
+		// A direct submodule pointer has recovery semantics different from a
+		// contained file. The Runtime may safely restore the latter in its own
+		// worktree, but never changes a submodule HEAD through this action.
 		return file.index == "unmodified" &&
 			file.workingTree != "unmodified" &&
 			file.workingTree != "untracked" &&
@@ -4347,7 +4350,7 @@ struct GitDiscardConfirmationSheet: View {
 			Text("Discard the unstaged changes in \(file.path)? This restores that tracked file to the current HEAD and cannot be undone from Pi Agent.")
 				.foregroundStyle(.secondary)
 				.fixedSize(horizontal: false, vertical: true)
-			Text("Untracked files, staged changes, renamed files, and submodule changes are intentionally unavailable here.")
+			Text("Untracked files, staged changes, renamed files, and submodule pointer changes are intentionally unavailable here. A tracked file inside a submodule can be restored in that submodule's own worktree.")
 				.font(.caption)
 				.foregroundStyle(.secondary)
 			HStack {
