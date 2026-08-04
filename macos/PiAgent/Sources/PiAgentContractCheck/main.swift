@@ -234,6 +234,13 @@ struct PiAgentContractCheck {
         precondition(file.content == "import SwiftUI")
         precondition(!file.binary)
 
+        let image = try decoder.decode(
+            RuntimeWorkspaceImagePreview.self,
+            from: Data(#"{"path":"Assets/agent.png","mimeType":"image/png","size":3,"modifiedAt":"2026-08-04T00:00:00Z","data":"iVBORw=="}"#.utf8)
+        )
+        precondition(image.path == "Assets/agent.png")
+        precondition(image.imageData == Data([0x89, 0x50, 0x4e, 0x47]))
+
         let writeReceipt = try decoder.decode(
             RuntimeCommandReceipt.self,
             from: Data(#"{"commandId":"workspace-write","kind":"write-workspace-file","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"written":true,"path":"Sources/PiAgent.swift","size":42,"modifiedAt":"2026-08-04T00:00:01Z","created":false}}"#.utf8)

@@ -657,9 +657,24 @@ public struct RuntimeWorkspaceFile: Codable, Equatable, Identifiable, Sendable {
     public var id: String { path }
 }
 
+/// Bounded image data returned by the Runtime for an already-authorized
+/// workspace path. The App receives bytes, not a filesystem URL, so image
+/// rendering never expands Swift's filesystem authority.
+public struct RuntimeWorkspaceImagePreview: Codable, Equatable, Identifiable, Sendable {
+    public let path: String
+    public let mimeType: String
+    public let size: Int
+    public let modifiedAt: Date
+    public let data: String
+
+    public var id: String { path }
+    public var imageData: Data? { Data(base64Encoded: data) }
+}
+
 public protocol RuntimeWorkspaceClient: Sendable {
     func workspaceTree(cwd: String, path: String?) async throws -> RuntimeWorkspaceTree
     func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile
+    func workspaceImagePreview(cwd: String, path: String) async throws -> RuntimeWorkspaceImagePreview
     func writeWorkspaceFile(cwd: String, path: String, content: String, overwrite: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func deleteWorkspaceFile(cwd: String, path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func moveWorkspaceFile(cwd: String, fromPath: String, toPath: String, overwrite: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt

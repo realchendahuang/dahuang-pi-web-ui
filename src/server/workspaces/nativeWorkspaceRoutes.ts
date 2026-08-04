@@ -15,6 +15,7 @@ import {
     writeWorkspaceFile,
 } from "./fileContentService.js";
 import { listWorkspaceTree } from "./fileTreeService.js";
+import { readWorkspaceImagePreviewData } from "./imagePreviewService.js";
 
 interface WorkspaceQuery {
     cwd?: string;
@@ -67,6 +68,14 @@ export function registerNativeWorkspaceRoutes(
     app.get<{ Querystring: WorkspaceQuery }>("/workspace/file", async (request, reply) => {
         try {
             return await readWorkspaceFile(requireCwd(request.query.cwd), request.query.path);
+        } catch (error) {
+            return reply.code(400).send({ error: errorMessage(error) });
+        }
+    });
+
+    app.get<{ Querystring: WorkspaceQuery }>("/workspace/file/preview", async (request, reply) => {
+        try {
+            return await readWorkspaceImagePreviewData(requireCwd(request.query.cwd), request.query.path);
         } catch (error) {
             return reply.code(400).send({ error: errorMessage(error) });
         }

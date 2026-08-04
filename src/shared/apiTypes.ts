@@ -749,6 +749,19 @@ export interface FileContentResponse {
 	binary: boolean;
 }
 
+/**
+ * A bounded, Runtime-owned image payload for a native client preview.
+ * `data` is standard base64 with no data-URL prefix, so a client cannot turn
+ * an arbitrary workspace path into a direct local-file URL.
+ */
+export interface WorkspaceImagePreviewResponse {
+	path: string;
+	mimeType: string;
+	size: number;
+	modifiedAt: string;
+	data: string;
+}
+
 export interface WriteWorkspaceFileOptions {
 	createDirs?: boolean; // default: true — mkdir -p equivalent
 	overwrite?: boolean; // default: true — throw if false and file exists

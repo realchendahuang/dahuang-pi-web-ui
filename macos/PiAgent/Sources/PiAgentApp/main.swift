@@ -143,6 +143,8 @@ final class AppModel: ObservableObject {
     @Published var workspaceTree: RuntimeWorkspaceTree?
     @Published var workspacePath = ""
     @Published var workspaceFile: RuntimeWorkspaceFile?
+    @Published var workspaceImagePreview: RuntimeWorkspaceImagePreview?
+    @Published var workspaceImagePreviewError: String?
     @Published var isWorkspaceLoading = false
     @Published var workspaceErrorMessage: String?
     @Published var workspaceEditorText = ""
@@ -1170,6 +1172,8 @@ final class AppModel: ObservableObject {
                 self.workspaceTree = tree
                 self.workspacePath = tree.path
                 self.workspaceFile = nil
+                self.workspaceImagePreview = nil
+                self.workspaceImagePreviewError = nil
                 self.workspaceEditorText = ""
                 self.isWorkspaceLoading = false
             } catch {
@@ -1305,6 +1309,8 @@ final class AppModel: ObservableObject {
         let generation = workspaceRequestGeneration
         isWorkspaceLoading = true
         workspaceErrorMessage = nil
+        workspaceImagePreview = nil
+        workspaceImagePreviewError = nil
         Task { [weak self] in
             do {
                 let file = try await client.workspaceFile(cwd: cwd, path: path)
@@ -1313,6 +1319,17 @@ final class AppModel: ObservableObject {
                 else { return }
                 self.workspaceFile = file
                 self.workspaceEditorText = file.content
+                if file.mediaType == "image" {
+                    do {
+                        let preview = try await client.workspaceImagePreview(cwd: cwd, path: file.path)
+                        guard self.isCurrentWorkspaceRequest(generation, cwd: cwd) else { return }
+                        self.workspaceImagePreview = preview
+                    } catch {
+                        guard self.isCurrentWorkspaceRequest(generation, cwd: cwd) else { return }
+                        self.workspaceImagePreviewError = error.localizedDescription
+                    }
+                }
+                guard self.isCurrentWorkspaceRequest(generation, cwd: cwd) else { return }
                 self.isWorkspaceLoading = false
             } catch {
                 guard let self,
@@ -2761,7 +2778,13 @@ struct WorkspaceFilesView: View {
                     Spacer()
                 }
                 .disabled(model.isWorkspaceMutationInFlight)
-                if file.binary {
+                if file.mediaType == "image" {
+                    WorkspaceImagePreviewView(
+                        file: file,
+                        preview: model.workspaceImagePreview,
+                        errorMessage: model.workspaceImagePreviewError
+                    )
+                } else if file.binary {
                     Label("Binary or image preview is not available yet.", systemImage: "doc.richtext")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -2799,6 +2822,41 @@ struct WorkspaceFilesView: View {
         if entry.isDirectory { return "folder" }
         if entry.type == "symlink" { return "arrow.triangle.branch" }
         return "doc"
+    }
+}
+
+private struct WorkspaceImagePreviewView: View {
+    let file: RuntimeWorkspaceFile
+    let preview: RuntimeWorkspaceImagePreview?
+    let errorMessage: String?
+
+    var body: some View {
+        if let preview, preview.path == file.path,
+           let data = preview.imageData,
+           let image = NSImage(data: data)
+        {
+            VStack(alignment: .leading, spacing: 6) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: 280)
+                    .accessibilityLabel("Image preview for \(file.path)")
+                Text("\(preview.mimeType) · \(ByteCountFormatter.string(fromByteCount: Int64(preview.size), countStyle: .file))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if let errorMessage {
+            Label(errorMessage, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.red)
+        } else if preview != nil {
+            Label("macOS cannot render this image format.", systemImage: "photo.badge.exclamationmark")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ProgressView("Loading image preview…")
+                .controlSize(.small)
+        }
     }
 }
 

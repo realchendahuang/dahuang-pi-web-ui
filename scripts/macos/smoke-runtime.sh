@@ -17,6 +17,9 @@ project_capability_token="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
 mkdir -p "$workspace_project_dir"
 printf 'seed file\n' >"$workspace_project_dir/seed.txt"
+# Tiny PNG signature fixture: it verifies the Native Contract returns image
+# bytes from an authorized workspace without granting the Swift client a path.
+printf '\211PNG\r\n\032\n\000' >"$workspace_project_dir/preview.png"
 
 cleanup() {
   if [[ -n "$runtime_pid" ]]; then
@@ -102,6 +105,10 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --get --data-urlencode "cwd=$workspace_project_dir" --data-urlencode "path=Notes/agent.txt" \
   http://pi-agent/workspace/file >"$runtime_test_dir/workspace-written-file.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --get --data-urlencode "cwd=$workspace_project_dir" --data-urlencode "path=preview.png" \
+  http://pi-agent/workspace/file/preview >"$runtime_test_dir/workspace-image-preview.json"
 workspace_move_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 workspace_move_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], fromPath: "Notes/agent.txt", toPath: "Notes/renamed.txt", overwrite: false, commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$workspace_project_dir" "$workspace_move_command_id" "$runtime_epoch")"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
@@ -132,7 +139,7 @@ test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
+const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
 const authorized = JSON.parse(await readFile(authorizePath, "utf8"));
@@ -144,6 +151,7 @@ const workspaceAuthorized = JSON.parse(await readFile(workspaceAuthorizePath, "u
 const workspaceWrite = JSON.parse(await readFile(workspaceWritePath, "utf8"));
 const workspaceWriteRetry = JSON.parse(await readFile(workspaceWriteRetryPath, "utf8"));
 const workspaceWrittenFile = JSON.parse(await readFile(workspaceWrittenFilePath, "utf8"));
+const workspaceImagePreview = JSON.parse(await readFile(workspaceImagePreviewPath, "utf8"));
 const workspaceMove = JSON.parse(await readFile(workspaceMovePath, "utf8"));
 const workspaceDelete = JSON.parse(await readFile(workspaceDeletePath, "utf8"));
 const workspaceWriteQuery = JSON.parse(await readFile(workspaceWriteQueryPath, "utf8"));
@@ -163,10 +171,12 @@ if (workspaceAuthorized.kind !== "authorize-project" || workspaceAuthorized.stat
 if (workspaceWrite.kind !== "write-workspace-file" || workspaceWrite.status !== "completed" || workspaceWrite.result?.written !== true || workspaceWrite.result?.created !== true) throw new Error("Runtime workspace write did not complete");
 if (JSON.stringify(workspaceWriteRetry) !== JSON.stringify(workspaceWrite) || workspaceWriteQuery.commandId !== workspaceWrite.commandId) throw new Error("Runtime workspace write receipt was not idempotent");
 if (workspaceWrittenFile.path !== "Notes/agent.txt" || workspaceWrittenFile.content !== "native edit\\n") throw new Error("Runtime workspace write did not persist the text file");
+if (workspaceImagePreview.path !== "preview.png" || workspaceImagePreview.mimeType !== "image/png" || workspaceImagePreview.size !== 9) throw new Error("Runtime workspace image preview metadata was invalid");
+if (!Buffer.from(workspaceImagePreview.data, "base64").equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))) throw new Error("Runtime workspace image preview bytes were invalid");
 if (workspaceMove.kind !== "move-workspace-file" || workspaceMove.status !== "completed" || workspaceMove.result?.toPath !== "Notes/renamed.txt") throw new Error("Runtime workspace move did not complete");
 if (workspaceDelete.kind !== "delete-workspace-file" || workspaceDelete.status !== "completed" || workspaceDelete.result?.existed !== true) throw new Error("Runtime workspace delete did not complete");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \

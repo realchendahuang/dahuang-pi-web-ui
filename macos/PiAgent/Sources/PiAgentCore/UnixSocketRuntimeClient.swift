@@ -312,6 +312,14 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func workspaceImagePreview(cwd: String, path: String) async throws -> RuntimeWorkspaceImagePreview {
+        try await request(
+            method: "GET",
+            path: "/workspace/file/preview",
+            query: [("cwd", cwd), ("path", path)]
+        )
+    }
+
     public func writeWorkspaceFile(
         cwd: String,
         path: String,

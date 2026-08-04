@@ -62,6 +62,37 @@ describe("native workspace routes", () => {
         }
     });
 
+    it("returns bounded image bytes through the Native Contract without exposing a workspace path", async () => {
+        const root = await temporaryProject();
+        const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+        await mkdir(join(root, "Assets"), { recursive: true });
+        await writeFile(join(root, "Assets", "preview.png"), image);
+        await writeFile(join(root, "Assets", "preview.txt"), "not an image");
+        const app = createApp();
+        try {
+            const preview = await app.inject({
+                method: "GET",
+                url: `/workspace/file/preview?cwd=${encodeURIComponent(root)}&path=Assets%2Fpreview.png`,
+            });
+            expect(preview.statusCode).toBe(200);
+            expect(preview.json()).toMatchObject({
+                path: "Assets/preview.png",
+                mimeType: "image/png",
+                size: image.byteLength,
+                data: image.toString("base64"),
+            });
+            expect(preview.body).not.toContain(root);
+
+            const unsupported = await app.inject({
+                method: "GET",
+                url: `/workspace/file/preview?cwd=${encodeURIComponent(root)}&path=Assets%2Fpreview.txt`,
+            });
+            expect(unsupported.statusCode).toBe(400);
+        } finally {
+            await app.close();
+        }
+    });
+
     it("writes, moves, and deletes a text file once per epoch-bound receipt", async () => {
         const root = await temporaryProject();
         const app = createApp();
