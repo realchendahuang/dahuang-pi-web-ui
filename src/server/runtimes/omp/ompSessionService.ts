@@ -32,6 +32,10 @@ import type {
 import type { WorkspaceActivityService } from "../../activity/workspaceActivityService.js";
 import type { SessionEventHub } from "../../realtime/sessionEventHub.js";
 import { saveAttachmentsToWorkspace } from "../../sessions/attachmentService.js";
+import {
+	abortActiveSessions,
+	type ActiveSessionAbortResult,
+} from "../../sessions/activeSessionAbort.js";
 import type {
 	SessionRouteLookup,
 	SessionRouteRef,
@@ -83,6 +87,32 @@ export class OmpSessionService implements SessionRouteService {
 
 	activeCount(): number {
 		return this.active.size;
+	}
+
+	async abortActiveWork(): Promise<ActiveSessionAbortResult> {
+		const targets = [...new Set(this.active.values())]
+			.filter((runtime) => {
+				const status = runtime.status();
+				return (
+					status.isStreaming ||
+					status.isCompacting ||
+					status.isBashRunning ||
+					status.pendingMessageCount > 0
+				);
+			})
+			.map((runtime) => ({
+				sessionId: runtime.identity.sessionId,
+				runtimeId: AGENT_RUNTIME_IDS.omp,
+			}));
+		return await abortActiveSessions(targets, async (target) => {
+			const runtime = this.active.get(target.sessionId);
+			if (runtime === undefined) return;
+			await this.abort({
+				id: target.sessionId,
+				cwd: runtime.identity.cwd,
+				runtimeId: AGENT_RUNTIME_IDS.omp,
+			});
+		});
 	}
 
 	async runtimes(): Promise<AgentRuntimesResponse> {

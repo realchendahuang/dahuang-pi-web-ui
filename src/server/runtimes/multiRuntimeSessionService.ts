@@ -28,6 +28,7 @@ import type {
 	SlashCommand,
 } from "../../shared/apiTypes.js";
 import type { AuthChange } from "../sessions/authService.js";
+import type { ActiveSessionAbortResult } from "../sessions/activeSessionAbort.js";
 import type { NormalizedSessionCleanupRequest } from "../sessions/sessionCleanup.js";
 import type {
 	SessionRouteLookup,
@@ -37,6 +38,7 @@ import type {
 
 export interface ManagedSessionRouteService extends SessionRouteService {
 	activeCount(): number;
+	abortActiveWork(): Promise<ActiveSessionAbortResult>;
 	dispose(): void | Promise<void>;
 }
 
@@ -53,6 +55,18 @@ export class MultiRuntimeSessionService implements SessionRouteService {
 
 	activeCount(): number {
 		return this.pi.activeCount() + this.omp.activeCount();
+	}
+
+	async abortActiveWork(): Promise<ActiveSessionAbortResult> {
+		const [pi, omp] = await Promise.all([
+			this.pi.abortActiveWork(),
+			this.omp.abortActiveWork(),
+		]);
+		return {
+			requested: pi.requested + omp.requested,
+			aborted: [...pi.aborted, ...omp.aborted],
+			failures: [...pi.failures, ...omp.failures],
+		};
 	}
 
 	applyAuthChange(change: AuthChange = {}): void {

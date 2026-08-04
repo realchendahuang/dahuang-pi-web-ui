@@ -40,19 +40,31 @@ for attempt in $(seq 1 80); do
 done
 
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/runtime/hello >"$runtime_test_dir/hello.json"
+command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  --data "{\"commandId\":\"$command_id\"}" \
+  http://pi-agent/runtime/commands/abort-active-work >"$runtime_test_dir/abort-receipt.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  "http://pi-agent/runtime/commands/$command_id" >"$runtime_test_dir/abort-receipt-retry.json"
 test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath] = process.argv.slice(1);
+const [healthPath, helloPath, receiptPath, retryPath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
+const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+const retry = JSON.parse(await readFile(retryPath, "utf8"));
 if (health.ok !== true) throw new Error("Runtime health was not OK");
 if (hello.kind !== "pi-agent-runtime") throw new Error("Unexpected Runtime hello kind");
 if (hello.protocol?.major !== 1) throw new Error("Unexpected Runtime protocol major");
 if (typeof hello.manifest?.piSdkVersion !== "string" || hello.manifest.piSdkVersion.length === 0) throw new Error("Bundled Pi SDK version is missing");
+if (receipt.kind !== "abort-active-work" || receipt.status !== "completed") throw new Error("Runtime abort receipt did not complete");
+if (receipt.result?.requested !== 0 || receipt.result?.failures?.length !== 0) throw new Error("Idle Runtime abort receipt was unexpected");
+if (retry.commandId !== receipt.commandId || retry.status !== receipt.status) throw new Error("Runtime receipt retry was not idempotent");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \

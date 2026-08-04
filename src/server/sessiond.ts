@@ -44,6 +44,11 @@ import {
 	removeOwnedSessiondSocket,
 	secureSessiondSocket,
 } from "../sessiond/sessiondSocketSecurity.js";
+import {
+	RUNTIME_COMMAND_KINDS,
+	RuntimeCommandReceipts,
+	requireRuntimeCommandId,
+} from "./runtimeCommandReceipts.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const nativeRuntimeIdentity = loadNativeRuntimeIdentity(daemonEnvironment);
@@ -122,6 +127,7 @@ await runSessionDaemonStartup({
 			ompSessions,
 			defaultRuntimeValue,
 		);
+		const runtimeCommandReceipts = new RuntimeCommandReceipts();
 		auth.subscribe((change) => {
 			sessions.applyAuthChange(change);
 		});
@@ -135,6 +141,7 @@ await runSessionDaemonStartup({
 			workspaceActivity,
 			auth,
 			sessions,
+			runtimeCommandReceipts,
 			terminals,
 			unreadStore,
 			activeAgentProfile,
@@ -146,6 +153,7 @@ await runSessionDaemonStartup({
 		workspaceActivity,
 		auth,
 		sessions,
+		runtimeCommandReceipts,
 		terminals,
 		runtimeComponent,
 	}) {
@@ -171,6 +179,41 @@ await runSessionDaemonStartup({
 
 		app.get("/runtime", () => runtimeComponent);
 		app.get("/runtime/hello", () => nativeRuntimeHello(nativeRuntimeIdentity));
+		app.get<{ Params: { commandId: string } }>(
+			"/runtime/commands/:commandId",
+			async (request, reply) => {
+				try {
+					const commandId = requireRuntimeCommandId(request.params.commandId);
+					const receipt = runtimeCommandReceipts.get(commandId);
+					if (receipt === undefined)
+						return await reply
+							.code(404)
+							.send({ error: "Runtime command receipt not found" });
+					return await receipt;
+				} catch (error) {
+					return reply.code(400).send({
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+			},
+		);
+		app.post<{ Body: { commandId?: unknown } }>(
+			"/runtime/commands/abort-active-work",
+			async (request, reply) => {
+				try {
+					const commandId = requireRuntimeCommandId(request.body.commandId);
+					return await runtimeCommandReceipts.execute(
+						commandId,
+						RUNTIME_COMMAND_KINDS.abortActiveWork,
+						() => sessions.abortActiveWork(),
+					);
+				} catch (error) {
+					return reply.code(400).send({
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+			},
+		);
 	},
 	async listen({ auth, sessions, terminals, unreadStore }) {
 		let shuttingDown = false;

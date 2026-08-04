@@ -6,6 +6,7 @@ struct PiAgentContractCheck {
     static func main() async throws {
         try checkHealthDecoding()
         try checkRuntimeHelloDecoding()
+		try checkRuntimeCommandReceiptDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -100,6 +101,19 @@ struct PiAgentContractCheck {
         precondition(hello.runtimeEpoch == "epoch-1")
         precondition(hello.manifest?.piSdkVersion == "0.81.1")
     }
+
+	private static func checkRuntimeCommandReceiptDecoding() throws {
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		let data = Data(
+			#"{"commandId":"command-1","kind":"abort-active-work","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"requested":1,"aborted":[{"sessionId":"s1","runtimeId":"pi"}],"failures":[]}}"#.utf8
+		)
+		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: data)
+		precondition(receipt.commandId == "command-1")
+		precondition(receipt.status == "completed")
+		precondition(receipt.result?.requested == 1)
+		precondition(receipt.result?.failures.isEmpty == true)
+	}
 
     private static func checkProjectAuthorization() throws {
         let suite = "PiAgentContractCheck.\(UUID().uuidString)"

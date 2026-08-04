@@ -342,6 +342,8 @@ received → accepted → running → completed | failed | cancelled
 
 断线、timeout 和“没有看到 response”都不是重复提交的理由。App 保存原 idempotency key，先查询 command 状态；只有 Runtime 明确表示未接收或该 key 已安全终止，才能决定下一步。
 
+当前已完成第一个 Native mutation：`POST /runtime/commands/abort-active-work` 接受 `commandId`，并由 Runtime epoch 内的 receipt store 复用同一个 in-flight action 和最终结果；`GET /runtime/commands/:commandId` 支持 timeout 后查询。它会对 Pi/OMP 中真正仍有 streaming、compaction、shell 或 queued work 的 session 逐一 abort，返回每个 session 的成功/失败列表。Swift 只有在 receipt completed 且没有失败项时才停止自己拥有的 Runtime；失败则保留退出确认 UI。该机制已进入 bundle smoke（包括 retry 查询），但尚未泛化到 Prompt、fork、archive、terminal 或 Git mutation。
+
 ### 7.4 Event projection
 
 Pi SDK 原始事件应投影为 UI 所需的稳定事件，例如：
@@ -398,7 +400,7 @@ App launch
 
 没有活动任务时，按照用户的“关闭后继续运行”设置决定保留或优雅停止 Runtime。不能在 `applicationShouldTerminate` 中无等待地杀进程。
 
-当前已实现最小退出协调：App 在 `applicationShouldTerminate` 中先异步刷新 `/health`；有活动 session 或 health 不可用时显示“保持 Runtime 并退出 / 停止自有 Runtime 并退出 / 取消”。`RuntimeSupervisor.stop()` 只会终止它自行 `Process.run()` 的 child，不会停止 `PI_AGENT_RUNTIME_SOCKET` 指向的开发/外部 Runtime。当前“停止 Runtime”是确定的 ownership stop，不是 agent-level graceful abort；后者仍需在 Native Contract 中加入有界、可回读的 command receipt 后实现。
+当前已实现退出协调：App 在 `applicationShouldTerminate` 中先异步刷新 `/health`；有活动 session 或 health 不可用时显示“保持 Runtime 并退出 / 停止自有 Runtime 并退出 / 取消”。“停止”先执行 epoch-bound、可查询的 `abort-active-work` receipt；只有所有已识别 active work 成功 abort，才调用 `RuntimeSupervisor.stop()`。`RuntimeSupervisor` 只会终止它自行 `Process.run()` 的 child，不会停止 `PI_AGENT_RUNTIME_SOCKET` 指向的开发/外部 Runtime。Prompt 等其他 mutation 的 receipt 泛化仍待实现。
 
 ### 8.3 Runtime crash 与 App crash
 
@@ -750,7 +752,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface，以及第一层 Pi SDK lifecycle adapter。下一步是完成 adapter 内的 services/session factory 收口、single-instance/quit lifecycle、native contract receipts 与 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work command receipt。下一步是将 receipt 泛化到其他 mutation、完成 crash/sleep lifecycle、Keychain broker 与 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

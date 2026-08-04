@@ -425,10 +425,10 @@ Pi Agent.app/Contents/
 关闭窗口不应成为 `SIGTERM` 的同义词。真正退出 App 时，App 先从 Runtime 刷新活动 session 数；如果仍有活动 session，显示三个明确选项：
 
 - **保持 Runtime 并退出**：退出原生 UI，保留正在运行的 bundled Runtime；
-- **停止 Runtime 并退出**：只停止当前 App 自己启动的 bundled Runtime，绝不触碰显式连接的开发/外部 daemon；
+- **停止 Runtime 并退出**：先通过 epoch-bound `abort-active-work` receipt 逐一停止实际工作，再停止当前 App 自己启动的 bundled Runtime；绝不触碰显式连接的开发/外部 daemon；
 - **取消**：返回应用。
 
-没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。后续仍需补齐真正的 agent graceful-abort、后台菜单栏与 Login Item；当前没有把“停止 Runtime”误称为“已完成有界 graceful shutdown”。
+没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work` 已具备同 `commandId` 可回读的 receipt、Pi/OMP per-session result 与 socket-timeout retry 查询；它是当前唯一已泛化的 agent graceful-abort。后台菜单栏、Login Item 与 Prompt/Git 等其他 mutation 的 receipt 仍待实现。
 
 ### 7.3 后台与登录启动
 
@@ -740,7 +740,7 @@ Diagnostics 页面至少展示：
 
 bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-pty`、dependency inventory、runtime manifest、App 自动启动与 Swift socket smoke 已交付。Textual/Markdown renderer、完整 workspace 与自动更新仍是后续交付。
 
-当前切片退出证据：在本机 Apple Silicon 上，未签名 `.app` artifact 已验证；验证器完成所有 bundle resources 的 hash 检查，启动内部 Node Runtime，检查 `/health` 和 `/runtime/hello`，并由 Swift ContractCheck 读取真实 session projection。App 退出时会 refresh active-session health 并仅管理自己拥有的 child Runtime；真正的 agent graceful-abort、窗口关闭后后台入口、干净账户安装与远程能力仍是后续门槛。
+当前切片退出证据：在本机 Apple Silicon 上，未签名 `.app` artifact 已验证；验证器完成所有 bundle resources 的 hash 检查，启动内部 Node Runtime，检查 `/health`、`/runtime/hello` 和 idempotent abort receipt，并由 Swift ContractCheck 读取真实 session projection。App 退出时会 refresh active-session health、先 abort actual work，并仅管理自己拥有的 child Runtime；窗口关闭后后台入口、干净账户安装与远程能力仍是后续门槛。
 
 ### Phase 1：原生单机 MVP
 
@@ -750,9 +750,9 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 2：生命周期与 macOS 集成
 
-已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；退出前 active-session health refresh；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；abort-active-work command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、agent graceful-abort、崩溃重连、sleep/wake、Login Item helper。
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、Prompt/Git 等其他 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

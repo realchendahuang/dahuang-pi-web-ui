@@ -425,6 +425,38 @@ public protocol RuntimeClient: RuntimeHealthClient {
     func messages(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeMessagePage
     func status(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
     func prompt(sessionId: String, cwd: String, runtimeId: String?, text: String) async throws
+    func abortActiveWork(commandId: String) async throws -> RuntimeCommandReceipt
+    func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
+}
+
+/// Epoch-bound response for a native Runtime mutation. Repeating the same
+/// command id returns this same receipt, letting the App safely recover from a
+/// socket timeout without sending a second agent-level abort.
+public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
+    public struct AbortTarget: Decodable, Equatable, Sendable {
+        public let sessionId: String
+        public let runtimeId: String
+    }
+
+    public struct AbortFailure: Decodable, Equatable, Sendable {
+        public let sessionId: String
+        public let runtimeId: String
+        public let error: String
+    }
+
+    public struct AbortResult: Decodable, Equatable, Sendable {
+        public let requested: Int
+        public let aborted: [AbortTarget]
+        public let failures: [AbortFailure]
+    }
+
+    public let commandId: String
+    public let kind: String
+    public let status: String
+    public let startedAt: Date
+    public let completedAt: Date
+    public let result: AbortResult?
+    public let error: String?
 }
 
 /// Session event transport kept separate from the request client so tests and

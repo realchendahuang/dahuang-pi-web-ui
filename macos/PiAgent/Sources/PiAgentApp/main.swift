@@ -91,6 +91,8 @@ final class AppModel: ObservableObject {
     private var terminalCWD: String?
     private var terminationCheckInFlight = false
     private var terminationActiveSessionCount: Int?
+    private var terminationAbortInFlight = false
+    private var terminationAbortError: String?
 
     init(
         runtimeClient: (any RuntimeClient)? = nil,
@@ -143,6 +145,9 @@ final class AppModel: ObservableObject {
     }
 
     var terminationConfirmationMessage: String {
+		if let terminationAbortError {
+			return "The Runtime could not stop every active session: \(terminationAbortError) Keep it running and quit, try stopping it again, or cancel."
+		}
         if let terminationActiveSessionCount {
             return "(terminationActiveSessionCount) active session\(terminationActiveSessionCount == 1 ? " is" : "s are") still running. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
         }
@@ -190,9 +195,37 @@ final class AppModel: ObservableObject {
     }
 
     func stopOwnedRuntimeAndTerminate() {
-        clearTerminationRequest()
-        runtimeSupervisor?.stop()
-        NSApp.reply(toApplicationShouldTerminate: true)
+        guard !terminationAbortInFlight else { return }
+        terminationAbortInFlight = true
+        terminationAbortError = nil
+        showTerminationConfirmation = false
+        let client = runtimeClient
+        let commandId = UUID().uuidString
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt = try await client.abortActiveWork(commandId: commandId)
+                guard receipt.status == "completed" else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        receipt.error ?? "Runtime abort command failed."
+                    )
+                }
+                if let failures = receipt.result?.failures, !failures.isEmpty {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        failures.map(\.error).joined(separator: "; ")
+                    )
+                }
+                self.clearTerminationRequest()
+                self.runtimeSupervisor?.stop()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            } catch {
+                self.terminationAbortInFlight = false
+                self.terminationAbortError = error.localizedDescription
+                self.showTerminationConfirmation = true
+            }
+        }
     }
 
     func cancelTermination() {
@@ -203,6 +236,8 @@ final class AppModel: ObservableObject {
     private func clearTerminationRequest() {
         terminationCheckInFlight = false
         terminationActiveSessionCount = nil
+        terminationAbortInFlight = false
+        terminationAbortError = nil
         showTerminationConfirmation = false
     }
 
@@ -784,6 +819,8 @@ private struct UnavailableRuntimeClient: RuntimeClient {
     func messages(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeMessagePage { throw RuntimeClientError.connectionFailed(message) }
     func status(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func prompt(sessionId _: String, cwd _: String, runtimeId _: String?, text _: String) async throws { throw RuntimeClientError.connectionFailed(message) }
+    func abortActiveWork(commandId _: String) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func commandReceipt(commandId _: String) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
 }
 
 struct ContentView: View {

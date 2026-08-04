@@ -76,6 +76,21 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func abortActiveWork(commandId: String) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST",
+            path: "/runtime/commands/abort-active-work",
+            body: RuntimeCommandPayload(commandId: commandId)
+        )
+    }
+
+    public func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "GET",
+            path: "/runtime/commands/\(Self.pathSegment(commandId))"
+        )
+    }
+
     public func streamSnapshot(
         sessionId: String,
         cwd: String,
@@ -215,6 +230,10 @@ private struct PromptPayload: Encodable {
         case text
         case runtimeId
     }
+}
+
+private struct RuntimeCommandPayload: Encodable {
+    let commandId: String
 }
 
 private struct TerminalCreatePayload: Encodable {

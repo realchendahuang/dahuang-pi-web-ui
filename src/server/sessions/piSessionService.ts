@@ -65,6 +65,10 @@ import {
 	attachmentsToInlineImages,
 	saveAttachmentsToWorkspace,
 } from "./attachmentService.js";
+import {
+	abortActiveSessions,
+	type ActiveSessionAbortResult,
+} from "./activeSessionAbort.js";
 import { parsePromptAttachments } from "../../shared/promptAttachments.js";
 import {
 	SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH,
@@ -1120,6 +1124,24 @@ export class PiSessionService implements SessionRouteService {
 
 	activeCount(): number {
 		return this.active.size;
+	}
+
+	async abortActiveWork(): Promise<ActiveSessionAbortResult> {
+		const targets = [...new Set(this.active.values())]
+			.filter((active) => this.hasActiveWork(active.runtime.session))
+			.map((active) => ({
+				sessionId: active.runtime.session.sessionId,
+				runtimeId: AGENT_RUNTIME_IDS.pi,
+			}));
+		return await abortActiveSessions(targets, async (target) => {
+			const active = this.active.get(target.sessionId);
+			if (active === undefined) return;
+			await this.abort({
+				id: target.sessionId,
+				cwd: active.runtime.session.sessionManager.getCwd(),
+				runtimeId: AGENT_RUNTIME_IDS.pi,
+			});
+		});
 	}
 
 	runtimes(): AgentRuntimesResponse {
