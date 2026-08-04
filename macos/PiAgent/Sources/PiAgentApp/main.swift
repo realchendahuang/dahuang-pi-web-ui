@@ -186,6 +186,7 @@ final class AppModel: ObservableObject {
     private var terminationAbortInFlight = false
     private var terminationAbortError: String?
     private var runtimeEpoch: String?
+    private var authPollingTask: Task<Void, Never>?
 
     init(
         runtimeClient: (any RuntimeClient)? = nil,
@@ -1212,6 +1213,7 @@ final class AppModel: ObservableObject {
                 self.activeAuthFlow = flow
                 self.authInput = ""
                 self.isAuthLoading = false
+                self.startAuthPolling(flow)
             } catch {
                 self?.authErrorMessage = error.localizedDescription
                 self?.isAuthLoading = false
@@ -1222,7 +1224,7 @@ final class AppModel: ObservableObject {
     func refreshAuthFlow() {
         guard let flow = activeAuthFlow, let client = runtimeClient as? any RuntimeAuthClient else { return }
         Task { [weak self] in
-            do { self?.activeAuthFlow = try await client.authFlow(id: flow.flowId) }
+            do { self?.applyAuthFlow(try await client.authFlow(id: flow.flowId)) }
             catch { self?.authErrorMessage = error.localizedDescription }
         }
     }
@@ -1234,7 +1236,7 @@ final class AppModel: ObservableObject {
         Task { [weak self] in
             do {
                 let updated = try await client.respondAuthFlow(id: flow.flowId, requestId: requestId, value: submitted)
-                self?.activeAuthFlow = updated
+                self?.applyAuthFlow(updated)
                 self?.authInput = ""
                 if updated.status == "complete" { self?.refreshAuthProviders() }
             } catch { self?.authErrorMessage = error.localizedDescription }
@@ -1242,11 +1244,42 @@ final class AppModel: ObservableObject {
     }
 
     func cancelAuthFlow() {
+        authPollingTask?.cancel()
+        authPollingTask = nil
         guard let flow = activeAuthFlow, let client = runtimeClient as? any RuntimeAuthClient else { activeAuthFlow = nil; return }
         Task { [weak self] in
             _ = try? await client.cancelAuthFlow(id: flow.flowId)
             self?.activeAuthFlow = nil
             self?.authInput = ""
+        }
+    }
+
+    private func startAuthPolling(_ flow: RuntimeAuthFlow) {
+        authPollingTask?.cancel()
+        guard flow.status == "running", let client = runtimeClient as? any RuntimeAuthClient else { return }
+        authPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                do {
+                    let current = try await client.authFlow(id: flow.flowId)
+                    guard let self, self.activeAuthFlow?.flowId == flow.flowId else { return }
+                    self.applyAuthFlow(current)
+                    if current.status != "running" { return }
+                } catch { return }
+            }
+        }
+    }
+
+    private func applyAuthFlow(_ flow: RuntimeAuthFlow) {
+        activeAuthFlow = flow
+        if flow.status == "complete" {
+            authPollingTask?.cancel()
+            authPollingTask = nil
+            refreshAuthProviders()
+        } else if flow.status != "running" {
+            authPollingTask?.cancel()
+            authPollingTask = nil
         }
     }
 
