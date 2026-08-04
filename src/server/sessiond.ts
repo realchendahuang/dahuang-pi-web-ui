@@ -196,7 +196,17 @@ await runSessionDaemonStartup({
 		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 		registerNativeGitRoutes(app, runtimeCommandReceipts);
 		registerNativeWorkspaceRoutes(app, runtimeCommandReceipts);
-		registerNativeLegacyProjectRoutes(app, daemonEnvironment);
+		registerNativeLegacyProjectRoutes(app, daemonEnvironment, {
+			legacyAuthMigrationPreview: async () => {
+				const preview = await auth.legacyAuthMigrationPreview();
+				return {
+					sourceExists: preview.sourceExists,
+					eligible: preview.eligible,
+					credentialCount: preview.credentials.length,
+					...(preview.issue === undefined ? {} : { issue: preview.issue }),
+				};
+			},
+		});
 		app.get("/health", () => ({
 			ok: true,
 			activeSessions: sessions.activeCount(),

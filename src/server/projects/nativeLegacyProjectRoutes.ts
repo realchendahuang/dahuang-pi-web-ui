@@ -17,10 +17,22 @@ export interface NativeLegacyProjectPreview {
 	issue?: string;
 }
 
-export type NativeLegacyMigrationAction = "reauthorize-projects" | "copied-and-retained" | "retained";
+export type NativeLegacyMigrationAction = "reauthorize-projects" | "migrate-to-keychain" | "copied-and-retained" | "retained";
+
+/** Deliberately redacted auth migration summary supplied by AuthService. */
+export interface NativeLegacyAuthMigrationOverviewPreview {
+	sourceExists: boolean;
+	eligible: boolean;
+	credentialCount: number;
+	issue?: string;
+}
+
+export interface NativeLegacyMigrationOverviewDependencies {
+	legacyAuthMigrationPreview?: () => Promise<NativeLegacyAuthMigrationOverviewPreview>;
+}
 
 export interface NativeLegacyMigrationOverviewItem {
-	id: "projects" | "archived-sessions" | "machines" | "unread";
+	id: "projects" | "credentials" | "archived-sessions" | "machines" | "unread";
 	source: string;
 	sourceExists: boolean;
 	action: NativeLegacyMigrationAction;
@@ -42,12 +54,13 @@ export interface NativeLegacyMigrationOverview {
 export function registerNativeLegacyProjectRoutes(
 	app: FastifyInstance,
 	env: NodeJS.ProcessEnv = process.env,
+	dependencies: NativeLegacyMigrationOverviewDependencies = {},
 ): void {
 	app.get("/projects/legacy-migration/preview", async (): Promise<NativeLegacyProjectPreview> => {
 		return await readNativeLegacyProjectPreview(env);
 	});
 	app.get("/migration/legacy/overview", async (): Promise<NativeLegacyMigrationOverview> =>
-		await readNativeLegacyMigrationOverview(env));
+		await readNativeLegacyMigrationOverview(env, dependencies));
 }
 
 export function legacyPiWebDataDir(env: NodeJS.ProcessEnv): string {
@@ -73,10 +86,12 @@ export async function readNativeLegacyProjectPreview(
 
 export async function readNativeLegacyMigrationOverview(
 	env: NodeJS.ProcessEnv = process.env,
+	dependencies: NativeLegacyMigrationOverviewDependencies = {},
 ): Promise<NativeLegacyMigrationOverview> {
 	const legacyDataDir = legacyPiWebDataDir(env);
 	const projects = await readNativeLegacyProjectPreview(env);
-	const [archives, machines, unread] = await Promise.all([
+	const [auth, archives, machines, unread] = await Promise.all([
+		readNativeLegacyAuthMigrationOverview(dependencies),
 		legacyFileStatus(join(legacyDataDir, "archived-sessions.json")),
 		legacyFileStatus(join(legacyDataDir, "machines.json")),
 		legacyFileStatus(join(legacyDataDir, "session-unread.json")),
@@ -91,6 +106,14 @@ export async function readNativeLegacyMigrationOverview(
 				action: "reauthorize-projects",
 				...(projects.sourceExists ? { itemCount: projects.candidates.length } : {}),
 				...(projects.issue === undefined ? {} : { issue: projects.issue }),
+			},
+			{
+				id: "credentials",
+				source: "Pi auth.json",
+				sourceExists: auth.sourceExists,
+				action: "migrate-to-keychain",
+				...(auth.sourceExists ? { itemCount: auth.credentialCount } : {}),
+				...(auth.issue === undefined ? {} : { issue: auth.issue }),
 			},
 			{
 				id: "archived-sessions",
@@ -115,6 +138,36 @@ export async function readNativeLegacyMigrationOverview(
 			},
 		],
 	};
+}
+
+async function readNativeLegacyAuthMigrationOverview(
+	dependencies: NativeLegacyMigrationOverviewDependencies,
+): Promise<NativeLegacyAuthMigrationOverviewPreview> {
+	const preview = dependencies.legacyAuthMigrationPreview;
+	if (preview === undefined) {
+		return {
+			sourceExists: false,
+			eligible: false,
+			credentialCount: 0,
+			issue: "Credential migration is available only from the bundled Pi Agent Runtime.",
+		};
+	}
+	try {
+		const result = await preview();
+		return {
+			sourceExists: result.sourceExists,
+			eligible: result.eligible,
+			credentialCount: result.credentialCount,
+			...(result.issue === undefined ? {} : { issue: result.issue }),
+		};
+	} catch {
+		return {
+			sourceExists: false,
+			eligible: false,
+			credentialCount: 0,
+			issue: "Credential migration preview could not be read.",
+		};
+	}
 }
 
 async function legacyFileStatus(path: string): Promise<{ path: string; exists: boolean; issue?: string }> {

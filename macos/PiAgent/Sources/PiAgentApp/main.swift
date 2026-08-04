@@ -4800,6 +4800,7 @@ struct SettingsView: View {
 private func legacyMigrationItemLabel(_ id: String) -> String {
 	switch id {
 	case "projects": return "Projects"
+	case "credentials": return "Provider credentials"
 	case "archived-sessions": return "Archived sessions"
 	case "machines": return "Remote machines"
 	case "unread": return "Unread state"
@@ -4810,6 +4811,7 @@ private func legacyMigrationItemLabel(_ id: String) -> String {
 private func legacyMigrationActionLabel(_ action: String) -> String {
 	switch action {
 	case "reauthorize-projects": return "Re-authorize in Projects"
+	case "migrate-to-keychain": return "Migrate to Keychain"
 	case "copied-and-retained": return "Copied, source retained"
 	case "retained": return "Retained; no native target"
 	default: return action

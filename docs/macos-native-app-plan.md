@@ -619,7 +619,7 @@ Pi 自己的 profile 和 session 文件仍由 Pi/OMP 兼容目录拥有，不能
 6. 保留旧目录，不自动删除；
 7. 新 App 成功启动并完成 smoke test 后才提供“移到废纸篓”按钮。
 
-迁移必须可重复、可中断、可恢复。发现目标已有数据时不做隐式 merge；提供“使用现有 Pi Agent 数据”“重新预览迁移”或“导出冲突报告”。Settings 的 **Legacy PI WEB migration** 先提供只读总览：它只显示来源路径、是否存在、可安全执行的动作、项目候选数量和可解释的读取错误，绝不把 `machines.json` 的 token/header、`session-unread.json` 的内容、bookmark bytes 或 credential 带过 Native Contract。当前总览的明确边界是：项目必须由用户逐项重新授权；已归档 session 已复制但旧来源保留；远程 machines 与 unread state 仅保留，因为尚无安全的 native destination。bundled Native Runtime 的 legacy archived-session migration 已按此原则执行：复制、逐项验证并原子发布 destination index 后，明确保留 source index 与 archive 文件，状态投影为 `legacyState: "preserved"`；旧 Web/CLI compatibility path 仍可选择其原有清理行为。任何 future “Move legacy data to Trash”都必须是独立、用户确认的操作，不能隐藏在启动期迁移中。
+迁移必须可重复、可中断、可恢复。发现目标已有数据时不做隐式 merge；提供“使用现有 Pi Agent 数据”“重新预览迁移”或“导出冲突报告”。Settings 的 **Legacy PI WEB migration** 先提供只读总览：它只显示来源路径、是否存在、可安全执行的动作、项目/credential 候选数量和可解释的读取错误，绝不把 `machines.json` 的 token/header、`session-unread.json` 的内容、bookmark bytes 或 credential 带过 Native Contract。当前总览的明确边界是：项目必须由用户逐项重新授权；旧 `auth.json` 只在 bundled Runtime 显示可迁移的 credential 数量与冲突/资格、真正写入仍走显式 Keychain migration；已归档 session 已复制但旧来源保留；远程 machines 与 unread state 仅保留，因为尚无安全的 native destination。bundled Native Runtime 的 legacy archived-session migration 已按此原则执行：复制、逐项验证并原子发布 destination index 后，明确保留 source index 与 archive 文件，状态投影为 `legacyState: "preserved"`；旧 Web/CLI compatibility path 仍可选择其原有清理行为。任何 future “Move legacy data to Trash”都必须是独立、用户确认的操作，不能隐藏在启动期迁移中。
 
 ### 10.3 Keychain
 

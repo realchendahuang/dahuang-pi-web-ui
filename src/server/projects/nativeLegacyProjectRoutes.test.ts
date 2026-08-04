@@ -32,6 +32,12 @@ describe("native legacy PI WEB migration overview", () => {
 
 		const overview = await readNativeLegacyMigrationOverview({
 			PI_AGENT_LEGACY_PI_WEB_DATA_DIR: legacyDataDir,
+		}, {
+			legacyAuthMigrationPreview: () => Promise.resolve({
+				sourceExists: true,
+				eligible: true,
+				credentialCount: 2,
+			}),
 		});
 
 		expect(overview).toEqual({
@@ -43,6 +49,13 @@ describe("native legacy PI WEB migration overview", () => {
 					sourceExists: true,
 					action: "reauthorize-projects",
 					itemCount: 1,
+				},
+				{
+					id: "credentials",
+					source: "Pi auth.json",
+					sourceExists: true,
+					action: "migrate-to-keychain",
+					itemCount: 2,
 				},
 				{
 					id: "archived-sessions",
@@ -64,8 +77,9 @@ describe("native legacy PI WEB migration overview", () => {
 				},
 			],
 		});
-		expect(JSON.stringify(overview)).not.toContain(secretMachineToken);
-		expect(JSON.stringify(overview)).not.toContain(unreadPrompt);
+		const serialized = JSON.stringify(overview);
+		expect(serialized).not.toContain(secretMachineToken);
+		expect(serialized).not.toContain(unreadPrompt);
 	});
 
 	it("reports malformed project metadata without concealing the rest of the inventory", async () => {
@@ -98,6 +112,28 @@ describe("native legacy PI WEB migration overview", () => {
 			sourceExists: false,
 			action: "copied-and-retained",
 		});
+	});
+
+	it("reports credential migration unavailability without exposing a provider secret", async () => {
+		const legacyDataDir = await fixtureRoot();
+		const secret = "credential-secret-must-not-leave-runtime";
+		const overview = await readNativeLegacyMigrationOverview({
+			PI_AGENT_LEGACY_PI_WEB_DATA_DIR: legacyDataDir,
+		}, {
+			legacyAuthMigrationPreview: () => Promise.reject(new Error(`Could not inspect credential migration: ${secret}`)),
+		});
+
+		const credentials = overview.items.find((item) => item.id === "credentials");
+		expect(credentials).toEqual({
+			id: "credentials",
+			source: "Pi auth.json",
+			sourceExists: false,
+			action: "migrate-to-keychain",
+			issue: "Credential migration preview could not be read.",
+		});
+		// The endpoint returns an error classification, never the credential itself.
+		expect(JSON.stringify(overview)).not.toContain("providerId");
+		expect(JSON.stringify(overview)).not.toContain(secret);
 	});
 });
 
