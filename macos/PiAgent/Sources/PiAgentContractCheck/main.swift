@@ -13,6 +13,7 @@ struct PiAgentContractCheck {
         try checkWorkspaceContractDecoding()
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
+        try checkNativeProjectMigrationJournal()
         try checkSessionAndMessageDecoding()
         try checkTaskNotificationDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -383,6 +384,113 @@ struct PiAgentContractCheck {
         precondition(restored?.url.path == access.url.path)
     }
 
+    private static func checkNativeProjectMigrationJournal() throws {
+        let suite = "PiAgentContractCheck.ProjectMigration.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            throw ContractCheckError.projectAuthorizationStoreUnavailable
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let projectURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let projectPath = projectURL.standardizedFileURL.path
+
+        let catalog = NativeProjectCatalog(defaults: defaults, key: "catalog")
+        let journal = NativeProjectMigrationJournal(defaults: defaults, key: "journal")
+        let coordinator = NativeLegacyProjectMigrationCoordinator(catalog: catalog, journal: journal)
+        let migration = try coordinator.migrate(
+            legacyProjectID: "legacy-created",
+            legacyPath: projectPath,
+            selectedURL: projectURL
+        )
+        precondition(migration.state == .verified)
+        precondition(migration.entries.count == 1)
+        precondition(migration.entries[0].created)
+        let createdRecord = try catalog.record(id: migration.entries[0].nativeProjectID)
+        precondition(createdRecord?.displayPath == projectPath)
+        let latestMigration = try coordinator.latestMigration()
+        precondition(latestMigration?.id == migration.id)
+        precondition(latestMigration?.entries == migration.entries)
+
+        let rolledBack = try coordinator.rollbackLatest()
+        precondition(rolledBack.state == .rolledBack)
+        precondition(rolledBack.completedAt != nil)
+        let removedRecord = try catalog.record(id: migration.entries[0].nativeProjectID)
+        precondition(removedRecord == nil)
+
+        let manualCatalog = NativeProjectCatalog(defaults: defaults, key: "manual-catalog")
+        let manualActivation = try manualCatalog.rememberAndAccess(projectURL)
+        precondition(manualActivation.created)
+        let manualJournal = NativeProjectMigrationJournal(defaults: defaults, key: "manual-journal")
+        let manualCoordinator = NativeLegacyProjectMigrationCoordinator(catalog: manualCatalog, journal: manualJournal)
+        let existingMigration = try manualCoordinator.migrate(
+            legacyProjectID: "legacy-preexisting",
+            legacyPath: projectPath,
+            selectedURL: projectURL
+        )
+        precondition(!existingMigration.entries[0].created)
+        _ = try manualCoordinator.rollbackLatest()
+        let manualRecord = try manualCatalog.record(id: manualActivation.record.id)
+        precondition(manualRecord?.displayPath == projectPath)
+
+        let failedCatalog = NativeProjectCatalog(defaults: defaults, key: "failed-catalog")
+        let failedJournal = NativeProjectMigrationJournal(
+            defaults: defaults,
+            key: "failed-journal",
+            beforeWrite: { throw ContractCheckError.projectMigrationJournalWriteFailure }
+        )
+        let failedCoordinator = NativeLegacyProjectMigrationCoordinator(catalog: failedCatalog, journal: failedJournal)
+        do {
+            _ = try failedCoordinator.migrate(
+                legacyProjectID: "legacy-journal-failure",
+                legacyPath: projectPath,
+                selectedURL: projectURL
+            )
+            preconditionFailure("A migration journal write failure must be reported")
+        } catch ContractCheckError.projectMigrationJournalWriteFailure {
+            // The coordinator compensates only for the exact new bookmark.
+        }
+        precondition(failedCatalog.list().isEmpty)
+
+        let mismatchCatalogKey = "mismatch-catalog"
+        let mismatchJournalKey = "mismatch-journal"
+        let mismatchRecord = NativeProjectBookmark(
+            id: "mismatch-native-project",
+            displayName: "Other",
+            displayPath: "/private/tmp/not-the-legacy-project",
+            bookmarkData: Data(),
+            addedAt: Date(timeIntervalSince1970: 0),
+            lastOpenedAt: Date(timeIntervalSince1970: 0)
+        )
+        let mismatchMigration = NativeProjectMigrationRecord(
+            id: "mismatch-migration",
+            createdAt: Date(timeIntervalSince1970: 0),
+            state: .verified,
+            entries: [
+                .init(
+                    legacyProjectID: "legacy-mismatch",
+                    legacyPath: projectPath,
+                    nativeProjectID: mismatchRecord.id,
+                    nativeProjectPath: projectPath,
+                    created: true
+                ),
+            ]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        defaults.set(try encoder.encode([mismatchRecord]), forKey: mismatchCatalogKey)
+        defaults.set(try encoder.encode([mismatchMigration]), forKey: mismatchJournalKey)
+        let mismatchCatalog = NativeProjectCatalog(defaults: defaults, key: mismatchCatalogKey)
+        let mismatchJournal = NativeProjectMigrationJournal(defaults: defaults, key: mismatchJournalKey)
+        let mismatchCoordinator = NativeLegacyProjectMigrationCoordinator(catalog: mismatchCatalog, journal: mismatchJournal)
+        do {
+            _ = try mismatchCoordinator.rollbackLatest()
+            preconditionFailure("A path mismatch must reject rollback")
+        } catch NativeProjectMigrationError.catalogReadbackMismatch {
+            // The unrelated record must remain untouched.
+        }
+        let mismatchCatalogRecord = try mismatchCatalog.record(id: mismatchRecord.id)
+        precondition(mismatchCatalogRecord == mismatchRecord)
+    }
+
     private static func checkSessionAndMessageDecoding() throws {
         let sessionData = Data(
             #"{"id":"s1","cwd":"/tmp/project","runtimeId":"pi","path":"/tmp/session.jsonl","persisted":true,"name":"Native smoke test","created":"2026-08-03T00:00:00Z","modified":"2026-08-03T00:01:00Z","messageCount":2,"firstMessage":"hello"}"#.utf8
@@ -693,6 +801,7 @@ struct PiAgentContractCheck {
 private enum ContractCheckError: Error {
     case missingExplicitPlan
     case projectAuthorizationStoreUnavailable
+    case projectMigrationJournalWriteFailure
     case timeout
 }
 

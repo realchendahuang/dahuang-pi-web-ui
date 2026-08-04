@@ -177,6 +177,9 @@ final class AppModel: ObservableObject {
     @Published var knownProjects: [NativeProjectBookmark] = []
 	@Published var legacyProjectPreview: RuntimeLegacyProjectPreview?
 	@Published var isLegacyProjectPreviewLoading = false
+	@Published var legacyProjectMigration: NativeProjectMigrationRecord?
+	@Published var isLegacyProjectMigrationInFlight = false
+	@Published var showLegacyProjectMigrationRollbackConfirmation = false
     @Published var selectedSessionID: String?
     @Published var showInspector = true
     @Published var prompt = ""
@@ -245,6 +248,7 @@ final class AppModel: ObservableObject {
     private let runtimeSupervisor: RuntimeSupervisor?
     private let projectAuthorizationStore: ProjectAuthorizationStore
 	private let projectCatalog: NativeProjectCatalog
+	private let legacyProjectMigrationCoordinator: NativeLegacyProjectMigrationCoordinator
     let taskNotifications: NativeTaskNotificationCoordinator?
     private var projectAccess: ProjectAccess?
 
@@ -272,11 +276,17 @@ final class AppModel: ObservableObject {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         projectAuthorizationStore: ProjectAuthorizationStore = ProjectAuthorizationStore(),
 		projectCatalog: NativeProjectCatalog = NativeProjectCatalog(),
+		projectMigrationJournal: NativeProjectMigrationJournal = NativeProjectMigrationJournal(),
         connection: RuntimeConnection? = nil,
         taskNotifications: NativeTaskNotificationCoordinator? = nil
     ) {
         self.projectAuthorizationStore = projectAuthorizationStore
 		self.projectCatalog = projectCatalog
+		legacyProjectMigrationCoordinator = NativeLegacyProjectMigrationCoordinator(
+			catalog: projectCatalog,
+			journal: projectMigrationJournal
+		)
+		legacyProjectMigration = try? legacyProjectMigrationCoordinator.latestMigration()
 		let restoredCatalog = projectCatalog.list()
 		knownProjects = restoredCatalog
         self.taskNotifications = taskNotifications
@@ -641,10 +651,45 @@ final class AppModel: ObservableObject {
 			errorMessage = "Choose the original legacy project path exactly: \(candidate.path)"
 			return
 		}
+		isLegacyProjectMigrationInFlight = true
 		do {
-			_ = try projectCatalog.rememberAndAccess(url)
+			legacyProjectMigration = try legacyProjectMigrationCoordinator.migrate(
+				legacyProjectID: candidate.id,
+				legacyPath: candidate.path,
+				selectedURL: url
+			)
 			knownProjects = projectCatalog.list()
-		} catch { errorMessage = error.localizedDescription }
+			isLegacyProjectMigrationInFlight = false
+		} catch {
+			knownProjects = projectCatalog.list()
+			isLegacyProjectMigrationInFlight = false
+			errorMessage = error.localizedDescription
+		}
+	}
+
+	func requestLegacyProjectMigrationRollback() {
+		guard legacyProjectMigration?.rollbackEligible == true, !isLegacyProjectMigrationInFlight else { return }
+		showLegacyProjectMigrationRollbackConfirmation = true
+	}
+
+	func cancelLegacyProjectMigrationRollback() {
+		showLegacyProjectMigrationRollbackConfirmation = false
+	}
+
+	func rollbackLegacyProjectMigration() {
+		guard !isLegacyProjectMigrationInFlight else { return }
+		showLegacyProjectMigrationRollbackConfirmation = false
+		isLegacyProjectMigrationInFlight = true
+		do {
+			legacyProjectMigration = try legacyProjectMigrationCoordinator.rollbackLatest()
+			knownProjects = projectCatalog.list()
+			isLegacyProjectMigrationInFlight = false
+		} catch {
+			legacyProjectMigration = try? legacyProjectMigrationCoordinator.latestMigration()
+			knownProjects = projectCatalog.list()
+			isLegacyProjectMigrationInFlight = false
+			errorMessage = error.localizedDescription
+		}
 	}
 
     /// The App remains a UI client while macOS sleeps. Stop its socket readers
@@ -4337,6 +4382,10 @@ struct SettingsView: View {
                 Button("Choose Project…") { model.openProject() }
             }
 			Section("Legacy PI WEB projects") {
+				Text("Each migration is read back into the native Project Library before Pi Agent records it. Rolling back removes only a bookmark created by that exact migration; it never changes the legacy projects.json, your directory, sessions, or manually added projects.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
 				if model.isLegacyProjectPreviewLoading {
 					ProgressView("Inspecting legacy projects…")
 				} else if let preview = model.legacyProjectPreview {
@@ -4349,8 +4398,18 @@ struct SettingsView: View {
 						}
 					}
 				}
+				if model.isLegacyProjectMigrationInFlight {
+					ProgressView("Updating native project migration…")
+				} else if let migration = model.legacyProjectMigration {
+					LabeledContent("Last migration", value: migration.state.rawValue)
+					if migration.rollbackEligible {
+						Button("Roll Back Last Project Migration…", role: .destructive) {
+							model.requestLegacyProjectMigrationRollback()
+						}
+					}
+				}
 				Button("Review Legacy Projects") { model.refreshLegacyProjectPreview() }
-					.disabled(model.isLegacyProjectPreviewLoading)
+					.disabled(model.isLegacyProjectPreviewLoading || model.isLegacyProjectMigrationInFlight)
 			}
             if let taskNotifications = model.taskNotifications {
                 NativeTaskNotificationsSection(coordinator: taskNotifications)
@@ -4423,6 +4482,16 @@ struct SettingsView: View {
         .padding()
         .frame(width: 520)
         .confirmationDialog(
+			"Roll back the last project migration?",
+			isPresented: $model.showLegacyProjectMigrationRollbackConfirmation,
+			titleVisibility: .visible
+		) {
+			Button("Roll Back Native Bookmark", role: .destructive) { model.rollbackLegacyProjectMigration() }
+			Button("Cancel", role: .cancel) { model.cancelLegacyProjectMigrationRollback() }
+		} message: {
+			Text("This removes only the native Project Library bookmark that this migration newly created. It does not alter the old PI WEB projects.json, the selected directory, sessions, credentials, or manually added projects.")
+		}
+		.confirmationDialog(
             "Migrate legacy credentials to Keychain?",
             isPresented: $model.showLegacyAuthMigrationConfirmation,
             titleVisibility: .visible

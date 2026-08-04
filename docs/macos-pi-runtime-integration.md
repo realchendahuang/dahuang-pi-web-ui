@@ -781,6 +781,8 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 
 第一版站外分发仍保留 bookmark 层，原因是它提供明确的项目授权、路径移动恢复和未来 sandbox 迁移 seam。当前 bundled Runtime 额外要求 App launch token，并在 `POST /runtime/projects/authorize` 成功后才接受该 canonical root 或真实子目录的 cwd；错误 token、raw relative cwd、目录不存在、sibling prefix 和 symlink escape 都被拒绝。原生侧在加载 session 前完成授权 receipt，且把授权状态显示为 Authorizing、Authorized 或 failed。bookmark stale、目录消失或权限撤销时返回可解释错误，不静默扩大到父目录或整个 Home。该组合在非 Sandbox 分发中是产品级边界，**不能**表述为跨进程 security-scoped bookmark 已生效。
 
+旧 PI WEB `projects.json` 的迁移采用更窄的 App-owned 流程：Runtime 只能做只读候选预览，最多返回 legacy project ID、名称、绝对路径和创建时间；Finder 中逐项选择同一路径才会创建 native bookmark。native catalog 写入后必须按 ID/path 重新读取，才会在 App-owned `UserDefaults` migration journal 写入迁移 ID、legacy/native ID 与路径、`created` 所有权标记、时间和状态。该 journal 不保存 bookmark data、旧 JSON 副本、项目内容或任何 credential，因而不能宣称为 `0600` Runtime 文件。若记录 journal 失败，App 只补偿删除本次新建且回读匹配的 catalog 项。Rollback 先持久化 `rollingBack`，再按 journal 验证每个 ID/path，只删除 `created: true` 的 native bookmark，最后 readback 为 `rolledBack`；旧文件、项目目录、session、credential 与手动添加的项目都不在其写入集合内。遇到中断或不匹配时保留显式状态并报错，不猜测性删除。
+
 ## 11. 版本、兼容和升级策略
 
 ### 11.1 四个版本轴
