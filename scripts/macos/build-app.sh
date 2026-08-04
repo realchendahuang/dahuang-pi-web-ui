@@ -24,13 +24,18 @@ mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources" "$app_path/Co
 cp "$binary_path" "$app_path/Contents/MacOS/PiAgent"
 cp "$keychain_helper_path" "$app_path/Contents/Helpers/PiAgentKeychainHelper"
 cp "$package_root/Info.plist" "$app_path/Contents/Info.plist"
+cp "$package_root/THIRD_PARTY_NOTICES.md" "$app_path/Contents/Resources/THIRD_PARTY_NOTICES.md"
 node -e '
 const { createHash } = require("node:crypto");
 const { readFileSync, writeFileSync } = require("node:fs");
-const [helperPath, manifestPath] = process.argv.slice(1);
-const sha256 = createHash("sha256").update(readFileSync(helperPath)).digest("hex");
-writeFileSync(manifestPath, JSON.stringify({ schemaVersion: 1, keychainHelper: { path: "Contents/Helpers/PiAgentKeychainHelper", sha256 } }, null, 2) + "\n");
-' "$app_path/Contents/Helpers/PiAgentKeychainHelper" "$app_path/Contents/Resources/native-helpers-manifest.json"
+const [helperPath, noticesPath, manifestPath] = process.argv.slice(1);
+const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+writeFileSync(manifestPath, JSON.stringify({
+  schemaVersion: 1,
+  keychainHelper: { path: "Contents/Helpers/PiAgentKeychainHelper", sha256: hash(helperPath) },
+  thirdPartyNotices: { path: "Contents/Resources/THIRD_PARTY_NOTICES.md", sha256: hash(noticesPath) },
+}, null, 2) + "\n");
+' "$app_path/Contents/Helpers/PiAgentKeychainHelper" "$app_path/Contents/Resources/THIRD_PARTY_NOTICES.md" "$app_path/Contents/Resources/native-helpers-manifest.json"
 node "$repo_root/scripts/macos/build-runtime.mjs" \
   --output "$app_path/Contents/Resources/AgentRuntime" \
   --node "$node_executable"

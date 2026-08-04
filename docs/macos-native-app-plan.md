@@ -192,7 +192,21 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 9. Sparkle 自身及其 vendored components 的 notice 一并保留，不能只写“MIT”；
 10. 每次大版本升级重新跑 license、API、签名、性能和 accessibility 验证。
 
-实现阶段新增 `THIRD_PARTY_NOTICES.md` 和机器可读 dependency inventory；本轮只有架构文档，不提前生成虚假的依赖清单。
+当前 unsigned build 会把 Swift Package notices 复制到
+`Pi Agent.app/Contents/Resources/THIRD_PARTY_NOTICES.md`，并从**实际安装**的
+Runtime production closure 生成两份可复算 artifact：
+
+- `AgentRuntime/runtime-sbom.cdx.json`：CycloneDX 1.5 inventory，包含 bundled Node
+  的 SHA-256、每个实际安装 npm component 的版本、SPDX expression、lock integrity 和
+  distribution URL；未安装的 platform-optional package 不会被伪报为已发布。
+- `AgentRuntime/runtime-third-party-notices.json`：每个 component 在 bundle 内的
+  package path、可用 LICENSE/NOTICE/COPYING 文件，以及明确的 `not-bundled-by-package`
+  缺口清单。
+
+`verify-app.sh` 重新从 bundle 中的 lock、package metadata 与 Node binary 生成同一份
+inventory；任一依赖、license 元数据、license 文件、Node 版本或 hash 漂移都会使本地
+artifact 验证失败。该 audit 不把上游未随 npm tarball 提供完整 license 文本的条目误称为
+已附随 notice；这些条目必须在引入新 release artifact 前由人工 license review 处理。
 
 ### 2.10 Phase 0 依赖 spikes
 

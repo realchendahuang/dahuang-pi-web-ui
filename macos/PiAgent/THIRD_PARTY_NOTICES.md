@@ -1,6 +1,6 @@
 # Pi Agent native client third-party notices
 
-The native macOS target uses the following pinned Swift Package dependencies. The exact revisions are recorded in [`Package.resolved`](./Package.resolved) and are reviewed before release artifacts are signed.
+The native macOS target uses the following pinned Swift Package dependencies. The exact revisions are recorded in [`Package.resolved`](./Package.resolved) and are reviewed before an unsigned local App artifact is installed.
 
 ## SwiftTerm 1.11.2
 

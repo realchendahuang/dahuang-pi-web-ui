@@ -64,6 +64,11 @@ const nodeArchitecture = (await execFileAsync(bundledNode, ["-p", "process.arch"
 const piSdkPackage = JSON.parse(
 	await readFile(resolve(output, "node_modules/@earendil-works/pi-coding-agent/package.json"), "utf8"),
 );
+await execFileAsync(bundledNode, [
+	resolve(repositoryRoot, "scripts/macos/generate-runtime-compliance.mjs"),
+	"--runtime",
+	output,
+]);
 const files = await collectManifestFiles(output);
 const nodePath = bundledNode;
 const manifest = {

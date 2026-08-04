@@ -43,7 +43,7 @@ Pi Agent.app
 
 一句话结论：**完整嵌入 Pi 能力，但把它嵌入 App 自带的 Node Runtime，而不是嵌入 Swift GUI 进程。**
 
-当前实现已经提供：`macos/PiAgentRuntime/package-lock.json` 的 exact production closure、`build-runtime.mjs` 生成的 `runtime-manifest.json`、启动前的 SHA-256/Node 版本/架构自检、`/runtime/hello` 协议握手、Swift `RuntimeSupervisor` 的按需启动/重连、Application Support 专属 socket、项目 security-scoped bookmark，以及 `verify-app.sh` 驱动的 bundle/Runtime/Swift socket smoke。
+当前实现已经提供：`macos/PiAgentRuntime/package-lock.json` 的 exact production closure、`build-runtime.mjs` 生成的 `runtime-manifest.json`、CycloneDX 1.5 `runtime-sbom.cdx.json` 与可复算的 third-party notices inventory、启动前的 SHA-256/Node 版本/架构自检、`/runtime/hello` 协议握手、Swift `RuntimeSupervisor` 的按需启动/重连、Application Support 专属 socket、项目 security-scoped bookmark，以及 `verify-app.sh` 驱动的 bundle/Runtime/Swift socket smoke。SBOM 仅列出目标架构上实际安装的 production component；其 notices inventory 同时公开每个 package 自带的 LICENSE/NOTICE/COPYING 文件和未随 tarball 附带的缺口，避免把 lockfile 元数据误当成已分发 notice。
 
 ## 1.1 2026-08-05：上游资料复核后的明确决策
 
