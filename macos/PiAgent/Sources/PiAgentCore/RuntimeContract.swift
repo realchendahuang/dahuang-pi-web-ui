@@ -613,12 +613,32 @@ public struct RuntimeGitDiff: Codable, Equatable, Sendable {
     public let truncated: Bool
 }
 
+/// A bounded review snapshot owned by the Runtime. It intentionally carries no
+/// restore operation: viewing a Thread checkpoint must never mutate Git state.
+public struct RuntimeGitCheckpointDiff: Codable, Equatable, Sendable {
+    public let hash: String
+    public let diff: String
+    public let truncated: Bool
+}
+
+public struct RuntimeGitCheckpoint: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let sessionId: String
+    public let cwd: String
+    public let createdAt: Date
+    public let status: RuntimeGitStatus
+    public let unstaged: RuntimeGitCheckpointDiff
+    public let staged: RuntimeGitCheckpointDiff
+}
+
 public protocol RuntimeGitClient: Sendable {
     func gitStatus(cwd: String) async throws -> RuntimeGitStatus
     func gitDiff(cwd: String, path: String?, staged: Bool) async throws -> RuntimeGitDiff
     func stageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func unstageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint]
+    func createGitCheckpoint(cwd: String, sessionId: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
 /// Runtime-owned, read-only file projection for the explicitly authorized
@@ -772,6 +792,8 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
 		public let hash: String?
 		public let subject: String?
         public let status: RuntimeGitStatus?
+		public let checkpointed: Bool?
+		public let checkpoint: RuntimeGitCheckpoint?
 		public let responded: Bool?
 		public let interaction: RuntimeExtensionInteraction?
         public let authorized: Bool?

@@ -74,6 +74,22 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --get --data-urlencode "cwd=$repo_root" \
   http://pi-agent/sessions >"$runtime_test_dir/sessions.json"
+checkpoint_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+checkpoint_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], sessionId: "runtime-smoke-thread", commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$repo_root" "$checkpoint_command_id" "$runtime_epoch")"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$checkpoint_payload" \
+  http://pi-agent/git/checkpoints >"$runtime_test_dir/checkpoint-receipt.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$checkpoint_payload" \
+  http://pi-agent/git/checkpoints >"$runtime_test_dir/checkpoint-retry.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --get --data-urlencode "cwd=$repo_root" --data-urlencode "sessionId=runtime-smoke-thread" \
+  http://pi-agent/git/checkpoints >"$runtime_test_dir/checkpoints.json"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --get --data-urlencode "cwd=$repo_root" \
@@ -139,13 +155,16 @@ test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
+const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, checkpointReceiptPath, checkpointRetryPath, checkpointsPath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
 const authorized = JSON.parse(await readFile(authorizePath, "utf8"));
 const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
 const retry = JSON.parse(await readFile(retryPath, "utf8"));
 const tree = JSON.parse(await readFile(treePath, "utf8"));
+const checkpointReceipt = JSON.parse(await readFile(checkpointReceiptPath, "utf8"));
+const checkpointRetry = JSON.parse(await readFile(checkpointRetryPath, "utf8"));
+const checkpoints = JSON.parse(await readFile(checkpointsPath, "utf8"));
 const file = JSON.parse(await readFile(filePath, "utf8"));
 const workspaceAuthorized = JSON.parse(await readFile(workspaceAuthorizePath, "utf8"));
 const workspaceWrite = JSON.parse(await readFile(workspaceWritePath, "utf8"));
@@ -164,6 +183,8 @@ if (receipt.kind !== "abort-active-work" || receipt.status !== "completed") thro
 if (receipt.runtimeEpoch !== hello.runtimeEpoch) throw new Error("Runtime abort receipt epoch did not match hello");
 if (receipt.result?.requested !== 0 || receipt.result?.failures?.length !== 0) throw new Error("Idle Runtime abort receipt was unexpected");
 if (retry.commandId !== receipt.commandId || retry.status !== receipt.status) throw new Error("Runtime receipt retry was not idempotent");
+if (checkpointReceipt.kind !== "create-git-checkpoint" || checkpointReceipt.status !== "completed" || checkpointReceipt.result?.checkpointed !== true) throw new Error("Runtime Git checkpoint did not complete");
+if (JSON.stringify(checkpointRetry) !== JSON.stringify(checkpointReceipt) || !Array.isArray(checkpoints) || checkpoints[0]?.id !== checkpointReceipt.result?.checkpoint?.id) throw new Error("Runtime Git checkpoint was not receipt-safe or listable");
 if (tree.path !== "" || !Array.isArray(tree.entries) || !tree.entries.some((entry) => entry.path === "package.json")) throw new Error("Runtime workspace tree did not project package.json");
 if (tree.entries.some((entry) => typeof entry.path !== "string" || entry.path.startsWith("/"))) throw new Error("Runtime workspace tree exposed an absolute child path");
 if (file.path !== "package.json" || file.binary !== false || typeof file.content !== "string") throw new Error("Runtime workspace file projection was invalid");
@@ -176,7 +197,7 @@ if (!Buffer.from(workspaceImagePreview.data, "base64").equals(Buffer.from([0x89,
 if (workspaceMove.kind !== "move-workspace-file" || workspaceMove.status !== "completed" || workspaceMove.result?.toPath !== "Notes/renamed.txt") throw new Error("Runtime workspace move did not complete");
 if (workspaceDelete.kind !== "delete-workspace-file" || workspaceDelete.status !== "completed" || workspaceDelete.result?.existed !== true) throw new Error("Runtime workspace delete did not complete");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \

@@ -274,6 +274,30 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint] {
+        try await request(
+            method: "GET", path: "/git/checkpoints",
+            query: [("cwd", cwd), ("sessionId", sessionId)]
+        )
+    }
+
+    public func createGitCheckpoint(
+        cwd: String,
+        sessionId: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: "/git/checkpoints",
+            body: GitCheckpointPayload(
+                cwd: cwd,
+                sessionId: sessionId,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func workspaceTree(cwd: String, path: String?) async throws -> RuntimeWorkspaceTree {
         var values = [("cwd", cwd)]
         if let path, !path.isEmpty { values.append(("path", path)) }
@@ -756,6 +780,13 @@ private struct GitPathsPayload: Encodable {
 private struct GitCommitPayload: Encodable {
     let cwd: String
     let message: String
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct GitCheckpointPayload: Encodable {
+    let cwd: String
+    let sessionId: String
     let commandId: String
     let runtimeEpoch: String
 }

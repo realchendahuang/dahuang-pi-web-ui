@@ -213,6 +213,14 @@ struct PiAgentContractCheck {
 		precondition(receipt.result?.committed == true)
 		precondition(receipt.result?.hash == "deadbeef")
         precondition(receipt.result?.status?.files.isEmpty == true)
+
+		let checkpointData = Data(
+			#"{"commandId":"checkpoint-1","kind":"create-git-checkpoint","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"checkpointed":true,"checkpoint":{"id":"cp-1","sessionId":"thread-1","cwd":"/repo","createdAt":"2026-08-04T00:00:00Z","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]},"unstaged":{"hash":"u","diff":"diff --git","truncated":false},"staged":{"hash":"s","diff":"","truncated":false}}}}"#.utf8
+		)
+		let checkpointReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: checkpointData)
+		precondition(checkpointReceipt.result?.checkpointed == true)
+		precondition(checkpointReceipt.result?.checkpoint?.sessionId == "thread-1")
+		precondition(checkpointReceipt.result?.checkpoint?.unstaged.diff == "diff --git")
     }
 
     private static func checkWorkspaceContractDecoding() throws {

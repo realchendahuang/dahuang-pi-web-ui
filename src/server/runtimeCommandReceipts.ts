@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { ActiveSessionAbortResult } from "./sessions/activeSessionAbort.js";
 import type { ClientSession } from "./types.js";
 import type { TerminalInfo } from "./terminals/terminalService.js";
-import type { GitStatusResponse } from "../shared/apiTypes.js";
+import type { GitCheckpoint, GitStatusResponse } from "../shared/apiTypes.js";
 import type { ExtensionInteraction } from "./sessions/extensionInteractionService.js";
 
 export const RUNTIME_COMMAND_KINDS = {
@@ -19,6 +19,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	stageGitPaths: "stage-git-paths",
 	unstageGitPaths: "unstage-git-paths",
 	commitGit: "commit-git",
+	createGitCheckpoint: "create-git-checkpoint",
 	respondExtensionInteraction: "respond-extension-interaction",
 	authorizeProject: "authorize-project",
 	writeWorkspaceFile: "write-workspace-file",
@@ -95,6 +96,11 @@ export interface RuntimeGitMutationCommandResult {
 	status: GitStatusResponse;
 }
 
+export interface RuntimeGitCheckpointCommandResult {
+	checkpointed: true;
+	checkpoint: GitCheckpoint;
+}
+
 export interface RuntimeExtensionInteractionResponseCommandResult {
 	responded: true;
 	interaction: ExtensionInteraction;
@@ -139,6 +145,7 @@ export type RuntimeCommandResult =
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult
 	| RuntimeGitMutationCommandResult
+	| RuntimeGitCheckpointCommandResult
 	| RuntimeExtensionInteractionResponseCommandResult
 	| RuntimeAuthorizeProjectCommandResult
 	| RuntimeWriteWorkspaceFileCommandResult

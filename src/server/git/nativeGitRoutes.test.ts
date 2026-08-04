@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import type { GitDiffResponse, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitCheckpoint, GitDiffResponse, GitStatusResponse } from "../../shared/apiTypes.js";
 import { RuntimeCommandReceipts } from "../runtimeCommandReceipts.js";
 import { registerNativeGitRoutes, type NativeGitRouteService } from "./nativeGitRoutes.js";
 
@@ -53,6 +53,22 @@ describe("native Git routes", () => {
 			expect(service.commitCalls).toEqual([{ cwd: resolve("/repo"), message: "native git workflow" }]);
 		} finally { await app.close(); }
 	});
+
+	it("creates a Thread-owned checkpoint once and lists its read-only review projection", async () => {
+		const service = new CapturingNativeGitService();
+		const app = createApp(service);
+		const payload = { cwd: "/repo", sessionId: "thread-1", commandId: "checkpoint-1", runtimeEpoch: "epoch-1" };
+		try {
+			const first = await app.inject({ method: "POST", url: "/git/checkpoints", payload });
+			const retry = await app.inject({ method: "POST", url: "/git/checkpoints", payload });
+			const listed = await app.inject({ method: "GET", url: "/git/checkpoints?cwd=/repo/../repo&sessionId=thread-1" });
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({ commandId: "checkpoint-1", kind: "create-git-checkpoint", status: "completed", result: { checkpointed: true, checkpoint: { id: "checkpoint-1", sessionId: "thread-1", cwd: resolve("/repo"), status: cleanStatus } } });
+			expect(retry.json()).toEqual(first.json());
+			expect(listed.json()).toMatchObject([{ id: "checkpoint-1", sessionId: "thread-1", cwd: resolve("/repo") }]);
+			expect(service.checkpointCalls).toEqual([{ cwd: resolve("/repo"), sessionId: "thread-1" }]);
+	} finally { await app.close(); }
+	});
 });
 
 function createApp(service: CapturingNativeGitService) {
@@ -67,6 +83,8 @@ class CapturingNativeGitService implements NativeGitRouteService {
 	readonly stageCalls: { cwd: string; paths: readonly string[] }[] = [];
 	readonly unstageCalls: { cwd: string; paths: readonly string[] }[] = [];
 	readonly commitCalls: { cwd: string; message: string }[] = [];
+	readonly checkpointCalls: { cwd: string; sessionId: string }[] = [];
+	readonly checkpoints: GitCheckpoint[] = [];
 
 	status(cwd: string): Promise<GitStatusResponse> { this.statusCalls.push(cwd); return Promise.resolve(cleanStatus); }
 	diff(cwd: string, options: { path?: string; staged?: boolean }): Promise<GitDiffResponse> {
@@ -79,4 +97,14 @@ class CapturingNativeGitService implements NativeGitRouteService {
 	stage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> { this.stageCalls.push({ cwd, paths }); return Promise.resolve(cleanStatus); }
 	unstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> { this.unstageCalls.push({ cwd, paths }); return Promise.resolve(cleanStatus); }
 	commit(cwd: string, message: string) { this.commitCalls.push({ cwd, message }); return Promise.resolve({ hash: "deadbeef", subject: message, status: cleanStatus }); }
+	listCheckpoints(cwd: string, sessionId: string): Promise<GitCheckpoint[]> { return Promise.resolve(this.checkpoints.filter((checkpoint) => checkpoint.cwd === cwd && checkpoint.sessionId === sessionId)); }
+	createCheckpoint(cwd: string, sessionId: string): Promise<GitCheckpoint> {
+		this.checkpointCalls.push({ cwd, sessionId });
+		const checkpoint: GitCheckpoint = {
+			id: "checkpoint-1", sessionId, cwd, createdAt: "2026-08-04T00:00:00.000Z", status: cleanStatus,
+			unstaged: { hash: "unstaged", diff: "", truncated: false }, staged: { hash: "staged", diff: "", truncated: false },
+		};
+		this.checkpoints.push(checkpoint);
+		return Promise.resolve(checkpoint);
+	}
 }

@@ -836,6 +836,27 @@ export interface GitDiffResponse {
 	truncated: boolean;
 }
 
+/** A bounded, local snapshot for native Thread review. It is not a Git ref. */
+export interface GitCheckpointDiff {
+	hash: string;
+	diff: string;
+	truncated: boolean;
+}
+
+export interface GitCheckpoint {
+	id: string;
+	sessionId: string;
+	cwd: string;
+	createdAt: string;
+	status: GitStatusResponse;
+	unstaged: GitCheckpointDiff;
+	staged: GitCheckpointDiff;
+}
+
+export interface GitCheckpointFile {
+	checkpoints: GitCheckpoint[];
+}
+
 export interface TerminalInfo {
 	id: string;
 	cwd: string;

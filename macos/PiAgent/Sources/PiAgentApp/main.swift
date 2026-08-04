@@ -140,6 +140,8 @@ final class AppModel: ObservableObject {
     @Published var isGitLoading = false
     @Published var isGitMutationInFlight = false
     @Published var showGitCommitSheet = false
+    @Published var gitCheckpoints: [RuntimeGitCheckpoint] = []
+    @Published var isGitCheckpointLoading = false
     @Published var workspaceTree: RuntimeWorkspaceTree?
     @Published var workspacePath = ""
     @Published var workspaceFile: RuntimeWorkspaceFile?
@@ -435,9 +437,10 @@ final class AppModel: ObservableObject {
                 // A Runtime restart invalidates any terminal WebSocket. A
                 // reconnect always reads the authoritative terminal list.
                 self.stopTerminalConnection()
-                self.ensureTerminalConnection()
-                self.refreshGit()
-                self.refreshWorkspace()
+				self.ensureTerminalConnection()
+				self.refreshGit()
+				self.refreshGitCheckpoints()
+				self.refreshWorkspace()
                 self.refreshAuthProviders()
             } catch {
                 guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
@@ -477,6 +480,7 @@ final class AppModel: ObservableObject {
         gitSelectedPath = nil
         gitUnstagedDiff = nil
         gitStagedDiff = nil
+        gitCheckpoints = []
         workspaceTree = nil
         workspacePath = ""
         workspaceFile = nil
@@ -523,6 +527,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         guard sessionID != nil else { return }
         loadSelectedSession()
+		refreshGitCheckpoints()
         if selectedSession?.archived != true {
             startSessionEventStream()
         }
@@ -1036,6 +1041,62 @@ final class AppModel: ObservableObject {
 				guard self.projectPath == cwd else { return }
 				self.isGitLoading = false
 				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func refreshGitCheckpoints() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let session = selectedSession
+		else { gitCheckpoints = []; return }
+		let cwd = session.cwd
+		let sessionId = session.id
+		isGitCheckpointLoading = true
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let checkpoints = try await client.gitCheckpoints(cwd: cwd, sessionId: sessionId)
+				guard self.selectedSessionID == sessionId, self.projectPath == cwd else { return }
+				self.gitCheckpoints = checkpoints
+				self.isGitCheckpointLoading = false
+			} catch {
+				guard self.selectedSessionID == sessionId, self.projectPath == cwd else { return }
+				self.isGitCheckpointLoading = false
+				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func createGitCheckpoint() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let session = selectedSession,
+			  let expectedRuntimeEpoch = runtimeEpoch,
+			  !isGitMutationInFlight
+		else { errorMessage = "Select a thread and reconnect the Runtime before creating a checkpoint."; return }
+		let commandId = UUID().uuidString
+		let cwd = session.cwd
+		let sessionId = session.id
+		isGitMutationInFlight = true
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do {
+					receipt = try await client.createGitCheckpoint(cwd: cwd, sessionId: sessionId, commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch)
+				} catch {
+					receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error)
+				}
+				try self.requireCompletedReceipt(receipt, kind: "create-git-checkpoint", expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard receipt.result?.checkpointed == true, let checkpoint = receipt.result?.checkpoint else {
+					throw RuntimeClientError.serverError(500, "Runtime checkpoint receipt was missing its review snapshot.")
+				}
+				guard self.selectedSessionID == sessionId, self.projectPath == cwd else { return }
+				self.gitCheckpoints = [checkpoint] + self.gitCheckpoints.filter { $0.id != checkpoint.id }
+				self.isGitMutationInFlight = false
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
 			}
 		}
 	}
@@ -2874,6 +2935,9 @@ struct GitChangesView: View {
 					Spacer()
 					Button("Refresh") { model.refreshGit() }
 						.buttonStyle(.borderless)
+					Button("Save Checkpoint") { model.createGitCheckpoint() }
+						.buttonStyle(.borderless)
+						.disabled(model.isGitMutationInFlight || model.selectedSessionID == nil)
 				}
 				if status.files.isEmpty {
 					Text("Working tree clean")
@@ -2913,6 +2977,7 @@ struct GitChangesView: View {
 				}
 				Button("Commit Staged Changes…") { model.requestGitCommit() }
 					.disabled(model.isGitMutationInFlight || !status.files.contains(where: { $0.index != "unmodified" && $0.index != "untracked" }))
+				GitCheckpointsView(model: model)
 			}
 		} else if model.gitStatus?.isGitRepo == false {
 			Label("This project is not a Git repository", systemImage: "exclamationmark.triangle")
@@ -2920,6 +2985,53 @@ struct GitChangesView: View {
 		} else {
 			Label("Git changes will load when the Runtime connects", systemImage: "arrow.triangle.branch")
 				.foregroundStyle(.secondary)
+		}
+	}
+}
+
+struct GitCheckpointsView: View {
+	@ObservedObject var model: AppModel
+
+	var body: some View {
+		DisclosureGroup("Thread checkpoints") {
+			if model.isGitCheckpointLoading {
+				ProgressView("Loading checkpoints…")
+			} else if model.gitCheckpoints.isEmpty {
+				Text("Save a checkpoint to keep this Thread's current Git status and bounded staged/unstaged diff for review. It does not create a Git ref or enable restore.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			} else {
+				ForEach(model.gitCheckpoints) { checkpoint in
+					VStack(alignment: .leading, spacing: 4) {
+						Text(checkpoint.createdAt.formatted(date: .abbreviated, time: .shortened))
+							.font(.caption.weight(.semibold))
+						Text("\(checkpoint.status.files.count) changed file\(checkpoint.status.files.count == 1 ? "" : "s") · \(checkpoint.status.branch ?? "Detached HEAD")")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+						CheckpointDiffView(label: "Staged", diff: checkpoint.staged)
+						CheckpointDiffView(label: "Unstaged", diff: checkpoint.unstaged)
+					}
+					.padding(.vertical, 4)
+				}
+			}
+		}
+	}
+}
+
+struct CheckpointDiffView: View {
+	let label: String
+	let diff: RuntimeGitCheckpointDiff
+
+	var body: some View {
+		if !diff.diff.isEmpty {
+			DisclosureGroup("\(label) diff\(diff.truncated ? " (bounded)" : "")") {
+				ScrollView(.horizontal) {
+					Text(diff.diff)
+						.font(.system(.caption, design: .monospaced))
+						.textSelection(.enabled)
+				}
+				.frame(maxHeight: 150)
+			}
 		}
 	}
 }
