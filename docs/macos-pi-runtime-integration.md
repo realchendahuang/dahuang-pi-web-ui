@@ -97,7 +97,7 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 | 优先级 | 交付 | 完成证据 |
 | --- | --- | --- |
-| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **Prompt、原生创建 session、archive、restore、archived delete、terminal create 与 terminal continue 已交付**：同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。后续按同一合同覆盖 fork/import、Git 与 approval，并补全端到端断线恢复测试。 |
+| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue 与 Git stage/unstage/commit 已交付**：同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。后续按同一合同覆盖 approval，并补全端到端断线恢复测试。 |
 | P0 | 原生 approval/extension-UI bridge | Pi extension 的 select/confirm/input 被投影成 Swift 原生 sheet；取消、timeout、App 重连都有确定语义。 |
 | P0 | project authorization 的 Runtime capability | 不只持久化 bookmark：验证 Runtime 对未授权 cwd 拒绝、授权续期/失效可见；若进入 Sandbox 路线，先做独立跨进程 spike。 |
 | P1 | lifecycle recovery matrix | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。 |
@@ -401,7 +401,7 @@ received → accepted → running → completed | failed | cancelled
 
 断线、timeout 和“没有看到 response”都不是重复提交的理由。App 保存原 idempotency key，先查询 command 状态；只有 Runtime 明确表示未接收或该 key 已安全终止，才能决定下一步。
 
-当前 Runtime receipt store 已覆盖 `POST /runtime/commands/abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create 与 terminal continue；`GET /runtime/commands/:commandId` 支持 timeout 后查询。所有这些 mutation 都以 `commandId + runtimeEpoch + payload fingerprint` 绑定：相同 intent 只执行一次，冲突或 stale epoch 返回 `409`。Swift 在 socket transport 结果未知时只查 receipt，不会盲重放。archive/restore/delete 成功后再拉取 session projection；delete 仍由服务端拒绝非 Archived 会话，原生 UI 也只在 Archived 分组提供二次确认入口。terminal receipt 返回 Runtime-owned terminal projection，避免一次未知 socket 写入生成第二个 PTY，continue 也不会重复替换已退出 terminal 的 PTY。abort 会对 Pi/OMP 中真正仍有 streaming、compaction、shell 或 queued work 的 session 逐一 abort，只有 receipt completed 且无失败项时，App 才停止自己拥有的 Runtime。Fork Thread 使用只读候选项 projection 和独立 `fork-session` receipt，Import Thread 也通过 Pi SDK 的 `importFromJsonl()` 进入同一 session replacement/rebind 生命周期；Git 与 approval 仍未纳入该合同。
+当前 Runtime receipt store 已覆盖 `POST /runtime/commands/abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue，以及原生 Git stage/unstage/commit；`GET /runtime/commands/:commandId` 支持 timeout 后查询。所有这些 mutation 都以 `commandId + runtimeEpoch + payload fingerprint` 绑定：相同 intent 只执行一次，冲突或 stale epoch 返回 `409`。Swift 在 socket transport 结果未知时只查 receipt，不会盲重放。archive/restore/delete 成功后再拉取 session projection；delete 仍由服务端拒绝非 Archived 会话，原生 UI 也只在 Archived 分组提供二次确认入口。terminal receipt 返回 Runtime-owned terminal projection，避免一次未知 socket 写入生成第二个 PTY，continue 也不会重复替换已退出 terminal 的 PTY。abort 会对 Pi/OMP 中真正仍有 streaming、compaction、shell 或 queued work 的 session 逐一 abort，只有 receipt completed 且无失败项时，App 才停止自己拥有的 Runtime。Fork Thread 使用只读候选项 projection 和独立 `fork-session` receipt，Import Thread 也通过 Pi SDK 的 `importFromJsonl()` 进入同一 session replacement/rebind 生命周期。
 
 #### Fork Thread 的产品合同
 
@@ -414,6 +414,12 @@ Runtime 在执行时再次验证 entry 仍属于当前可 fork 的 user-message 
 原生客户端要求先选中一条 active thread，再通过 `NSOpenPanel` 选择 `.jsonl` 文件。`POST /sessions/:sessionId/import` 必须携带当前 thread 的 `cwd`、`runtimeId`、用户选择的绝对 `inputPath`、`commandId` 和 `runtimeEpoch`。Runtime 只接受普通 `.jsonl` 文件，并通过 Pi SDK `importFromJsonl(inputPath, currentProjectCwd)` 复制文件到 Pi session storage、替换 Runtime session、重新建立 subscription/extensions；receipt 仅返回导入后的 `SessionProjection`。
 
 当前未启用 App Sandbox：App 与 bundled Node Runtime 以同一用户身份运行，所以 `NSOpenPanel` 选中的 POSIX 路径可传给 Runtime。这个事实**不是** security-scoped bookmark 跨进程授权的证明。Sandbox 前必须将 path 传输替换为明确的 bookmark/capability hand-off，并使用真实 child Runtime 验证 resolve、`startAccessingSecurityScopedResource()`、失败与 revoke 行为。导入中的 socket 未知结果仍只允许读取同一 receipt；绝不以第二次 `importFromJsonl()` 作为恢复手段。
+
+#### 原生 Git 的产品合同
+
+Swift inspector 通过 `/git/status?cwd=` 和 `/git/diff?cwd=&path=&staged=` 读取只读 projection；Swift **绝不**用 `Process()` 运行 Git。`POST /git/stage`、`/git/unstage` 与 `/git/commit` 都必须携带 `cwd`、`commandId` 和 `runtimeEpoch`，并分别使用 `stage-git-paths`、`unstage-git-paths`、`commit-git` receipt。每个完成 receipt 返回新的 `GitStatus` projection；commit 还返回 commit hash 和 subject。socket 写入未知时，App 只读取同一 receipt，不能再次执行 stage 或 commit。
+
+Runtime 用经过净化的环境启动 Git，并设置 `GIT_TERMINAL_PROMPT=0`，所以不能因隐藏的凭据交互而在后台卡住；这不是 Keychain credential broker，push 和凭据交互仍不在当前原生能力内。当前 UI 支持 root worktree 的 status/diff、逐文件 stage/unstage 及原生 commit sheet，保留 Git hooks；不会用 `--no-verify` 绕过项目政策。内嵌 submodule 的内容可展示和查看 diff，但原生 inspector 明确拒绝直接 stage/unstage，必须先在该 submodule 自己的 checkout 完成操作；superproject 的 submodule pointer 仍可按普通 root path 暂存。reset/revert、push 和任意路径执行也未提供。
 
 ### 7.4 Event projection
 

@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, Sendable {
     public let socketPath: String
 
     public init(socketPath: String) {
@@ -222,6 +222,52 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func gitStatus(cwd: String) async throws -> RuntimeGitStatus {
+        try await request(method: "GET", path: "/git/status", query: [("cwd", cwd)])
+    }
+
+    public func gitDiff(cwd: String, path: String?, staged: Bool) async throws -> RuntimeGitDiff {
+        var values = [("cwd", cwd), ("staged", staged ? "true" : "false")]
+        if let path, !path.isEmpty { values.append(("path", path)) }
+        return try await request(method: "GET", path: "/git/diff", query: values)
+    }
+
+    public func stageGitPaths(
+        cwd: String,
+        paths: [String],
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await gitPathsMutation(
+            path: "/git/stage", cwd: cwd, paths: paths,
+            commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
+        )
+    }
+
+    public func unstageGitPaths(
+        cwd: String,
+        paths: [String],
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await gitPathsMutation(
+            path: "/git/unstage", cwd: cwd, paths: paths,
+            commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
+        )
+    }
+
+    public func commitGit(
+        cwd: String,
+        message: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: "/git/commit",
+            body: GitCommitPayload(cwd: cwd, message: message, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch)
+        )
+    }
+
     public func streamSnapshot(
         sessionId: String,
         cwd: String,
@@ -336,6 +382,19 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
                 commandId: commandId,
                 runtimeEpoch: expectedRuntimeEpoch
             )
+        )
+    }
+
+    private func gitPathsMutation(
+        path: String,
+        cwd: String,
+        paths: [String],
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: path,
+            body: GitPathsPayload(cwd: cwd, paths: paths, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch)
         )
     }
 
@@ -498,6 +557,20 @@ private struct TerminalCreatePayload: Encodable {
     let name: String
     let cols: Int
     let rows: Int
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct GitPathsPayload: Encodable {
+    let cwd: String
+    let paths: [String]
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct GitCommitPayload: Encodable {
+    let cwd: String
+    let message: String
     let commandId: String
     let runtimeEpoch: String
 }

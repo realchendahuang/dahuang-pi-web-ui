@@ -12,6 +12,6 @@ describe("sanitizedGitEnv", () => {
       GIT_COMMON_DIR: "/repo/.git",
     });
 
-    expect(env).toEqual({ PATH: "/bin" });
+    expect(env).toEqual({ PATH: "/bin", GIT_TERMINAL_PROMPT: "0" });
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ActiveSessionAbortResult } from "./sessions/activeSessionAbort.js";
 import type { ClientSession } from "./types.js";
 import type { TerminalInfo } from "./terminals/terminalService.js";
+import type { GitStatusResponse } from "../shared/apiTypes.js";
 
 export const RUNTIME_COMMAND_KINDS = {
 	abortActiveWork: "abort-active-work",
@@ -14,6 +15,9 @@ export const RUNTIME_COMMAND_KINDS = {
 	importSession: "import-session",
 	createTerminal: "create-terminal",
 	continueTerminal: "continue-terminal",
+	stageGitPaths: "stage-git-paths",
+	unstageGitPaths: "unstage-git-paths",
+	commitGit: "commit-git",
 } as const;
 
 export type RuntimeCommandKind =
@@ -74,6 +78,17 @@ export interface RuntimeContinueTerminalCommandResult {
 	terminal: TerminalInfo;
 }
 
+/** A Git mutation is Runtime-owned; native UI receives only its refreshed status. */
+export interface RuntimeGitMutationCommandResult {
+	staged?: true;
+	unstaged?: true;
+	committed?: true;
+	paths?: string[];
+	hash?: string;
+	subject?: string;
+	status: GitStatusResponse;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
@@ -84,7 +99,8 @@ export type RuntimeCommandResult =
 	| RuntimeForkSessionCommandResult
 	| RuntimeImportSessionCommandResult
 	| RuntimeCreateTerminalCommandResult
-	| RuntimeContinueTerminalCommandResult;
+	| RuntimeContinueTerminalCommandResult
+	| RuntimeGitMutationCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

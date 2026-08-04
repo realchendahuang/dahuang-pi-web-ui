@@ -94,6 +94,14 @@ final class AppModel: ObservableObject {
     @Published var sessionPendingPermanentDeletion: RuntimeSession?
     @Published var sessionPendingFork: RuntimeSession?
     @Published var forkCandidates: [RuntimeForkCandidate] = []
+	@Published var gitStatus: RuntimeGitStatus?
+	@Published var gitSelectedPath: String?
+	@Published var gitUnstagedDiff: RuntimeGitDiff?
+	@Published var gitStagedDiff: RuntimeGitDiff?
+	@Published var isGitLoading = false
+	@Published var isGitMutationInFlight = false
+	@Published var showGitCommitSheet = false
+	@Published var gitCommitMessage = ""
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
@@ -309,6 +317,7 @@ final class AppModel: ObservableObject {
                 self.replaceSessions(sessions)
                 self.isLoading = false
                 self.ensureTerminalConnection()
+				self.refreshGit()
             } catch {
                 self.runtimeState = .failed(error.localizedDescription)
                 self.errorMessage = error.localizedDescription
@@ -337,6 +346,10 @@ final class AppModel: ObservableObject {
         selectedSessionID = nil
         transcriptMessages = []
         statusBySession = [:]
+		gitStatus = nil
+		gitSelectedPath = nil
+		gitUnstagedDiff = nil
+		gitStagedDiff = nil
         refreshRuntime()
     }
 
@@ -829,6 +842,143 @@ final class AppModel: ObservableObject {
             )
         }
     }
+
+	func refreshGit() {
+		guard let client = runtimeClient as? any RuntimeGitClient else {
+			gitStatus = nil
+			return
+		}
+		let cwd = projectPath
+		isGitLoading = true
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let status = try await client.gitStatus(cwd: cwd)
+				guard self.projectPath == cwd else { return }
+				self.gitStatus = status
+				self.isGitLoading = false
+				if let selected = self.gitSelectedPath,
+				   !status.files.contains(where: { $0.path == selected }) {
+					self.gitSelectedPath = nil
+					self.gitUnstagedDiff = nil
+					self.gitStagedDiff = nil
+				}
+			} catch {
+				guard self.projectPath == cwd else { return }
+				self.isGitLoading = false
+				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func selectGitPath(_ path: String) {
+		guard let client = runtimeClient as? any RuntimeGitClient else { return }
+		gitSelectedPath = path
+		gitUnstagedDiff = nil
+		gitStagedDiff = nil
+		let cwd = projectPath
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				async let unstaged = client.gitDiff(cwd: cwd, path: path, staged: false)
+				async let staged = client.gitDiff(cwd: cwd, path: path, staged: true)
+				let (unstagedResult, stagedResult) = try await (unstaged, staged)
+				guard self.projectPath == cwd, self.gitSelectedPath == path else { return }
+				self.gitUnstagedDiff = unstagedResult
+				self.gitStagedDiff = stagedResult
+			} catch {
+				guard self.projectPath == cwd, self.gitSelectedPath == path else { return }
+				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func stageGitPath(_ path: String) { performGitPathMutation(path, kind: "stage-git-paths", accepted: { $0.staged == true }) { client, cwd, paths, commandId, epoch in
+		try await client.stageGitPaths(cwd: cwd, paths: paths, commandId: commandId, expectedRuntimeEpoch: epoch)
+	} }
+
+	func unstageGitPath(_ path: String) { performGitPathMutation(path, kind: "unstage-git-paths", accepted: { $0.unstaged == true }) { client, cwd, paths, commandId, epoch in
+		try await client.unstageGitPaths(cwd: cwd, paths: paths, commandId: commandId, expectedRuntimeEpoch: epoch)
+	} }
+
+	func requestGitCommit() {
+		guard gitStatus?.isGitRepo == true, !isGitMutationInFlight else { return }
+		showGitCommitSheet = true
+	}
+
+	func cancelGitCommit() {
+		showGitCommitSheet = false
+		gitCommitMessage = ""
+	}
+
+	func commitGit() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let expectedRuntimeEpoch = runtimeEpoch
+		else { errorMessage = "Reconnect the Runtime before committing changes."; return }
+		let message = gitCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !message.isEmpty else { errorMessage = "Commit message is required."; return }
+		let cwd = projectPath
+		let commandId = UUID().uuidString
+		isGitMutationInFlight = true
+		showGitCommitSheet = false
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do { receipt = try await client.commitGit(cwd: cwd, message: message, commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch) }
+				catch { receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error) }
+				try self.requireCompletedReceipt(receipt, kind: "commit-git", expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard receipt.result?.committed == true, let status = receipt.result?.status else {
+					throw RuntimeClientError.serverError(500, "Runtime commit receipt was missing its Git status projection.")
+				}
+				self.gitStatus = status
+				self.gitCommitMessage = ""
+				self.isGitMutationInFlight = false
+				self.selectGitPath(self.gitSelectedPath ?? "")
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
+			}
+		}
+	}
+
+	private func performGitPathMutation(
+		_ path: String,
+		kind: String,
+		accepted: @escaping @Sendable (RuntimeCommandReceipt.Result) -> Bool,
+		execute: @escaping @Sendable (any RuntimeGitClient, String, [String], String, String) async throws -> RuntimeCommandReceipt
+	) {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let expectedRuntimeEpoch = runtimeEpoch,
+			  !isGitMutationInFlight
+		else { errorMessage = "Reconnect the Runtime before changing Git state."; return }
+		let cwd = projectPath
+		let commandId = UUID().uuidString
+		isGitMutationInFlight = true
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do { receipt = try await execute(client, cwd, [path], commandId, expectedRuntimeEpoch) }
+				catch { receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error) }
+				try self.requireCompletedReceipt(receipt, kind: kind, expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard let result = receipt.result, accepted(result) else {
+					throw RuntimeClientError.serverError(500, "Runtime Git receipt was missing its completion result.")
+				}
+				guard let status = receipt.result?.status else {
+					throw RuntimeClientError.serverError(500, "Runtime Git receipt was missing its Git status projection.")
+				}
+				self.gitStatus = status
+				self.isGitMutationInFlight = false
+				self.selectGitPath(path)
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
+			}
+		}
+	}
 
     func refreshSelectedSession() {
         loadSelectedSession()
@@ -1429,6 +1579,9 @@ struct ContentView: View {
         .sheet(item: $model.sessionPendingFork, onDismiss: model.cancelFork) { session in
             ForkThreadSheet(model: model, session: session)
         }
+		.sheet(isPresented: $model.showGitCommitSheet) {
+			GitCommitSheet(model: model)
+		}
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
@@ -1730,8 +1883,7 @@ struct InspectorView: View {
                 }
             }
             Section("Workspace") {
-                Label("Changes", systemImage: "square.and.pencil")
-                Label("Files", systemImage: "doc")
+				GitChangesView(model: model)
             }
             Section("Terminal") {
                 if let terminal = model.terminalInfo {
@@ -1775,6 +1927,130 @@ struct InspectorView: View {
         .navigationTitle("Inspector")
         .task { model.ensureTerminalConnection() }
     }
+}
+
+struct GitChangesView: View {
+	@ObservedObject var model: AppModel
+
+	var body: some View {
+		if model.isGitLoading {
+			ProgressView("Loading changes…")
+		} else if let status = model.gitStatus, status.isGitRepo {
+			VStack(alignment: .leading, spacing: 8) {
+				HStack {
+					Label(status.branch ?? "Detached HEAD", systemImage: "arrow.triangle.branch")
+						.font(.caption.weight(.semibold))
+					Spacer()
+					Button("Refresh") { model.refreshGit() }
+						.buttonStyle(.borderless)
+				}
+				if status.files.isEmpty {
+					Text("Working tree clean")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				} else {
+					ForEach(status.files) { file in
+						VStack(alignment: .leading, spacing: 4) {
+							HStack(spacing: 6) {
+								Button {
+									model.selectGitPath(file.path)
+								} label: {
+									Text(file.path)
+										.lineLimit(1)
+										.frame(maxWidth: .infinity, alignment: .leading)
+								}
+								.buttonStyle(.plain)
+								Text(gitFileStateLabel(file))
+									.font(.caption.monospaced())
+									.foregroundStyle(.secondary)
+							}
+							HStack(spacing: 8) {
+								if file.index == "unmodified" || file.index == "untracked" {
+									Button("Stage") { model.stageGitPath(file.path) }
+								} else {
+									Button("Unstage") { model.unstageGitPath(file.path) }
+								}
+								Spacer()
+							}
+							.buttonStyle(.borderless)
+							.disabled(model.isGitMutationInFlight)
+						}
+					}
+				}
+				if let selectedPath = model.gitSelectedPath {
+					GitDiffView(path: selectedPath, unstaged: model.gitUnstagedDiff, staged: model.gitStagedDiff)
+				}
+				Button("Commit Staged Changes…") { model.requestGitCommit() }
+					.disabled(model.isGitMutationInFlight || !status.files.contains(where: { $0.index != "unmodified" && $0.index != "untracked" }))
+			}
+		} else if model.gitStatus?.isGitRepo == false {
+			Label("This project is not a Git repository", systemImage: "exclamationmark.triangle")
+				.foregroundStyle(.secondary)
+		} else {
+			Label("Git changes will load when the Runtime connects", systemImage: "arrow.triangle.branch")
+				.foregroundStyle(.secondary)
+		}
+	}
+}
+
+private func gitFileStateLabel(_ file: RuntimeGitFile) -> String {
+	let index = file.index == "unmodified" ? "" : "I:\(file.index)"
+	let worktree = file.workingTree == "unmodified" ? "" : "W:\(file.workingTree)"
+	return [index, worktree].filter { !$0.isEmpty }.joined(separator: " ")
+}
+
+struct GitDiffView: View {
+	let path: String
+	let unstaged: RuntimeGitDiff?
+	let staged: RuntimeGitDiff?
+
+	var body: some View {
+		let diffs = [staged, unstaged].compactMap { $0 }.filter { !$0.diff.isEmpty }
+		if diffs.isEmpty {
+			Text("No textual diff for \(path)")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+		} else {
+			ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
+				VStack(alignment: .leading, spacing: 4) {
+					Text(diff.staged ? "Staged diff" : "Unstaged diff")
+						.font(.caption.weight(.semibold))
+					ScrollView(.horizontal) {
+						Text(diff.diff)
+							.font(.system(.caption, design: .monospaced))
+							.textSelection(.enabled)
+					}
+					.frame(maxHeight: 180)
+				}
+			}
+		}
+	}
+}
+
+struct GitCommitSheet: View {
+	@ObservedObject var model: AppModel
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 16) {
+			Text("Commit Staged Changes")
+				.font(.title2.weight(.semibold))
+			Text("Only the files already staged by the Runtime will be committed. Git hooks remain enabled.")
+				.foregroundStyle(.secondary)
+			TextEditor(text: $model.gitCommitMessage)
+				.font(.body)
+				.frame(minHeight: 120)
+				.overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+			HStack {
+				Spacer()
+				Button("Cancel") { model.cancelGitCommit() }
+				Button("Commit") { model.commitGit() }
+					.buttonStyle(.borderedProminent)
+					.disabled(model.gitCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+			}
+		}
+		.padding(24)
+		.frame(width: 520)
+	}
 }
 
 struct SettingsView: View {

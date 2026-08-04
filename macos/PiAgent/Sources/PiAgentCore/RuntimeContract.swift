@@ -493,6 +493,46 @@ public protocol RuntimeClient: RuntimeHealthClient {
     func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
 }
 
+/// Native Git projection. Node remains the only process that starts Git and
+/// owns its credential/process environment; Swift only renders these values.
+public struct RuntimeGitFile: Codable, Equatable, Identifiable, Sendable {
+    public let path: String
+    public let oldPath: String?
+    public let index: String
+    public let workingTree: String
+    public let submoduleFromCommit: String?
+    public let submoduleToCommit: String?
+
+    public var id: String { path }
+}
+
+public struct RuntimeGitStatus: Codable, Equatable, Sendable {
+    public let isGitRepo: Bool
+    public let hash: String
+    public let branch: String?
+    public let upstream: String?
+    public let ahead: Int?
+    public let behind: Int?
+    public let files: [RuntimeGitFile]
+    public let submodules: [String]
+}
+
+public struct RuntimeGitDiff: Codable, Equatable, Sendable {
+    public let path: String?
+    public let staged: Bool
+    public let hash: String
+    public let diff: String
+    public let truncated: Bool
+}
+
+public protocol RuntimeGitClient: Sendable {
+    func gitStatus(cwd: String) async throws -> RuntimeGitStatus
+    func gitDiff(cwd: String, path: String?, staged: Bool) async throws -> RuntimeGitDiff
+    func stageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func unstageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+}
+
 /// Epoch-bound response for a native Runtime mutation. Repeating the same
 /// command id returns this same receipt, letting the App safely recover from a
 /// socket timeout without sending a second agent-level mutation.
@@ -526,6 +566,13 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let session: RuntimeSession?
         public let promptDraft: String?
         public let continued: Bool?
+		public let staged: Bool?
+		public let unstaged: Bool?
+		public let committed: Bool?
+		public let paths: [String]?
+		public let hash: String?
+		public let subject: String?
+		public let status: RuntimeGitStatus?
         public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?
         public let cwd: String?

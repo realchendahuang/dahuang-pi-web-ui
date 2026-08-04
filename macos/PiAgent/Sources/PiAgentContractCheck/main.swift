@@ -6,7 +6,8 @@ struct PiAgentContractCheck {
     static func main() async throws {
         try checkHealthDecoding()
         try checkRuntimeHelloDecoding()
-		try checkRuntimeCommandReceiptDecoding()
+        try checkRuntimeCommandReceiptDecoding()
+		try checkGitContractDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -175,6 +176,26 @@ struct PiAgentContractCheck {
 		)
 		let continuedTerminalReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: continuedTerminalData)
 		precondition(continuedTerminalReceipt.result?.continued == true)
+	}
+
+	private static func checkGitContractDecoding() throws {
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		let statusData = Data(
+			#"{"isGitRepo":true,"hash":"status-hash","branch":"main","upstream":"origin/main","ahead":1,"behind":0,"files":[{"path":"Sources/App.swift","index":"modified","workingTree":"unmodified"}],"submodules":[]}"#.utf8
+		)
+		let status = try decoder.decode(RuntimeGitStatus.self, from: statusData)
+		precondition(status.isGitRepo)
+		precondition(status.branch == "main")
+		precondition(status.files.first?.path == "Sources/App.swift")
+
+		let receiptData = Data(
+			#"{"commandId":"git-1","kind":"commit-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"committed":true,"hash":"deadbeef","subject":"native Git","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+		)
+		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: receiptData)
+		precondition(receipt.result?.committed == true)
+		precondition(receipt.result?.hash == "deadbeef")
+		precondition(receipt.result?.status?.files.isEmpty == true)
 	}
 
     private static func checkProjectAuthorization() throws {

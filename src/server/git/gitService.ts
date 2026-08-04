@@ -140,6 +140,69 @@ export async function gitDiff(cwd: string, options: { path?: string; staged?: bo
   return { ...(path === undefined ? {} : { path }), staged, hash: hash(result.stdout), diff: result.stdout, truncated: result.truncated };
 }
 
+/** Stage the selected root-worktree paths. Git process ownership stays in the Runtime. */
+export async function gitStage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
+  const normalized = normalizeGitMutationPaths(paths);
+	await requireRootWorktreePaths(cwd, normalized);
+  await requireGitSuccess(cwd, ["add", "--", ...normalized], "git stage failed");
+  return gitStatus(cwd);
+}
+
+/** Remove selected root-worktree paths from the index without touching their working-tree content. */
+export async function gitUnstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
+  const normalized = normalizeGitMutationPaths(paths);
+	await requireRootWorktreePaths(cwd, normalized);
+  await requireGitSuccess(cwd, ["reset", "--mixed", "HEAD", "--", ...normalized], "git unstage failed");
+  return gitStatus(cwd);
+}
+
+export interface GitCommitResult {
+  hash: string;
+  subject: string;
+  status: GitStatusResponse;
+}
+
+/** Commit the existing index only; callers must stage deliberately first. */
+export async function gitCommit(cwd: string, message: string): Promise<GitCommitResult> {
+  const normalized = normalizeCommitMessage(message);
+  const subject = normalized.split(/\r?\n/, 1)[0] ?? normalized;
+  await requireGitSuccess(cwd, ["commit", "-m", normalized], "git commit failed");
+  const head = await runGit(cwd, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.stdout.trim() === "") throw new Error(head.stderr.trim() || "git commit did not produce a commit hash");
+  return { hash: head.stdout.trim(), subject, status: await gitStatus(cwd) };
+}
+
+export function normalizeGitMutationPaths(paths: readonly string[]): string[] {
+  if (!Array.isArray(paths) || paths.length === 0) throw new Error("paths must contain at least one file");
+  if (paths.length > 500) throw new Error("paths must contain at most 500 files");
+  const normalized = paths.map((path) => {
+    if (typeof path !== "string" || path.trim() === "") throw new Error("each Git path must be a non-empty string");
+    return normalizeRelativePath(path);
+  });
+  return [...new Set(normalized)].sort();
+}
+
+export function normalizeCommitMessage(message: string): string {
+  if (typeof message !== "string") throw new Error("message must be a string");
+  const normalized = message.trim();
+  if (normalized === "") throw new Error("Commit message is required");
+  if (normalized.length > 4_000) throw new Error("Commit message must be at most 4000 characters");
+  return normalized;
+}
+
+async function requireGitSuccess(cwd: string, args: string[], fallback: string): Promise<void> {
+  const result = await runGit(cwd, args);
+  if (result.code !== 0) throw new Error(result.stderr.trim() || fallback);
+}
+
+async function requireRootWorktreePaths(cwd: string, paths: readonly string[]): Promise<void> {
+	for (const path of paths) {
+		if (await submoduleForPath(cwd, path) !== undefined) {
+			throw new Error("Staging files inside a submodule is not available in the native inspector yet. Stage the submodule in its own checkout first.");
+		}
+	}
+}
+
 /**
  * Run the diff inside the owning submodule's working tree, since `git diff` at
  * the superproject root never shows content changes below a submodule boundary.

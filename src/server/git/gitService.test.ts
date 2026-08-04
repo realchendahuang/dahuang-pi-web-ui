@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitDiff, gitStatus } from "./gitService.js";
+import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage } from "./gitService.js";
 
 // Isolate from any global/system git config and force a deterministic identity;
 // `protocol.file.allow` is required for `submodule add` from a local path.
@@ -198,6 +198,32 @@ describe("gitStatus with submodules", () => {
     expect(status.isGitRepo).toBe(true);
     expect(status.files.some((file) => file.path.startsWith("HARL/"))).toBe(false);
   });
+});
+
+describe("Runtime-owned Git mutations", () => {
+	it("stages, unstages, and commits only through the Git service projection", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-mutation-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "before\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		writeFileSync(join(dir, "tracked.txt"), "after\n");
+
+		const staged = await gitStage(dir, ["tracked.txt"]);
+		expect(staged.files).toEqual(expect.arrayContaining([
+			expect.objectContaining({ path: "tracked.txt", index: "modified", workingTree: "unmodified" }),
+		]));
+		const unstaged = await gitUnstage(dir, ["tracked.txt"]);
+		expect(unstaged.files).toEqual(expect.arrayContaining([
+			expect.objectContaining({ path: "tracked.txt", index: "unmodified", workingTree: "modified" }),
+		]));
+		await gitStage(dir, ["tracked.txt"]);
+		const committed = await gitCommit(dir, "native Runtime commit\n\nwith detail");
+		expect(committed.hash).toMatch(/^[0-9a-f]{40}$/);
+		expect(committed.subject).toBe("native Runtime commit");
+		expect(committed.status.files).toEqual([]);
+	});
 });
 
 describe("submodule paths containing spaces", () => {
