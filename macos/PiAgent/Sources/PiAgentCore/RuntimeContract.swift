@@ -876,6 +876,24 @@ public protocol RuntimeProjectCapabilityClient: Sendable {
     func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
+public struct RuntimeLegacyProjectCandidate: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let path: String
+    public let createdAt: Date
+}
+
+public struct RuntimeLegacyProjectPreview: Codable, Equatable, Sendable {
+    public let source: String
+    public let sourceExists: Bool
+    public let candidates: [RuntimeLegacyProjectCandidate]
+    public let issue: String?
+}
+
+public protocol RuntimeLegacyProjectMigrationClient: Sendable {
+    func legacyProjectMigrationPreview() async throws -> RuntimeLegacyProjectPreview
+}
+
 /// Product projection of a pending Pi extension dialog. The App does not see
 /// the SDK callback; it renders this data and returns a kind-compatible value.
 public struct RuntimeExtensionInteraction: Codable, Equatable, Identifiable, Sendable {

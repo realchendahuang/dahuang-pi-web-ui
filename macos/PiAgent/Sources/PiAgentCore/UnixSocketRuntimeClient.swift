@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeAuthClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeLegacyProjectMigrationClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
 	public let projectCapabilityToken: String?
 
@@ -22,6 +22,10 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
 
     public func hello() async throws -> RuntimeHello {
         try await request(method: "GET", path: "/runtime/hello")
+    }
+
+    public func legacyProjectMigrationPreview() async throws -> RuntimeLegacyProjectPreview {
+        try await request(method: "GET", path: "/projects/legacy-migration/preview")
     }
 
     public func listSessions(cwd: String) async throws -> [RuntimeSession] {

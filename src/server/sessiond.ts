@@ -24,6 +24,7 @@ import { TerminalService } from "./terminals/terminalService.js";
 import { registerTerminalRoutes } from "./terminals/terminalRoutes.js";
 import { registerNativeGitRoutes } from "./git/nativeGitRoutes.js";
 import { registerNativeWorkspaceRoutes } from "./workspaces/nativeWorkspaceRoutes.js";
+import { registerNativeLegacyProjectRoutes } from "./projects/nativeLegacyProjectRoutes.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
 import { SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
 import {
@@ -190,6 +191,7 @@ await runSessionDaemonStartup({
 		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 		registerNativeGitRoutes(app, runtimeCommandReceipts);
 		registerNativeWorkspaceRoutes(app, runtimeCommandReceipts);
+		registerNativeLegacyProjectRoutes(app, daemonEnvironment);
 		app.get("/health", () => ({
 			ok: true,
 			activeSessions: sessions.activeCount(),

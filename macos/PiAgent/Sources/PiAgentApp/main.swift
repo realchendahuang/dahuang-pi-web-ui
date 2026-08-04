@@ -174,7 +174,9 @@ final class AppModel: ObservableObject {
 
     @Published var runtimeState: RuntimeConnectionState = .disconnected
     @Published var projectPath: String
-	@Published var knownProjects: [NativeProjectBookmark] = []
+    @Published var knownProjects: [NativeProjectBookmark] = []
+	@Published var legacyProjectPreview: RuntimeLegacyProjectPreview?
+	@Published var isLegacyProjectPreviewLoading = false
     @Published var selectedSessionID: String?
     @Published var showInspector = true
     @Published var prompt = ""
@@ -570,7 +572,7 @@ final class AppModel: ObservableObject {
 		}
 	}
 
-	func removeKnownProject(_ project: NativeProjectBookmark) {
+    func removeKnownProject(_ project: NativeProjectBookmark) {
 		do {
 			try projectCatalog.remove(id: project.id)
 			knownProjects = projectCatalog.list()
@@ -608,6 +610,42 @@ final class AppModel: ObservableObject {
         authErrorMessage = nil
         refreshRuntime()
     }
+
+	func refreshLegacyProjectPreview() {
+		guard let client = runtimeClient as? any RuntimeLegacyProjectMigrationClient else { return }
+		isLegacyProjectPreviewLoading = true
+		Task { [weak self] in
+			do {
+				let preview = try await client.legacyProjectMigrationPreview()
+				guard let self else { return }
+				self.legacyProjectPreview = preview
+				self.isLegacyProjectPreviewLoading = false
+			} catch {
+				guard let self else { return }
+				self.errorMessage = error.localizedDescription
+				self.isLegacyProjectPreviewLoading = false
+			}
+		}
+	}
+
+	func reauthorizeLegacyProject(_ candidate: RuntimeLegacyProjectCandidate) {
+		let panel = NSOpenPanel()
+		panel.canChooseFiles = false
+		panel.canChooseDirectories = true
+		panel.allowsMultipleSelection = false
+		panel.directoryURL = URL(fileURLWithPath: candidate.path)
+		panel.prompt = "Authorize Project"
+		panel.message = "Choose the original directory for \(candidate.name). Pi Agent will only add it if this is the exact same path."
+		guard panel.runModal() == .OK, let url = panel.url else { return }
+		guard url.standardizedFileURL.path == URL(fileURLWithPath: candidate.path).standardizedFileURL.path else {
+			errorMessage = "Choose the original legacy project path exactly: \(candidate.path)"
+			return
+		}
+		do {
+			_ = try projectCatalog.rememberAndAccess(url)
+			knownProjects = projectCatalog.list()
+		} catch { errorMessage = error.localizedDescription }
+	}
 
     /// The App remains a UI client while macOS sleeps. Stop its socket readers
     /// rather than ending work; the Runtime process and its Pi sessions retain
@@ -4298,6 +4336,22 @@ struct SettingsView: View {
 				LabeledContent("Runtime access", value: model.projectRuntimeAuthorizationLabel)
                 Button("Choose Project…") { model.openProject() }
             }
+			Section("Legacy PI WEB projects") {
+				if model.isLegacyProjectPreviewLoading {
+					ProgressView("Inspecting legacy projects…")
+				} else if let preview = model.legacyProjectPreview {
+					if let issue = preview.issue { Text(issue).font(.caption).foregroundStyle(.orange) }
+					else if preview.candidates.isEmpty { Text(preview.sourceExists ? "No valid legacy projects found." : "No legacy projects.json found.").foregroundStyle(.secondary) }
+					else {
+						Text("Select each original directory again to create a new macOS bookmark. PI WEB paths alone do not grant Pi Agent access.").font(.caption).foregroundStyle(.secondary)
+						ForEach(preview.candidates) { candidate in
+							HStack { VStack(alignment: .leading) { Text(candidate.name); Text(candidate.path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Button("Re-authorize…") { model.reauthorizeLegacyProject(candidate) } }
+						}
+					}
+				}
+				Button("Review Legacy Projects") { model.refreshLegacyProjectPreview() }
+					.disabled(model.isLegacyProjectPreviewLoading)
+			}
             if let taskNotifications = model.taskNotifications {
                 NativeTaskNotificationsSection(coordinator: taskNotifications)
             }
