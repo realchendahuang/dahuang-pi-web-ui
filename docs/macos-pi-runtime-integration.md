@@ -85,6 +85,62 @@ Pi Agent.app
 5. **文件授权是 Native 边界，而不是 cwd 字符串。** `NSOpenPanel`/security-scoped bookmark 负责用户授权；Runtime 只能接收明确授权的 project capability。若未来启用 App Sandbox，必须实测 bookmark 在 Runtime 进程中的解析与生命周期，不能假设父进程拿到的 POSIX 路径自动授权给子进程。Apple 的文档要求持久 bookmark 在每次使用时 resolve、`startAccessingSecurityScopedResource()`，并明确说明跨进程传递需要 bookmark 数据而非仅传 path。[Apple: sandbox file access](https://developer.apple.com/documentation/Security/accessing-files-from-the-macos-app-sandbox)
 6. **后台与登录启动只能是显式选项。** 默认 App-managed Runtime 随用户的显式生命周期运行；只有在用户开启后才评估 Login Item/LaunchAgent。macOS 的 ServiceManagement 把 Login Item 与 background helper 作为不同模型，不能用开发期常驻 LaunchAgent 偷换成产品默认行为。[Apple: Service Management](https://developer.apple.com/documentation/servicemanagement)
 
+### 1.2.1 调研复核：SDK、完全嵌入和 XPC 不是三选一
+
+这里最容易被名称误导。Pi 上游没有可供 SwiftUI 直接调用的「macOS App SDK」；本项目应使用的是
+`@earendil-works/pi-coding-agent` 的 **Node/TypeScript SDK**。它的职责是创建
+`AgentSession` / `AgentSessionRuntime`、加载资源与扩展、管理模型和 session replacement；Swift
+的职责是产品界面和系统能力。因此，正确的决策不是在「SDK」和「完整嵌入」之间二选一，而是：
+
+> **以 Pi Coding Agent SDK 实现 App 内 Runtime，并将该 Runtime 作为完整嵌入的 macOS 产品组件发布。**
+
+这保留了 SDK 的类型安全、session replacement 和 extension 语义，同时让普通用户只面对一个
+`Pi Agent.app`。Pi 官方文档也给出了明确边界：同一 Node 进程且需要直接 agent state、工具和扩展定制时，
+优先 SDK；跨语言或需要独立进程隔离时，才使用 stdin/stdout RPC。[Pi SDK: run modes and RPC choice](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)
+
+| 方案 | 对当前技术栈的评价 | 决策 |
+| --- | --- | --- |
+| Swift 直接调用 Pi（假设存在 App SDK，或自己嵌 libnode） | 没有上游 Swift API；会把 Node loader、动态 extension、provider、`node-pty` 与 GUI 绑成同一 crash/升级域。 | 不做。 |
+| Swift 每个 thread 启动 `pi --mode rpc` | 是官方的跨语言路径，但 Swift 仍要重建多 session、持久化、PTY、Git、extension dialog 和断线幂等；会重复已有 Runtime 所有权。 | 仅保留作兼容 driver、调试或受隔离的 provider adapter。 |
+| Swift 原生 App + bundle 内长期 Node Runtime，Runtime 直接使用 Pi SDK | 复用本项目已存在的 Pi SDK、Fastify/WebSocket、`node-pty`、OMP 和 sessiond 测试资产；同时保持原生 UI。 | **当前主线。** |
+| 上述结构再用 XPC 替换 Unix socket | XPC 能提供 macOS 生命周期/权限隔离，但并不会让 Swift 获得 Pi SDK，也不消除 Node Runtime；需要针对 Node child、bookmark 和 streaming 做完整重构与实测。 | 作为 Sandbox/签名后的独立 spike，不阻塞当前 Native Contract。 |
+
+「完全嵌入」的验收应是 *没有外部 Node、npm、Pi CLI 或开发 sessiond 是运行前提*，而不是「只有一个
+进程」。把不稳定的 extension、provider SDK 与 native addon 放在长期 Node Runtime，反而能让 Swift UI
+崩溃后重新连接同一个 session owner。这个故障域分离也与 XPC 的设计目标一致：Apple 将 XPC 定位为把
+稳定性或权限边界隔开的 helper 通道，而不是强迫所有产品逻辑进主进程。[Apple: XPC overview](https://developer.apple.com/documentation/xpc)
+
+### 1.2.2 XPC 与安全授权的正确阶段
+
+当前未签名、非 Sandbox 的本机版本，应继续使用 private Unix socket：其合约已经覆盖 command receipt、
+snapshot、WebSocket events 和 terminal bytes，最适合先完成 session/reconnect/PTY 的可靠性矩阵。正在收口的
+project capability token + canonical real-path allow-list 应被表述为 **同用户 Runtime 的产品级授权边界**；它不是
+macOS 内核强制的 security scope，也不能替代 sandbox entitlement。只有对应 Runtime guard、原生授权调用和
+回归测试全部完成后，才能把这个 logical capability 标为已交付。
+
+当产品进入签名/Sandbox 交付时，新增一个有明确验收的 XPC RuntimeHost spike，而不是将现有 Node Runtime
+草率改成 XPC：
+
+1. Swift 从 `NSOpenPanel` 获取 security-scoped bookmark data，持久化并处理 stale bookmark；
+2. 将 **bookmark data 而非纯路径** 交给受同一签名/entitlement 约束的 RuntimeHost/XPC service；
+3. 接收方自行 resolve，并在需要的时间窗内开始/停止 security-scoped access；
+4. RuntimeHost 再以窄 capability 将已授权目录交给 Node Runtime；Runtime 必须仍拒绝未经登记的 cwd；
+5. 以真实 agent prompt、Git、PTY、extension discovery、App crash/reconnect 验证，而不是只验证能 `stat` 一个文件。
+
+Apple 明确说明 security-scoped bookmark 需要相应 entitlement，且 bookmark data 可以传递给另一个进程（例如
+XPC service 或 launch agent）再由接收方 resolve；纯 POSIX path 没有这个授权语义。[Apple: persistent and cross-process file access](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox) 对于 sandboxed command-line helper，Apple 还要求它继承宿主 App 的 sandbox；因此把 Node runtime 变成 helper/XPC service 时，必须把 entitlements、bookmark 流向和 native addon 加载一并实测，而非只替换传输层。[Apple: embedding a helper tool](https://developer.apple.com/documentation/xcode/embedding-a-helper-tool-in-a-sandboxed-app)
+
+### 1.2.3 来自 T3 Code/Codex 类产品的可复用原则
+
+T3 Code 的可取之处不是 Electron 或 React 这一层，而是其 Node WebSocket server 统一包装 agent runtime、向客户端提供实时 session 的模型；它也把 project/thread 管理、Git 和实时协作视为同一工作区能力。[T3 Code: architecture overview](https://pingdotgg-t3code.mintlify.app/introduction) Pi Agent 应借鉴下面四项，且已经与当前 Native Contract 对齐：
+
+- **Project 是一级容器，thread/session 是其子项。** 原生 sidebar 固定为 `Project → active Threads → Archived`，不把 sessions 放在 project 之外的并列导航；
+- **UI 只投影状态，Runtime 独占副作用。** session、shell/PTY、Git、session files、扩展交互和 command receipt 均只有 Runtime owner；
+- **实时订阅优先于 polling。** transcript、activity、terminal 与 pending extension interaction 全部走可恢复 event stream；重连先取 authoritative snapshot，再按 `seq` 接增量；
+- **适配层隔离上游。** `PiSdkRuntimeAdapter` 和可选 RPC/OMP driver 允许后端演进，Swift 只承诺本项目版本化 Native Contract，而不是上游私有 event schema。
+
+这些原则说明现阶段不应再新增一个「Swift → Pi RPC → sessiond」的平行控制面，也不应把 Web UI 嵌回原生 App。要继续投入的地方是收紧现有 Runtime contract、授权、生命周期与可验证恢复，而不是复制一套 agent engine。
+
 ### 1.3 打包与性能：本阶段不把 SEA/Bun 当作主线
 
 保留固定 Node runtime、production lock 与 manifest/hash 的 bundle 结构。2026-08-04 已从 Runtime 的直接依赖和 exact lock 中移除 CodeMirror、xterm、Lit、Lucide、Marked 以及 Fastify static/compress 等浏览器 Web/UI 专用根依赖；重新构建后，manifest 资源数从 **47,474** 降至 **41,351**（少 6,123 项），arm64 的 `AgentRuntime` 为 **483 MB**，完整未签名 `.app` 为 **488 MB**。`verify-app.sh` 已重新验证 manifest、Node 架构、Runtime health/hello、idle abort receipt、socket、session projection 与 Swift contract check。这个结果证明当前裁剪没有破坏已覆盖的 Runtime 路径；它不是“最小闭包已证明”或“SBOM/license audit 已完成”的声明。
