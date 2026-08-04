@@ -167,7 +167,7 @@ await runSessionDaemonStartup({
 		registerSessionRoutes(app, sessions, eventHub, "", {
 			runtimeCommandReceipts,
 		});
-		registerTerminalRoutes(app, terminals);
+		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 
 		app.get("/health", () => ({
 			ok: true,

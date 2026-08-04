@@ -4,6 +4,14 @@ import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { TerminalCommandRun, TerminalCommandRunFilter, TerminalCommandRunStatus } from "../../shared/apiTypes.js";
 import type { RunTerminalCommandOptions, TerminalInfo } from "./terminalService.js";
 import { parseTerminalSize } from "./terminalSize.js";
+import {
+  RUNTIME_COMMAND_KINDS,
+  type RuntimeCommandReceipts,
+  requireRuntimeCommandEpoch,
+  requireRuntimeCommandId,
+  runtimeCommandErrorStatus,
+  runtimeCommandFingerprint,
+} from "../runtimeCommandReceipts.js";
 
 export interface TerminalRouteService {
   list(cwd: string): TerminalInfo[];
@@ -20,7 +28,31 @@ export interface TerminalRouteService {
   cancelCommandRun(runId: string): TerminalCommandRun;
 }
 
-export function registerTerminalRoutes(app: FastifyInstance, terminals: TerminalRouteService, prefix = ""): void {
+export interface TerminalRouteOptions {
+  /** Present only in the long-lived native Runtime, not legacy web/API hosts. */
+  runtimeCommandReceipts?: RuntimeCommandReceipts;
+}
+
+interface TerminalCreateRequest {
+  cwd: string;
+  name?: string;
+  cols?: number;
+  rows?: number;
+  commandId?: unknown;
+  runtimeEpoch?: unknown;
+}
+
+interface TerminalContinueRequest {
+  commandId?: unknown;
+  runtimeEpoch?: unknown;
+}
+
+export function registerTerminalRoutes(
+  app: FastifyInstance,
+  terminals: TerminalRouteService,
+  prefix = "",
+  options: TerminalRouteOptions = {},
+): void {
   app.get<{ Querystring: { cwd?: string } }>(`${prefix}/terminals`, (request, reply) => {
     if (request.query.cwd === undefined || request.query.cwd === "") return reply.code(400).send({ error: "cwd query parameter is required" });
     try {
@@ -30,11 +62,21 @@ export function registerTerminalRoutes(app: FastifyInstance, terminals: Terminal
     }
   });
 
-  app.post<{ Body: { cwd: string; name?: string; cols?: number; rows?: number } }>(`${prefix}/terminals`, (request, reply) => {
+  app.post<{ Body: TerminalCreateRequest }>(`${prefix}/terminals`, async (request, reply) => {
     try {
-      return terminals.create({ ...request.body, cwd: normalizeRequestCwd(request.body.cwd) });
+      const terminalOptions = terminalCreateOptions(request.body);
+      const nativeCommand = nativeTerminalCreateCommand(terminalOptions, request.body);
+      if (nativeCommand !== undefined) {
+        const receipts = options.runtimeCommandReceipts;
+        if (receipts === undefined) throw new Error("Native Runtime command receipts are unavailable");
+        return await receipts.execute(nativeCommand, () => Promise.resolve({
+          created: true,
+          terminal: terminals.create(terminalOptions),
+        }));
+      }
+      return terminals.create(terminalOptions);
     } catch (error) {
-      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -78,11 +120,26 @@ export function registerTerminalRoutes(app: FastifyInstance, terminals: Terminal
     return run;
   });
 
-  app.post<{ Params: { terminalId: string } }>(`${prefix}/terminals/:terminalId/continue`, (request, reply) => {
+  app.post<{
+    Params: { terminalId: string };
+    Body: TerminalContinueRequest | undefined;
+  }>(`${prefix}/terminals/:terminalId/continue`, async (request, reply) => {
     try {
+      const nativeCommand = nativeTerminalContinueCommand(
+        request.params.terminalId,
+        request.body,
+      );
+      if (nativeCommand !== undefined) {
+        const receipts = options.runtimeCommandReceipts;
+        if (receipts === undefined) throw new Error("Native Runtime command receipts are unavailable");
+        return await receipts.execute(nativeCommand, () => Promise.resolve({
+          continued: true,
+          terminal: terminals.continue(request.params.terminalId),
+        }));
+      }
       return terminals.continue(request.params.terminalId);
     } catch (error) {
-      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -118,6 +175,59 @@ export function registerTerminalRoutes(app: FastifyInstance, terminals: Terminal
     socket.on("close", () => { detach(); });
     socket.on("error", () => { detach(); });
   });
+}
+
+function nativeTerminalCreateCommand(
+  options: Omit<TerminalCreateRequest, "commandId" | "runtimeEpoch">,
+  command: Pick<TerminalCreateRequest, "commandId" | "runtimeEpoch">,
+) {
+  const hasCommandId = command.commandId !== undefined;
+  const hasRuntimeEpoch = command.runtimeEpoch !== undefined;
+  if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+  if (!hasCommandId || !hasRuntimeEpoch) {
+    throw new Error("commandId and runtimeEpoch must be provided together");
+  }
+  return {
+    commandId: requireRuntimeCommandId(command.commandId),
+    kind: RUNTIME_COMMAND_KINDS.createTerminal,
+    expectedRuntimeEpoch: requireRuntimeCommandEpoch(command.runtimeEpoch),
+    fingerprint: runtimeCommandFingerprint({
+      cwd: options.cwd,
+      name: options.name,
+      cols: options.cols,
+      rows: options.rows,
+    }),
+  };
+}
+
+function terminalCreateOptions(
+  body: TerminalCreateRequest,
+): Omit<TerminalCreateRequest, "commandId" | "runtimeEpoch"> {
+  return {
+    cwd: normalizeRequestCwd(body.cwd),
+    ...(body.name === undefined ? {} : { name: body.name }),
+    ...(body.cols === undefined ? {} : { cols: body.cols }),
+    ...(body.rows === undefined ? {} : { rows: body.rows }),
+  };
+}
+
+function nativeTerminalContinueCommand(
+  terminalId: string,
+  body: TerminalContinueRequest | undefined,
+) {
+  if (body === undefined) return undefined;
+  const hasCommandId = body.commandId !== undefined;
+  const hasRuntimeEpoch = body.runtimeEpoch !== undefined;
+  if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+  if (!hasCommandId || !hasRuntimeEpoch) {
+    throw new Error("commandId and runtimeEpoch must be provided together");
+  }
+  return {
+    commandId: requireRuntimeCommandId(body.commandId),
+    kind: RUNTIME_COMMAND_KINDS.continueTerminal,
+    expectedRuntimeEpoch: requireRuntimeCommandEpoch(body.runtimeEpoch),
+    fingerprint: runtimeCommandFingerprint({ terminalId }),
+  };
 }
 
 type ClientTerminalMessage =

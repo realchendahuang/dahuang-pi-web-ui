@@ -207,19 +207,36 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         cwd: String,
         name: String,
         cols: Int,
-        rows: Int
-    ) async throws -> RuntimeTerminalInfo {
+        rows: Int,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "POST",
             path: "/terminals",
-            body: TerminalCreatePayload(cwd: cwd, name: name, cols: cols, rows: rows)
+            body: TerminalCreatePayload(
+                cwd: cwd,
+                name: name,
+                cols: cols,
+                rows: rows,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
         )
     }
 
-    public func continueTerminal(id: String) async throws -> RuntimeTerminalInfo {
+    public func continueTerminal(
+        id: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "POST",
-            path: "/terminals/\(Self.pathSegment(id))/continue"
+            path: "/terminals/\(Self.pathSegment(id))/continue",
+            body: RuntimeCommandPayload(
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
         )
     }
 
@@ -372,6 +389,8 @@ private struct TerminalCreatePayload: Encodable {
     let name: String
     let cols: Int
     let rows: Int
+    let commandId: String
+    let runtimeEpoch: String
 }
 
 private struct EmptyResponse: Decodable, Sendable {}

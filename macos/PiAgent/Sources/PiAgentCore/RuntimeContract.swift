@@ -490,6 +490,8 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let archived: Bool?
         public let restored: Bool?
         public let deleted: Bool?
+        public let continued: Bool?
+        public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?
         public let cwd: String?
         public let runtimeId: String?
@@ -514,8 +516,19 @@ public protocol RuntimeEventStreamClient: Sendable {
 
 public protocol RuntimeTerminalClient: Sendable {
     func listTerminals(cwd: String) async throws -> [RuntimeTerminalInfo]
-    func createTerminal(cwd: String, name: String, cols: Int, rows: Int) async throws -> RuntimeTerminalInfo
-    func continueTerminal(id: String) async throws -> RuntimeTerminalInfo
+    func createTerminal(
+        cwd: String,
+        name: String,
+        cols: Int,
+        rows: Int,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
+    func continueTerminal(
+        id: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
     func subscribeTerminal(id: String, cols: Int, rows: Int) -> RuntimeTerminalSubscription
 }
 

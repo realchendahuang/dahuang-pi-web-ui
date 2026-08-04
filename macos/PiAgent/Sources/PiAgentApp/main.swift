@@ -89,6 +89,7 @@ final class AppModel: ObservableObject {
     @Published var isProjectExpanded = true
     @Published var terminalInfo: RuntimeTerminalInfo?
     @Published var terminalErrorMessage: String?
+    @Published var isTerminalMutationInFlight = false
     @Published var showTerminationConfirmation = false
     @Published var sessionPendingPermanentDeletion: RuntimeSession?
 
@@ -305,6 +306,7 @@ final class AppModel: ObservableObject {
                 self.runtimeState = .connected(health)
                 self.replaceSessions(sessions)
                 self.isLoading = false
+                self.ensureTerminalConnection()
             } catch {
                 self.runtimeState = .failed(error.localizedDescription)
                 self.errorMessage = error.localizedDescription
@@ -664,19 +666,50 @@ final class AppModel: ObservableObject {
         let cwd = projectPath
         terminalTask = Task { [weak self] in
             do {
+                guard let self else { return }
                 let existing = try await client.listTerminals(cwd: cwd)
                 let terminal: RuntimeTerminalInfo
                 if let existingTerminal = existing.first {
                     terminal = existingTerminal
                 } else {
-                    terminal = try await client.createTerminal(
-                        cwd: cwd,
-                        name: "Pi Agent Terminal",
-                        cols: 120,
-                        rows: 32
+                    guard let expectedRuntimeEpoch = self.runtimeEpoch else {
+                        throw RuntimeClientError.incompatibleRuntime(
+                            "Reconnect the Runtime before creating a terminal."
+                        )
+                    }
+                    let commandId = UUID().uuidString
+                    let receipt: RuntimeCommandReceipt
+                    do {
+                        receipt = try await client.createTerminal(
+                            cwd: cwd,
+                            name: "Pi Agent Terminal",
+                            cols: 120,
+                            rows: 32,
+                            commandId: commandId,
+                            expectedRuntimeEpoch: expectedRuntimeEpoch
+                        )
+                    } catch {
+                        receipt = try await self.commandReceiptAfterUnknownTransport(
+                            client: self.runtimeClient,
+                            commandId: commandId,
+                            originalError: error
+                        )
+                    }
+                    try self.requireCompletedReceipt(
+                        receipt,
+                        kind: "create-terminal",
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
                     )
+                    guard receipt.result?.created == true,
+                          let createdTerminal = receipt.result?.terminal
+                    else {
+                        throw RuntimeClientError.serverError(
+                            500,
+                            "Runtime terminal receipt was missing its created terminal result."
+                        )
+                    }
+                    terminal = createdTerminal
                 }
-                guard let self else { return }
                 self.terminalInfo = terminal
                 var reconnectDelay: UInt64 = 250_000_000
                 while !Task.isCancelled && self.terminalCWD == cwd {
@@ -755,15 +788,50 @@ final class AppModel: ObservableObject {
     func continueTerminal() {
         guard let client = runtimeClient as? any RuntimeTerminalClient,
               let terminal = terminalInfo,
-              terminal.exited
+              terminal.exited,
+              !isTerminalMutationInFlight,
+              let expectedRuntimeEpoch = runtimeEpoch
         else { return }
+        let commandId = UUID().uuidString
+        isTerminalMutationInFlight = true
+        terminalErrorMessage = nil
         Task { [weak self] in
+            guard let self else { return }
             do {
-                let continued = try await client.continueTerminal(id: terminal.id)
-                self?.terminalInfo = continued
-                self?.ensureTerminalConnection()
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.continueTerminal(
+                        id: terminal.id,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "continue-terminal",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.continued == true,
+                      let continuedTerminal = receipt.result?.terminal,
+                      continuedTerminal.id == terminal.id
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime terminal receipt was missing its continued terminal result."
+                    )
+                }
+                self.terminalInfo = continuedTerminal
+                self.isTerminalMutationInFlight = false
+                self.reconnectTerminal()
             } catch {
-                self?.terminalErrorMessage = error.localizedDescription
+                self.terminalErrorMessage = error.localizedDescription
+                self.isTerminalMutationInFlight = false
             }
         }
     }
@@ -1419,6 +1487,7 @@ struct InspectorView: View {
                         if terminal.exited {
                             Button("Continue") { model.continueTerminal() }
                                 .buttonStyle(.borderless)
+                                .disabled(model.isTerminalMutationInFlight)
                         }
                     }
                     TerminalSurfaceView(

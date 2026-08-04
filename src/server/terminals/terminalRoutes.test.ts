@@ -6,6 +6,7 @@ import { WebSocket, type RawData } from "ws";
 import type { TerminalCommandRun, TerminalCommandRunFilter } from "../../shared/apiTypes.js";
 import type { RunTerminalCommandOptions, TerminalInfo } from "./terminalService.js";
 import { registerTerminalRoutes, type TerminalRouteService } from "./terminalRoutes.js";
+import { RuntimeCommandReceipts } from "../runtimeCommandReceipts.js";
 
 let app: FastifyInstance;
 let terminals: FakeTerminals;
@@ -23,6 +24,71 @@ afterEach(async () => {
 });
 
 describe("terminal routes", () => {
+  it("executes native terminal creation and continuation once per command id", async () => {
+    const routeApp = Fastify({ logger: false });
+    const routeTerminals = new FakeTerminals();
+    registerTerminalRoutes(
+      routeApp,
+      routeTerminals,
+      "",
+      { runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+    );
+    const createPayload = {
+      cwd: "/repo/./",
+      name: "Pi Agent Terminal",
+      cols: 120,
+      rows: 32,
+      commandId: "create-terminal-1",
+      runtimeEpoch: "epoch-1",
+    };
+    try {
+      const created = await routeApp.inject({ method: "POST", url: "/terminals", payload: createPayload });
+      const createRetry = await routeApp.inject({ method: "POST", url: "/terminals", payload: createPayload });
+      const continued = await routeApp.inject({
+        method: "POST",
+        url: "/terminals/t1/continue",
+        payload: { commandId: "continue-terminal-1", runtimeEpoch: "epoch-1" },
+      });
+      const continueRetry = await routeApp.inject({
+        method: "POST",
+        url: "/terminals/t1/continue",
+        payload: { commandId: "continue-terminal-1", runtimeEpoch: "epoch-1" },
+      });
+
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        kind: "create-terminal",
+        runtimeEpoch: "epoch-1",
+        status: "completed",
+        result: {
+          created: true,
+          terminal: { id: "t1", cwd: resolve("/repo"), name: "Pi Agent Terminal" },
+        },
+      });
+      expect(createRetry.json()).toEqual(created.json());
+      expect(continued.statusCode).toBe(200);
+      expect(continued.json()).toMatchObject({
+        kind: "continue-terminal",
+        result: { continued: true, terminal: { id: "t1", exited: false } },
+      });
+      expect(continueRetry.json()).toEqual(continued.json());
+      expect(routeTerminals.createCalls).toEqual([
+        { cwd: resolve("/repo"), name: "Pi Agent Terminal", cols: 120, rows: 32 },
+      ]);
+      expect(routeTerminals.events.filter((event) => event === "continue:t1")).toHaveLength(1);
+
+      const conflict = await routeApp.inject({
+        method: "POST",
+        url: "/terminals",
+        payload: { ...createPayload, cols: 80 },
+      });
+      expect(conflict.statusCode).toBe(409);
+      expect(routeTerminals.createCalls).toHaveLength(1);
+    } finally {
+      await routeApp.close();
+    }
+  });
+
   it("applies the initial socket size before attaching and replaying output", async () => {
     const socket = new WebSocket(`${serverUrl(app)}/terminals/t1/socket?cols=120.9&rows=40.2`);
 
@@ -96,6 +162,7 @@ describe("terminal routes", () => {
 
 class FakeTerminals implements TerminalRouteService {
   readonly events: string[] = [];
+  readonly createCalls: { cwd: string; name?: string; cols?: number; rows?: number }[] = [];
   readonly filters: TerminalCommandRunFilter[] = [];
   private readonly commandRuns = new Map<string, TerminalCommandRun>();
 
@@ -105,6 +172,7 @@ class FakeTerminals implements TerminalRouteService {
   }
 
   create(options: { cwd: string; name?: string; cols?: number; rows?: number }): TerminalInfo {
+    this.createCalls.push(options);
     return {
       id: "t1",
       cwd: options.cwd,
