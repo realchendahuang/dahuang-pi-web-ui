@@ -12,18 +12,18 @@ import Glibc
 /// distinction is what lets the App reconnect after a window or UI restart.
 public final class RuntimeSupervisor: @unchecked Sendable {
     private let plan: RuntimeLaunchPlan
-    private let launchNonce: RuntimeLaunchNonce?
+    private let launchSecrets: [RuntimeLaunchNonce]
     private let validateBeforeStart: @Sendable () throws -> Void
     private let lock = NSLock()
     private var process: Process?
 
     public init(
         plan: RuntimeLaunchPlan,
-        launchNonce: RuntimeLaunchNonce? = nil,
+        launchSecrets: [RuntimeLaunchNonce] = [],
         validateBeforeStart: @escaping @Sendable () throws -> Void = {}
     ) {
         self.plan = plan
-        self.launchNonce = launchNonce
+        self.launchSecrets = launchSecrets
         self.validateBeforeStart = validateBeforeStart
     }
 
@@ -38,12 +38,19 @@ public final class RuntimeSupervisor: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard process?.isRunning != true else { return }
-        try launchNonce?.rotate()
+        for secret in launchSecrets { try secret.rotate() }
+
+        var environment = plan.environment
+        if let projectCapabilityToken = launchSecrets.first(where: {
+            $0.fileURL.lastPathComponent == RuntimeLaunchNonce.projectCapabilityTokenFileName
+        }) {
+            environment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken.currentValue
+        }
 
         let child = Process()
         child.executableURL = plan.executable
         child.arguments = plan.arguments
-        child.environment = plan.environment
+        child.environment = environment
         child.currentDirectoryURL = plan.workingDirectory
         try child.run()
         process = child

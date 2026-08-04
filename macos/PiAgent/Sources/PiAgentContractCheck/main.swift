@@ -146,13 +146,44 @@ struct PiAgentContractCheck {
 		precondition(reloaded.currentValue == second)
 		let supervisor = RuntimeSupervisor(
 			plan: contractShellPlan("sleep 20", socketPath: root.appendingPathComponent("sessiond.sock").path),
-			launchNonce: nonce
+			launchSecrets: [nonce]
 		)
 		defer { supervisor.stop() }
 		try supervisor.start()
 		let launchedValue = nonce.currentValue
 		try supervisor.start()
 		precondition(nonce.currentValue == launchedValue)
+		let token = try RuntimeLaunchNonce.loadOrCreate(
+			in: root,
+			fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
+		)
+		let persistedToken = token.currentValue
+		let reattachedToken = try RuntimeLaunchNonce.loadOrCreate(
+			in: root,
+			fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
+		)
+		precondition(reattachedToken.currentValue == persistedToken)
+		let tokenOutput = root.appendingPathComponent("project-capability-token-output")
+		let tokenSupervisor = RuntimeSupervisor(
+			plan: RuntimeLaunchPlan(
+				executable: URL(fileURLWithPath: "/bin/sh"),
+				arguments: ["-c", "printf %s \"$PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN\" > \"$TOKEN_OUTPUT\"; sleep 20"],
+				environment: [
+					"PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN": "stale-token",
+					"TOKEN_OUTPUT": tokenOutput.path,
+				],
+				socketPath: root.appendingPathComponent("token-sessiond.sock").path
+			),
+			launchSecrets: [token]
+		)
+		defer { tokenSupervisor.stop() }
+		try tokenSupervisor.start()
+		precondition(token.currentValue != persistedToken)
+		for _ in 0..<100 where !FileManager.default.fileExists(atPath: tokenOutput.path) {
+			usleep(10_000)
+		}
+		let childToken = try String(contentsOf: tokenOutput, encoding: .utf8)
+		precondition(childToken == token.currentValue)
 	}
 
 	private static func checkRuntimeCommandReceiptDecoding() throws {

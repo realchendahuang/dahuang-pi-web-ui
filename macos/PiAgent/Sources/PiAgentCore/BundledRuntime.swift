@@ -83,11 +83,11 @@ public struct BundledRuntime: Sendable {
     public static let protocolMajor = 1
 
     public let launchPlan: RuntimeLaunchPlan
-	public let projectCapabilityToken: String
+    public let projectCapabilityToken: RuntimeLaunchNonce
     public let launchNonce: RuntimeLaunchNonce
     private let verification: RuntimeBundleVerification
 
-    private init(launchPlan: RuntimeLaunchPlan, projectCapabilityToken: String, launchNonce: RuntimeLaunchNonce, verification: RuntimeBundleVerification) {
+    private init(launchPlan: RuntimeLaunchPlan, projectCapabilityToken: RuntimeLaunchNonce, launchNonce: RuntimeLaunchNonce, verification: RuntimeBundleVerification) {
         self.launchPlan = launchPlan
 		self.projectCapabilityToken = projectCapabilityToken
         self.launchNonce = launchNonce
@@ -176,6 +176,10 @@ public struct BundledRuntime: Sendable {
         let runtimeState = applicationSupport.appendingPathComponent("Runtime", isDirectory: true)
         try fileManager.createDirectory(at: runtimeState, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let launchNonce = try RuntimeLaunchNonce.loadOrCreate(in: runtimeState)
+        let projectCapabilityToken = try RuntimeLaunchNonce.loadOrCreate(
+            in: runtimeState,
+            fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
+        )
         let socketPath = runtimeState.appendingPathComponent("sessiond.sock").path
         var runtimeEnvironment = environment
         runtimeEnvironment["PI_WEB_DATA_DIR"] = applicationSupport.appendingPathComponent("State", isDirectory: true).path
@@ -184,8 +188,7 @@ public struct BundledRuntime: Sendable {
         runtimeEnvironment["PI_AGENT_RUNTIME_EPOCH"] = UUID().uuidString
 		runtimeEnvironment["PI_AGENT_PRESERVE_LEGACY_SESSION_ARCHIVE"] = "1"
 		runtimeEnvironment["PI_AGENT_KEYCHAIN_HELPER"] = keychainHelperURL.path
-		let projectCapabilityToken = UUID().uuidString
-		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken
+		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken.currentValue
         runtimeEnvironment["PI_AGENT_RUNTIME_HELLO_NONCE_FILE"] = launchNonce.fileURL.path
 
         let verification = RuntimeBundleVerification(
@@ -208,7 +211,11 @@ public struct BundledRuntime: Sendable {
     }
 
     public func makeSupervisor() -> RuntimeSupervisor {
-        RuntimeSupervisor(plan: launchPlan, launchNonce: launchNonce, validateBeforeStart: { try verification.validate() })
+        RuntimeSupervisor(
+            plan: launchPlan,
+            launchSecrets: [launchNonce, projectCapabilityToken],
+            validateBeforeStart: { try verification.validate() }
+        )
     }
 }
 

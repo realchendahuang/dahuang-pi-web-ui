@@ -10,6 +10,7 @@ import Glibc
 public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeLegacyProjectMigrationClient, RuntimeLegacyMigrationOverviewClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
 	public let projectCapabilityToken: String?
+	public let projectCapabilityTokenSecret: RuntimeLaunchNonce?
 	public let socketSecurity: RuntimeSocketSecurity
     public let launchNonce: RuntimeLaunchNonce?
 
@@ -17,10 +18,12 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         socketPath: String,
         projectCapabilityToken: String? = nil,
         socketSecurity: RuntimeSocketSecurity = .permissive,
-        launchNonce: RuntimeLaunchNonce? = nil
+        launchNonce: RuntimeLaunchNonce? = nil,
+        projectCapabilityTokenSecret: RuntimeLaunchNonce? = nil
     ) {
         self.socketPath = socketPath
 		self.projectCapabilityToken = projectCapabilityToken
+		self.projectCapabilityTokenSecret = projectCapabilityTokenSecret
 		self.socketSecurity = socketSecurity
         self.launchNonce = launchNonce
     }
@@ -564,7 +567,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/sessions/\(Self.pathSegment(sessionId))/events",
             query: query(cwd: cwd, runtimeId: runtimeId),
-			capabilityToken: projectCapabilityToken,
+			capabilityToken: effectiveProjectCapabilityToken,
 			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeSessionEvent.self, from: data)
@@ -590,7 +593,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/sessions/notifications/events",
             query: [("cwd", cwd)],
-			capabilityToken: projectCapabilityToken,
+			capabilityToken: effectiveProjectCapabilityToken,
 			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeNotificationSummaryEvent.self, from: data)
@@ -653,7 +656,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/terminals/\(Self.pathSegment(id))/socket",
             query: [("cols", String(cols)), ("rows", String(rows))],
-			capabilityToken: projectCapabilityToken,
+			capabilityToken: effectiveProjectCapabilityToken,
 			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeTerminalEvent.self, from: data)
@@ -711,7 +714,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
     ) async throws -> Response {
         let socketPath = socketPath
         let encodedBody = try body.map { try JSONEncoder().encode(AnyEncodable($0)) }
-        let capabilityToken = projectCapabilityToken
+        let capabilityToken = effectiveProjectCapabilityToken
 		let socketSecurity = socketSecurity
         return try await Task.detached(priority: .userInitiated) {
             try UnixSocketHTTP.requestJSON(
@@ -722,6 +725,10 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
                 body: encodedBody, capabilityToken: capabilityToken, socketSecurity: socketSecurity
             )
         }.value
+    }
+
+    private var effectiveProjectCapabilityToken: String? {
+        projectCapabilityTokenSecret?.currentValue ?? projectCapabilityToken
     }
 
     private static func pathSegment(_ value: String) -> String {
