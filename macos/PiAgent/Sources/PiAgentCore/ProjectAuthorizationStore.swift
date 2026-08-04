@@ -70,7 +70,7 @@ public final class ProjectAccess: @unchecked Sendable {
     public let url: URL
     private let holdsSecurityScope: Bool
 
-    fileprivate init(url: URL) {
+    init(url: URL) {
         self.url = url
         holdsSecurityScope = url.startAccessingSecurityScopedResource()
     }

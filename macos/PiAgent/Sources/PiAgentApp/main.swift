@@ -174,6 +174,7 @@ final class AppModel: ObservableObject {
 
     @Published var runtimeState: RuntimeConnectionState = .disconnected
     @Published var projectPath: String
+	@Published var knownProjects: [NativeProjectBookmark] = []
     @Published var selectedSessionID: String?
     @Published var showInspector = true
     @Published var prompt = ""
@@ -241,6 +242,7 @@ final class AppModel: ObservableObject {
     let terminalSurfaceController = TerminalSurfaceController()
     private let runtimeSupervisor: RuntimeSupervisor?
     private let projectAuthorizationStore: ProjectAuthorizationStore
+	private let projectCatalog: NativeProjectCatalog
     let taskNotifications: NativeTaskNotificationCoordinator?
     private var projectAccess: ProjectAccess?
 
@@ -267,10 +269,14 @@ final class AppModel: ObservableObject {
         runtimeClient: (any RuntimeClient)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         projectAuthorizationStore: ProjectAuthorizationStore = ProjectAuthorizationStore(),
+		projectCatalog: NativeProjectCatalog = NativeProjectCatalog(),
         connection: RuntimeConnection? = nil,
         taskNotifications: NativeTaskNotificationCoordinator? = nil
     ) {
         self.projectAuthorizationStore = projectAuthorizationStore
+		self.projectCatalog = projectCatalog
+		let restoredCatalog = projectCatalog.list()
+		knownProjects = restoredCatalog
         self.taskNotifications = taskNotifications
         if let connection {
             self.runtimeClient = connection.client
@@ -286,8 +292,12 @@ final class AppModel: ObservableObject {
             errorMessage = connection.startupError
         }
         let configuredPath: String
-        if let explicitPath = environment["PI_AGENT_PROJECT_PATH"] ?? environment["PWD"] {
+		if let explicitPath = environment["PI_AGENT_PROJECT_PATH"] ?? environment["PWD"] {
             configuredPath = explicitPath
+		} else if let firstProject = restoredCatalog.first,
+				  let restoredProject = try? projectCatalog.access(firstProject) {
+			projectAccess = restoredProject
+			configuredPath = restoredProject.url.path
         } else if let restoredProject = projectAuthorizationStore.restore() {
             projectAccess = restoredProject
             configuredPath = restoredProject.url.path
@@ -542,14 +552,37 @@ final class AppModel: ObservableObject {
         panel.message = "Choose the checkout Pi Agent should use for new and existing sessions."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let access = try projectAuthorizationStore.authorize(url)
-            projectAccess = access
-            projectPath = access.url.path
+			let activation = try projectCatalog.rememberAndAccess(url)
+			activateProject(activation.access)
+			knownProjects = projectCatalog.list()
         } catch {
             errorMessage = error.localizedDescription
             return
         }
-        stopSessionEventStream()
+	}
+
+	func openKnownProject(_ project: NativeProjectBookmark) {
+		do {
+			activateProject(try projectCatalog.access(project))
+			knownProjects = projectCatalog.list()
+		} catch {
+			errorMessage = "Re-authorize \(project.displayName) to use this project: \(error.localizedDescription)"
+		}
+	}
+
+	func removeKnownProject(_ project: NativeProjectBookmark) {
+		do {
+			try projectCatalog.remove(id: project.id)
+			knownProjects = projectCatalog.list()
+		} catch {
+			errorMessage = error.localizedDescription
+		}
+	}
+
+	private func activateProject(_ access: ProjectAccess) {
+		projectAccess = access
+		projectPath = access.url.path
+		stopSessionEventStream()
         stopTerminalConnection()
         selectedSessionID = nil
         transcriptMessages = []
@@ -3280,6 +3313,29 @@ struct SidebarView: View {
             set: { model.selectSession($0) }
         )) {
             Section("Projects") {
+				ForEach(model.knownProjects) { project in
+					Button {
+						model.openKnownProject(project)
+					} label: {
+						HStack(spacing: 8) {
+							Image(systemName: project.displayPath == model.projectPath ? "folder.fill" : "folder")
+							VStack(alignment: .leading, spacing: 1) {
+								Text(project.displayName).lineLimit(1)
+								Text(project.displayPath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+							}
+							Spacer()
+						}
+					}
+					.buttonStyle(.plain)
+					.contextMenu {
+						Button("Remove from Project Library", role: .destructive) {
+							model.removeKnownProject(project)
+						}
+					}
+				}
+				Button("Add Project…") { model.openProject() }
+			}
+			Section("Threads") {
                 DisclosureGroup(isExpanded: $model.isProjectExpanded) {
                     if model.activeSessions.isEmpty {
                         Label(
@@ -3328,18 +3384,13 @@ struct SidebarView: View {
                         }
                     }
                 } label: {
-                    Button {
-                        model.openProject()
-                    } label: {
-						VStack(alignment: .leading, spacing: 2) {
-							Label(model.projectName, systemImage: "folder")
-							Text(model.projectRuntimeAuthorizationLabel)
-								.font(.caption2)
-								.foregroundStyle(.secondary)
-								.lineLimit(1)
-						}
-                    }
-                    .buttonStyle(.plain)
+					VStack(alignment: .leading, spacing: 2) {
+						Label(model.projectName, systemImage: "folder.fill")
+						Text(model.projectRuntimeAuthorizationLabel)
+							.font(.caption2)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+					}
                 }
             }
         }
