@@ -92,6 +92,8 @@ final class AppModel: ObservableObject {
     @Published var isTerminalMutationInFlight = false
     @Published var showTerminationConfirmation = false
     @Published var sessionPendingPermanentDeletion: RuntimeSession?
+    @Published var sessionPendingFork: RuntimeSession?
+    @Published var forkCandidates: [RuntimeForkCandidate] = []
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
@@ -515,6 +517,109 @@ final class AppModel: ObservableObject {
 
     func cancelPermanentDelete() {
         sessionPendingPermanentDeletion = nil
+    }
+
+    func requestFork(_ session: RuntimeSession) {
+        guard session.archived != true, !isSending else { return }
+        guard runtimeEpoch != nil else {
+            errorMessage = "Reconnect the Runtime before forking a thread."
+            return
+        }
+        let client = runtimeClient
+        isSending = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                // Candidate selection is read-only. The selected entry is
+                // still revalidated by the Runtime when the receipt-safe fork
+                // mutation runs, so a stale sheet cannot fork an arbitrary entry.
+                let candidates = try await client.forkCandidates(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId
+                )
+                guard !candidates.isEmpty else {
+                    throw RuntimeClientError.serverError(
+                        400,
+                        "This thread has no user message to fork from."
+                    )
+                }
+                self.forkCandidates = candidates
+                self.sessionPendingFork = session
+                self.isSending = false
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isSending = false
+            }
+        }
+    }
+
+    func cancelFork() {
+        sessionPendingFork = nil
+        forkCandidates = []
+    }
+
+    func forkSession(_ session: RuntimeSession, from candidate: RuntimeForkCandidate) {
+        guard !isSending else { return }
+        guard let expectedRuntimeEpoch = runtimeEpoch else {
+            errorMessage = "Reconnect the Runtime before forking a thread."
+            return
+        }
+        let client = runtimeClient
+        let commandId = UUID().uuidString
+        sessionPendingFork = nil
+        forkCandidates = []
+        isSending = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.forkSession(
+                        sessionId: session.id,
+                        cwd: session.cwd,
+                        runtimeId: session.runtimeId,
+                        entryId: candidate.entryId,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: client,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "fork-session",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.forked == true,
+                      let forked = receipt.result?.session
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime fork receipt was missing its forked session result."
+                    )
+                }
+                let refreshed = try await client.listSessions(cwd: forked.cwd)
+                guard refreshed.contains(where: { $0.id == forked.id }) else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime forked the thread, but it was not present in the session projection. Reconnect to refresh it."
+                    )
+                }
+                self.replaceSessions(refreshed)
+                self.isSending = false
+                self.selectSession(forked.id)
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isSending = false
+            }
+        }
     }
 
     func confirmPermanentDelete() {
@@ -1199,6 +1304,19 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         commandId _: String,
         expectedRuntimeEpoch _: String
     ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func forkCandidates(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?
+    ) async throws -> [RuntimeForkCandidate] { throw RuntimeClientError.connectionFailed(message) }
+    func forkSession(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        entryId _: String,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func abortActiveWork(
         commandId _: String,
         expectedRuntimeEpoch _: String
@@ -1218,6 +1336,9 @@ struct ContentView: View {
         .inspector(isPresented: $model.showInspector) {
             InspectorView(model: model)
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
+        }
+        .sheet(item: $model.sessionPendingFork, onDismiss: model.cancelFork) { session in
+            ForkThreadSheet(model: model, session: session)
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -1274,6 +1395,10 @@ struct SidebarView: View {
                                 .padding(.leading, 12)
                                 .tag(Optional(session.id))
                                 .contextMenu {
+                                    Button("Fork Thread…") {
+                                        model.requestFork(session)
+                                    }
+                                    .disabled(model.isSending)
                                     Button("Archive Thread") {
                                         model.archiveSession(session)
                                     }
@@ -1324,6 +1449,41 @@ struct SidebarView: View {
                 .disabled(model.isSending || model.projectPath.isEmpty)
             }
         }
+    }
+}
+
+struct ForkThreadSheet: View {
+    @ObservedObject var model: AppModel
+    let session: RuntimeSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Fork Thread")
+                .font(.title2.weight(.semibold))
+            Text("Start a new Pi thread from a previous user message in \(session.displayTitle). The original thread stays unchanged.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            List(model.forkCandidates) { candidate in
+                Button {
+                    model.forkSession(session, from: candidate)
+                } label: {
+                    Text(candidate.label)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(minHeight: 220)
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    model.cancelFork()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 560, height: 420)
     }
 }
 

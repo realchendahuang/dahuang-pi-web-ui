@@ -37,6 +37,8 @@ import {
 	type ActiveSessionAbortResult,
 } from "../../sessions/activeSessionAbort.js";
 import type {
+	SessionForkCandidate,
+	SessionForkResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -398,6 +400,18 @@ export class OmpSessionService implements SessionRouteService {
 	): Promise<CommandResult> {
 		await (await this.getOrOpen(ref)).respondToExtension(requestId, value);
 		return { type: "done" };
+	}
+
+	forkCandidates(): Promise<SessionForkCandidate[]> {
+		return Promise.reject(
+			new Error("Native thread forking is currently available only for the Pi runtime"),
+		);
+	}
+
+	fork(): Promise<SessionForkResult> {
+		return Promise.reject(
+			new Error("Native thread forking is currently available only for the Pi runtime"),
+		);
 	}
 
 	async navigateTree(

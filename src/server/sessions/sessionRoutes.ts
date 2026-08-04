@@ -19,6 +19,7 @@ import {
 	type RuntimeArchiveSessionCommandResult,
 	type RuntimeCommandReceipts,
 	type RuntimeDeleteArchivedSessionCommandResult,
+	type RuntimeForkSessionCommandResult,
 	type RuntimeRestoreSessionCommandResult,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
@@ -57,6 +58,14 @@ interface PromptRequestBody {
 interface StartSessionRequestBody {
 	cwd?: unknown;
 	runtimeId?: unknown;
+	commandId?: unknown;
+	runtimeEpoch?: unknown;
+}
+
+interface ForkSessionRequestBody {
+	cwd?: unknown;
+	runtimeId?: unknown;
+	entryId?: unknown;
 	commandId?: unknown;
 	runtimeEpoch?: unknown;
 }
@@ -663,6 +672,60 @@ export function registerSessionRoutes(
 		},
 	);
 
+	app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(
+		`${prefix}/sessions/:sessionId/fork-candidates`,
+		async (request, reply) => {
+			try {
+				return {
+					candidates: await sessions.forkCandidates(
+						sessionLookupFromQuery(request.params.sessionId, request.query),
+					),
+				};
+			} catch (error) {
+				return reply
+					.code(mutationErrorStatus(error))
+					.send({ error: errorMessage(error) });
+			}
+		},
+	);
+
+	app.post<{
+		Params: { sessionId: string };
+		Body: ForkSessionRequestBody | undefined;
+	}>(`${prefix}/sessions/:sessionId/fork`, async (request, reply) => {
+		try {
+			const body = requireRecord(request.body);
+			const ref = sessionLookupFromBody(request.params.sessionId, body);
+			const entryId = requireString(body, "entryId");
+			const nativeCommand = nativeForkSessionCommand(
+				request.params.sessionId,
+				ref,
+				entryId,
+				body,
+			);
+			if (nativeCommand === undefined) {
+				throw new Error("Fork requires commandId and runtimeEpoch");
+			}
+			const receipts = options.runtimeCommandReceipts;
+			if (receipts === undefined)
+				throw new Error("Native Runtime command receipts are unavailable");
+			return await receipts.execute(nativeCommand, async () => {
+				const forked = await sessions.fork(ref, entryId);
+				return {
+					forked: true,
+					session: forked.session,
+					...(forked.promptDraft === undefined
+						? {}
+						: { promptDraft: forked.promptDraft }),
+				} satisfies RuntimeForkSessionCommandResult;
+			});
+		} catch (error) {
+			return reply
+				.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
+				.send({ error: errorMessage(error) });
+		}
+	});
+
 	app.post<{ Params: { sessionId: string }; Body: unknown }>(
 		`${prefix}/sessions/:sessionId/tree/navigate`,
 		async (request, reply) => {
@@ -959,6 +1022,33 @@ function nativeSessionMutationCommand(
 		kind,
 		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
 		fingerprint: runtimeCommandFingerprint({ sessionId, cwd, runtimeId }),
+	};
+}
+
+function nativeForkSessionCommand(
+	sessionId: string,
+	ref: SessionRouteLookup,
+	entryId: string,
+	body: Record<string, unknown>,
+) {
+	const hasCommandId = body["commandId"] !== undefined;
+	const hasRuntimeEpoch = body["runtimeEpoch"] !== undefined;
+	if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+	if (!hasCommandId || !hasRuntimeEpoch) {
+		throw new Error("commandId and runtimeEpoch must be provided together");
+	}
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind: RUNTIME_COMMAND_KINDS.forkSession,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({
+			sessionId,
+			cwd,
+			runtimeId,
+			entryId,
+		}),
 	};
 }
 

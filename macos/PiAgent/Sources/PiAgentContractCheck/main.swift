@@ -148,6 +148,14 @@ struct PiAgentContractCheck {
 		let deleteReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: deleteData)
 		precondition(deleteReceipt.result?.deleted == true)
 
+		let forkData = Data(
+			#"{"commandId":"command-fork","kind":"fork-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"forked":true,"session":{"id":"forked","cwd":"/repo","runtimeId":"pi","path":"/sessions/forked.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":1,"firstMessage":"fork point"},"promptDraft":"fork point"}}"#.utf8
+		)
+		let forkReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: forkData)
+		precondition(forkReceipt.result?.forked == true)
+		precondition(forkReceipt.result?.session?.id == "forked")
+		precondition(forkReceipt.result?.promptDraft == "fork point")
+
 		let terminalData = Data(
 			#"{"commandId":"command-7","kind":"create-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
 		)

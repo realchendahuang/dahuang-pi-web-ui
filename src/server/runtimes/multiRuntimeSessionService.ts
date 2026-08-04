@@ -31,6 +31,8 @@ import type { AuthChange } from "../sessions/authService.js";
 import type { ActiveSessionAbortResult } from "../sessions/activeSessionAbort.js";
 import type { NormalizedSessionCleanupRequest } from "../sessions/sessionCleanup.js";
 import type {
+	SessionForkCandidate,
+	SessionForkResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -287,6 +289,14 @@ export class MultiRuntimeSessionService implements SessionRouteService {
 		value: string,
 	): Promise<CommandResult> {
 		return this.serviceForLookup(ref).respondToCommand(ref, requestId, value);
+	}
+
+	forkCandidates(ref: SessionRouteLookup): Promise<SessionForkCandidate[]> {
+		return this.serviceForLookup(ref).forkCandidates(ref);
+	}
+
+	fork(ref: SessionRouteLookup, entryId: string): Promise<SessionForkResult> {
+		return this.serviceForLookup(ref).fork(ref, entryId);
 	}
 
 	navigateTree(

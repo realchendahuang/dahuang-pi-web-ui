@@ -160,6 +160,40 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func forkCandidates(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> [RuntimeForkCandidate] {
+        let response: ForkCandidatesResponse = try await request(
+            method: "GET",
+            path: "/sessions/\(Self.pathSegment(sessionId))/fork-candidates",
+            query: query(cwd: cwd, runtimeId: runtimeId)
+        )
+        return response.candidates
+    }
+
+    public func forkSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        entryId: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/fork",
+            body: ForkSessionPayload(
+                cwd: cwd,
+                runtimeId: runtimeId,
+                entryId: entryId,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "GET",
@@ -327,6 +361,35 @@ private struct StartSessionPayload: Encodable {
     private enum CodingKeys: String, CodingKey {
         case cwd
         case runtimeId
+        case commandId
+        case runtimeEpoch
+    }
+}
+
+private struct ForkCandidatesResponse: Decodable {
+    let candidates: [RuntimeForkCandidate]
+}
+
+private struct ForkSessionPayload: Encodable {
+    let cwd: String
+    let runtimeId: String?
+    let entryId: String
+    let commandId: String
+    let runtimeEpoch: String
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(entryId, forKey: .entryId)
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case cwd
+        case runtimeId
+        case entryId
         case commandId
         case runtimeEpoch
     }

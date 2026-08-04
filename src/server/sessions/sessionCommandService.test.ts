@@ -225,7 +225,10 @@ describe("SessionCommandService", () => {
   });
 
   it("names forked sessions from the source title with the next available counter", async () => {
-    const active = activeSession({ sessionName: "Build auth" });
+    const active = activeSession({
+      sessionName: "Build auth",
+      getUserMessagesForForking: vi.fn(() => [{ entryId: "newest", text: "newest message" }]),
+    });
     const forked = activeSession({ sessionId: "forked", sessionName: undefined }).runtime.session;
     vi.mocked(active.runtime.fork).mockImplementationOnce(() => {
       active.runtime.session = forked;
@@ -330,6 +333,26 @@ describe("SessionCommandService", () => {
     await expect(service.respond("s1", result.requestId, "m1")).resolves.toEqual({
       type: "unsupported",
       message: "Cannot fork while the session is active. Stop current activity before forking.",
+    });
+    expect(active.runtime.fork).not.toHaveBeenCalled();
+  });
+
+  it("projects candidates for native clients and rejects an entry that was not offered", async () => {
+    const active = activeSession({
+      getUserMessagesForForking: vi.fn(() => [
+        { entryId: "oldest", text: "oldest message" },
+        { entryId: "newest", text: "newest message" },
+      ]),
+    });
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher());
+
+    await expect(service.forkCandidates("s1")).resolves.toEqual([
+      { entryId: "newest", label: "newest message" },
+      { entryId: "oldest", label: "oldest message" },
+    ]);
+    await expect(service.forkFromEntry("s1", "missing")).resolves.toEqual({
+      type: "unsupported",
+      message: "Fork message is no longer available",
     });
     expect(active.runtime.fork).not.toHaveBeenCalled();
   });

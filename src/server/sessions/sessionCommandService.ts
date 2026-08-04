@@ -6,6 +6,7 @@ import type {
 	ClientSession,
 	ClientSessionTreeSnapshot,
 } from "../types.js";
+import type { SessionForkCandidate } from "./sessionService.js";
 import { isBuiltinCommand } from "./builtinCommands.js";
 
 export interface CommandSession {
@@ -159,6 +160,31 @@ export class SessionCommandService<
 			return { type: "unsupported", message: "Command request expired" };
 		this.pendingSelects.delete(requestId);
 
+		return this.forkFromEntry(sessionId, value);
+	}
+
+	/**
+	 * Read-only projection used by native shells before presenting a fork sheet.
+	 * The browser command path deliberately keeps its request-id flow, while
+	 * native clients use an explicit product contract instead.
+	 */
+	async forkCandidates(sessionId: string): Promise<SessionForkCandidate[]> {
+		const active = await this.getActive(sessionId);
+		const result = this.forkCandidateResult(active);
+		if (Array.isArray(result)) return result;
+		if (result.type === "unsupported") throw new Error(result.message);
+		throw new Error("Unable to prepare session fork candidates");
+	}
+
+	/**
+	 * Performs Pi's real session replacement from a previously projected user
+	 * message. Callers provide receipt/idempotency handling at the transport
+	 * boundary; this service remains responsible for lifecycle and naming.
+	 */
+	async forkFromEntry(
+		sessionId: string,
+		entryId: string,
+	): Promise<ClientCommandResult> {
 		const active = await this.getActive(sessionId);
 		if (
 			this.lifecycle.isTreeNavigationActive?.(active.runtime.session) === true
@@ -166,6 +192,11 @@ export class SessionCommandService<
 			return treeNavigationActiveUnsupported();
 		if (this.hasActiveWork(active.runtime.session))
 			return forkActiveUnsupported("fork");
+		if (!active.runtime.session.getUserMessagesForForking().some(
+			(message) => message.entryId === entryId,
+		)) {
+			return { type: "unsupported", message: "Fork message is no longer available" };
+		}
 		const relatedName = await this.nextRelatedSessionName(active, "fork");
 		if (
 			this.lifecycle.isTreeNavigationActive?.(active.runtime.session) === true
@@ -176,7 +207,7 @@ export class SessionCommandService<
 		const result = await this.runSessionReplacement(
 			active.runtime,
 			async () => {
-				const forkResult = await active.runtime.fork(value);
+				const forkResult = await active.runtime.fork(entryId);
 				if (!forkResult.cancelled)
 					this.tryNameRelatedSession(active.runtime.session, relatedName);
 				return forkResult;
@@ -309,11 +340,8 @@ export class SessionCommandService<
 	}
 
 	private fork(active: CommandActiveSession<TSession>): ClientCommandResult {
-		if (this.hasActiveWork(active.runtime.session))
-			return forkActiveUnsupported("fork");
-		const messages = active.runtime.session.getUserMessagesForForking();
-		if (!messages.length)
-			return { type: "unsupported", message: "No user messages to fork from" };
+		const candidates = this.forkCandidateResult(active);
+		if (!Array.isArray(candidates)) return candidates;
 		const requestId = crypto.randomUUID();
 		this.pendingSelects.set(requestId, {
 			sessionId: active.runtime.session.sessionId,
@@ -323,13 +351,31 @@ export class SessionCommandService<
 			type: "select",
 			requestId,
 			title: "Fork from message",
-			options: [...messages]
-				.reverse()
-				.map((message) => ({
-					value: message.entryId,
-					label: truncate(message.text, 140),
-				})),
+			options: candidates.map((candidate) => ({
+				value: candidate.entryId,
+				label: candidate.label,
+			})),
 		};
+	}
+
+	private forkCandidateResult(
+		active: CommandActiveSession<TSession>,
+	): SessionForkCandidate[] | ClientCommandResult {
+		if (
+			this.lifecycle.isTreeNavigationActive?.(active.runtime.session) === true
+		)
+			return treeNavigationActiveUnsupported();
+		if (this.hasActiveWork(active.runtime.session))
+			return forkActiveUnsupported("fork");
+		const messages = active.runtime.session.getUserMessagesForForking();
+		if (!messages.length)
+			return { type: "unsupported", message: "No user messages to fork from" };
+		return [...messages]
+			.reverse()
+			.map((message) => ({
+				entryId: message.entryId,
+				label: truncate(message.text, 140),
+			}));
 	}
 
 	private tree(session: TSession): ClientCommandResult {

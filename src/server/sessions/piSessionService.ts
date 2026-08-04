@@ -96,6 +96,8 @@ import type {
 	SessionWarning,
 } from "../../shared/apiTypes.js";
 import type {
+	SessionForkCandidate,
+	SessionForkResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -2508,6 +2510,36 @@ export class PiSessionService implements SessionRouteService {
 			requestId,
 			value,
 		);
+	}
+
+	async forkCandidates(
+		ref: PiSessionLookup,
+	): Promise<SessionForkCandidate[]> {
+		await this.assertWritable(ref);
+		const active = await this.getActive(ref);
+		return this.commandService.forkCandidates(active.runtime.session.sessionId);
+	}
+
+	async fork(ref: PiSessionLookup, entryId: string): Promise<SessionForkResult> {
+		await this.assertWritable(ref);
+		const active = await this.getActive(ref);
+		const result = await this.commandService.forkFromEntry(
+			active.runtime.session.sessionId,
+			entryId,
+		);
+		if (result.type !== "done" || result.session === undefined) {
+			throw new Error(
+				result.type === "unsupported"
+					? result.message
+					: "Pi cancelled the session fork",
+			);
+		}
+		return {
+			session: result.session,
+			...(result.promptDraft === undefined
+				? {}
+				: { promptDraft: result.promptDraft }),
+		};
 	}
 
 	async navigateTree(

@@ -35,6 +35,22 @@ export type SessionRouteRef = Omit<ClientSessionRef, "runtimeId"> & {
 export type SessionRouteLookup = string | SessionRouteRef;
 
 /**
+ * A stable, UI-facing choice for forking a Pi session. The Runtime owns the
+ * entry identity and supplies a presentation-safe label; clients must not
+ * derive entries from transcript rendering.
+ */
+export interface SessionForkCandidate {
+	entryId: string;
+	label: string;
+}
+
+/** Product projection returned after Pi replaces a session through fork(). */
+export interface SessionForkResult {
+	session: ClientSession;
+	promptDraft?: string;
+}
+
+/**
  * Route-facing session contract for PI WEB's HTTP/WebSocket API.
  *
  * Keep transport concerns separate from the bundled Pi SDK implementation so
@@ -134,6 +150,8 @@ export interface SessionRouteService {
 		requestId: string,
 		value: string,
 	): Promise<ClientCommandResult>;
+	forkCandidates(ref: SessionRouteLookup): Promise<SessionForkCandidate[]>;
+	fork(ref: SessionRouteLookup, entryId: string): Promise<SessionForkResult>;
 	navigateTree(
 		ref: SessionRouteLookup,
 		request: ClientSessionTreeNavigateRequest,

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ActiveSessionAbortResult } from "./sessions/activeSessionAbort.js";
+import type { ClientSession } from "./types.js";
 import type { TerminalInfo } from "./terminals/terminalService.js";
 
 export const RUNTIME_COMMAND_KINDS = {
@@ -9,6 +10,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	archiveSession: "archive-session",
 	restoreSession: "restore-session",
 	deleteArchivedSession: "delete-archived-session",
+	forkSession: "fork-session",
 	createTerminal: "create-terminal",
 	continueTerminal: "continue-terminal",
 } as const;
@@ -50,6 +52,12 @@ export interface RuntimeDeleteArchivedSessionCommandResult {
 	runtimeId?: string;
 }
 
+export interface RuntimeForkSessionCommandResult {
+	forked: true;
+	session: ClientSession;
+	promptDraft?: string;
+}
+
 export interface RuntimeCreateTerminalCommandResult {
 	created: true;
 	terminal: TerminalInfo;
@@ -67,6 +75,7 @@ export type RuntimeCommandResult =
 	| RuntimeArchiveSessionCommandResult
 	| RuntimeRestoreSessionCommandResult
 	| RuntimeDeleteArchivedSessionCommandResult
+	| RuntimeForkSessionCommandResult
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult;
 

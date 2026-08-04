@@ -152,6 +152,20 @@ public struct RuntimeSession: Codable, Equatable, Hashable, Identifiable, Sendab
     }
 }
 
+/// A Runtime-owned entry choice used to fork a Pi thread. `entryId` is opaque
+/// to Swift; the App presents the supplied label and returns the id unchanged.
+public struct RuntimeForkCandidate: Codable, Equatable, Identifiable, Sendable {
+    public let entryId: String
+    public let label: String
+
+    public var id: String { entryId }
+
+    public init(entryId: String, label: String) {
+        self.entryId = entryId
+        self.label = label
+    }
+}
+
 /// Minimal status projection used to know when a prompt has settled.
 public struct RuntimeSessionStatus: Decodable, Equatable, Sendable {
     public let sessionId: String
@@ -458,6 +472,15 @@ public protocol RuntimeClient: RuntimeHealthClient {
         commandId: String,
         expectedRuntimeEpoch: String
     ) async throws -> RuntimeCommandReceipt
+    func forkCandidates(sessionId: String, cwd: String, runtimeId: String?) async throws -> [RuntimeForkCandidate]
+    func forkSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        entryId: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
     func abortActiveWork(commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
 }
@@ -490,6 +513,9 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let archived: Bool?
         public let restored: Bool?
         public let deleted: Bool?
+        public let forked: Bool?
+        public let session: RuntimeSession?
+        public let promptDraft: String?
         public let continued: Bool?
         public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?

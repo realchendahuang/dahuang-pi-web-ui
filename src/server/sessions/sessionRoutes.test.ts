@@ -893,6 +893,79 @@ describe("session routes", () => {
 		}
 	});
 
+	it("projects fork candidates and executes a native Pi fork once per command id", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(
+			routeApp,
+			routeService,
+			new SessionEventHub(),
+			"",
+			{ runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+		);
+		const cwd = resolve("/repo");
+		const payload = {
+			cwd,
+			runtimeId: "pi",
+			entryId: "entry-2",
+			commandId: "fork-command-1",
+			runtimeEpoch: "epoch-1",
+		};
+		try {
+			const candidates = await routeApp.inject({
+				method: "GET",
+				url: `/sessions/session-1/fork-candidates?cwd=${encodeURIComponent(cwd)}&runtimeId=pi`,
+			});
+			const first = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/fork",
+				payload,
+			});
+			const retry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/fork",
+				payload,
+			});
+
+			expect(candidates.statusCode).toBe(200);
+			expect(candidates.json()).toEqual({
+				candidates: [
+					{ entryId: "entry-2", label: "newest user message" },
+					{ entryId: "entry-1", label: "oldest user message" },
+				],
+			});
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({
+				kind: "fork-session",
+				runtimeEpoch: "epoch-1",
+				status: "completed",
+				result: {
+					forked: true,
+					promptDraft: "newest user message",
+					session: { id: "forked-session", cwd, runtimeId: "pi" },
+				},
+			});
+			expect(retry.json()).toEqual(first.json());
+			expect(routeService.forkCandidateCalls).toEqual([
+				{ id: "session-1", cwd, runtimeId: "pi" },
+			]);
+			expect(routeService.forkCalls).toEqual([
+				{ lookup: { id: "session-1", cwd, runtimeId: "pi" }, entryId: "entry-2" },
+			]);
+
+			const conflictingRetry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/fork",
+				payload: { ...payload, entryId: "entry-1" },
+			});
+			expect(conflictingRetry.statusCode).toBe(409);
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
 	it("keeps legacy archive, restore, and delete routes compatible", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);
@@ -1328,6 +1401,8 @@ class CapturingRouteSessionService implements SessionRouteService {
 	readonly restoreCalls: SessionRouteLookup[] = [];
 	readonly deleteArchivedCalls: SessionRouteLookup[] = [];
 	readonly reloadCalls: SessionRouteLookup[] = [];
+	readonly forkCandidateCalls: SessionRouteLookup[] = [];
+	readonly forkCalls: { lookup: SessionRouteLookup; entryId: string }[] = [];
 	readonly clearQueueCalls: SessionRouteLookup[] = [];
 	readonly dismissWarningCalls: {
 		lookup: SessionRouteLookup;
@@ -1421,6 +1496,31 @@ class CapturingRouteSessionService implements SessionRouteService {
 		this.reloadCalls.push(lookup);
 		if (this.reloadError !== undefined) return Promise.reject(this.reloadError);
 		return Promise.resolve();
+	}
+
+	forkCandidates(lookup: SessionRouteLookup) {
+		this.forkCandidateCalls.push(lookup);
+		return Promise.resolve([
+			{ entryId: "entry-2", label: "newest user message" },
+			{ entryId: "entry-1", label: "oldest user message" },
+		]);
+	}
+
+	fork(lookup: SessionRouteLookup, entryId: string) {
+		this.forkCalls.push({ lookup, entryId });
+		return Promise.resolve({
+			session: {
+				id: "forked-session",
+				path: "/sessions/forked-session.jsonl",
+				cwd: typeof lookup === "string" ? "/repo" : lookup.cwd,
+				runtimeId: typeof lookup === "string" ? AGENT_RUNTIME_IDS.pi : (lookup.runtimeId ?? AGENT_RUNTIME_IDS.pi),
+				created: "2026-08-04T00:00:00.000Z",
+				modified: "2026-08-04T00:00:00.000Z",
+				messageCount: 1,
+				firstMessage: "newest user message",
+			},
+			promptDraft: "newest user message",
+		});
 	}
 
 	dispose(): Promise<void> {
