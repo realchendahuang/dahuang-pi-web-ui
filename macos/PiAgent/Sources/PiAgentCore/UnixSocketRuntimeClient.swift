@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeEventStreamClient, RuntimeTerminalClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, Sendable {
     public let socketPath: String
 
     public init(socketPath: String) {
@@ -16,6 +16,10 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeEventStreamClient, 
 
     public func health() async throws -> RuntimeHealth {
         try await request(method: "GET", path: "/health")
+    }
+
+    public func hello() async throws -> RuntimeHello {
+        try await request(method: "GET", path: "/runtime/hello")
     }
 
     public func listSessions(cwd: String) async throws -> [RuntimeSession] {

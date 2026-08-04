@@ -6,11 +6,31 @@ import SwiftTerm
 @main
 struct PiAgentApp: App {
     @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycleDelegate
 
     var body: some Scene {
         WindowGroup("Pi Agent") {
             ContentView(model: model)
                 .frame(minWidth: 980, minHeight: 680)
+                .onAppear {
+                    lifecycleDelegate.model = model
+                }
+                .alert(
+                    "Agent sessions are still active",
+                    isPresented: $model.showTerminationConfirmation
+                ) {
+                    Button("Keep Running and Quit") {
+                        model.keepRuntimeRunningAndTerminate()
+                    }
+                    Button("Stop Runtime and Quit", role: .destructive) {
+                        model.stopOwnedRuntimeAndTerminate()
+                    }
+                    Button("Cancel", role: .cancel) {
+                        model.cancelTermination()
+                    }
+                } message: {
+                    Text(model.terminationConfirmationMessage)
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -53,9 +73,13 @@ final class AppModel: ObservableObject {
     @Published var isProjectExpanded = true
     @Published var terminalInfo: RuntimeTerminalInfo?
     @Published var terminalErrorMessage: String?
+    @Published var showTerminationConfirmation = false
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
+    private let runtimeSupervisor: RuntimeSupervisor?
+    private let projectAuthorizationStore: ProjectAuthorizationStore
+    private var projectAccess: ProjectAccess?
 
     private var sessionStreamTask: Task<Void, Never>?
     private var sessionEventSubscription: RuntimeEventSubscription?
@@ -65,15 +89,33 @@ final class AppModel: ObservableObject {
     private var terminalTask: Task<Void, Never>?
     private var terminalSubscription: RuntimeTerminalSubscription?
     private var terminalCWD: String?
+    private var terminationCheckInFlight = false
+    private var terminationActiveSessionCount: Int?
 
     init(
-        runtimeClient: any RuntimeClient = AppModel.makeRuntimeClient(),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        runtimeClient: (any RuntimeClient)? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        projectAuthorizationStore: ProjectAuthorizationStore = ProjectAuthorizationStore()
     ) {
-        self.runtimeClient = runtimeClient
-        let configuredPath = environment["PI_AGENT_PROJECT_PATH"]
-            ?? environment["PWD"]
-            ?? FileManager.default.currentDirectoryPath
+        self.projectAuthorizationStore = projectAuthorizationStore
+        if let runtimeClient {
+            self.runtimeClient = runtimeClient
+            runtimeSupervisor = nil
+        } else {
+            let connection = AppModel.makeRuntimeConnection(environment: environment)
+            self.runtimeClient = connection.client
+            runtimeSupervisor = connection.supervisor
+            errorMessage = connection.startupError
+        }
+        let configuredPath: String
+        if let explicitPath = environment["PI_AGENT_PROJECT_PATH"] ?? environment["PWD"] {
+            configuredPath = explicitPath
+        } else if let restoredProject = projectAuthorizationStore.restore() {
+            projectAccess = restoredProject
+            configuredPath = restoredProject.url.path
+        } else {
+            configuredPath = FileManager.default.currentDirectoryPath
+        }
         projectPath = URL(fileURLWithPath: configuredPath).standardizedFileURL.path
     }
 
@@ -100,15 +142,87 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var terminationConfirmationMessage: String {
+        if let terminationActiveSessionCount {
+            return "(terminationActiveSessionCount) active session\(terminationActiveSessionCount == 1 ? " is" : "s are") still running. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
+        }
+        return "The Runtime status could not be refreshed. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
+    }
+
+    /// Called synchronously from `NSApplicationDelegate`. The authoritative
+    /// active-session count is fetched before choosing whether App termination
+    /// may proceed, so a stale UI projection cannot silently stop work.
+    func requestApplicationTermination() -> NSApplication.TerminateReply {
+        guard runtimeSupervisor != nil else {
+            // A development or externally supplied socket is never owned by
+            // the App and must survive an App quit.
+            return .terminateNow
+        }
+        guard !terminationCheckInFlight else { return .terminateLater }
+        terminationCheckInFlight = true
+        let client = runtimeClient
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let health = try await client.health()
+                self.runtimeState = .connected(health)
+                self.terminationCheckInFlight = false
+                if health.activeSessions == 0 {
+                    self.stopOwnedRuntimeAndTerminate()
+                } else {
+                    self.terminationActiveSessionCount = health.activeSessions
+                    self.showTerminationConfirmation = true
+                }
+            } catch {
+                self.terminationCheckInFlight = false
+                self.terminationActiveSessionCount = nil
+                self.showTerminationConfirmation = true
+            }
+        }
+        return .terminateLater
+    }
+
+    func keepRuntimeRunningAndTerminate() {
+        clearTerminationRequest()
+        // `RuntimeSupervisor` only holds a `Process` it launched; intentionally
+        // not calling stop preserves ongoing work after the native UI exits.
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    func stopOwnedRuntimeAndTerminate() {
+        clearTerminationRequest()
+        runtimeSupervisor?.stop()
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    func cancelTermination() {
+        clearTerminationRequest()
+        NSApp.reply(toApplicationShouldTerminate: false)
+    }
+
+    private func clearTerminationRequest() {
+        terminationCheckInFlight = false
+        terminationActiveSessionCount = nil
+        showTerminationConfirmation = false
+    }
+
     func refreshRuntime() {
         let client = runtimeClient
+        let supervisor = runtimeSupervisor
         let cwd = projectPath
         isLoading = true
         errorMessage = nil
         runtimeState = .connecting
         Task { [weak self] in
             do {
-                let health = try await client.health()
+                let health: RuntimeHealth
+                if let supervisor,
+                   let helloClient = client as? any RuntimeHelloClient
+                {
+                    health = try await supervisor.ensureRunning(using: helloClient)
+                } else {
+                    health = try await client.health()
+                }
                 let sessions = try await client.listSessions(cwd: cwd)
                 guard let self else { return }
                 self.runtimeState = .connected(health)
@@ -131,7 +245,14 @@ final class AppModel: ObservableObject {
         panel.prompt = "Use Project"
         panel.message = "Choose the checkout Pi Agent should use for new and existing sessions."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        projectPath = url.standardizedFileURL.path
+        do {
+            let access = try projectAuthorizationStore.authorize(url)
+            projectAccess = access
+            projectPath = access.url.path
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
         selectedSessionID = nil
         transcriptMessages = []
         statusBySession = [:]
@@ -595,13 +716,74 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private static func makeRuntimeClient() -> any RuntimeClient {
-        let socket = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SOCKET"]
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".pi-web/sessiond.sock")
-                .path
-        return UnixSocketRuntimeClient(socketPath: socket)
+    private struct RuntimeConnection {
+        let client: any RuntimeClient
+        let supervisor: RuntimeSupervisor?
+        let startupError: String?
     }
+
+    private static func makeRuntimeConnection(environment: [String: String]) -> RuntimeConnection {
+        if let socket = environment["PI_AGENT_RUNTIME_SOCKET"], !socket.isEmpty {
+            return RuntimeConnection(
+                client: UnixSocketRuntimeClient(socketPath: socket),
+                supervisor: nil,
+                startupError: nil
+            )
+        }
+        do {
+            if let bundledRuntime = try BundledRuntime.discover(environment: environment) {
+                return RuntimeConnection(
+                    client: UnixSocketRuntimeClient(socketPath: bundledRuntime.launchPlan.socketPath),
+                    supervisor: bundledRuntime.makeSupervisor(),
+                    startupError: nil
+                )
+            }
+        } catch {
+            return RuntimeConnection(
+                client: UnavailableRuntimeClient(message: error.localizedDescription),
+                supervisor: nil,
+                startupError: error.localizedDescription
+            )
+        }
+
+        if Bundle.main.bundleURL.pathExtension.lowercased() == "app" {
+            let message = "Pi Agent.app is missing its bundled Runtime. Rebuild the app instead of connecting to a global daemon."
+            return RuntimeConnection(
+                client: UnavailableRuntimeClient(message: message),
+                supervisor: nil,
+                startupError: message
+            )
+        }
+
+        let developmentSocket = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".pi-web/sessiond.sock")
+            .path
+        return RuntimeConnection(
+            client: UnixSocketRuntimeClient(socketPath: developmentSocket),
+            supervisor: nil,
+            startupError: nil
+        )
+    }
+}
+
+@MainActor
+private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
+    weak var model: AppModel?
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        model?.requestApplicationTermination() ?? .terminateNow
+    }
+}
+
+private struct UnavailableRuntimeClient: RuntimeClient {
+    let message: String
+
+    func health() async throws -> RuntimeHealth { throw RuntimeClientError.connectionFailed(message) }
+    func listSessions(cwd _: String) async throws -> [RuntimeSession] { throw RuntimeClientError.connectionFailed(message) }
+    func startSession(cwd _: String, runtimeId _: String?) async throws -> RuntimeSession { throw RuntimeClientError.connectionFailed(message) }
+    func messages(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeMessagePage { throw RuntimeClientError.connectionFailed(message) }
+    func status(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
+    func prompt(sessionId _: String, cwd _: String, runtimeId _: String?, text _: String) async throws { throw RuntimeClientError.connectionFailed(message) }
 }
 
 struct ContentView: View {

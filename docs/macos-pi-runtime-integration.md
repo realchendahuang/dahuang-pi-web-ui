@@ -1,6 +1,8 @@
 # macOS 原生客户端与 Pi Runtime 融合：研究与架构决策
 
-> 状态：**已完成调研并作出架构决策，尚未完成 bundled Runtime 的产品化实施**。
+> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验和 Unix-socket smoke 已完成；完整 workspace、后台/登录生命周期、Keychain 迁移和远程能力仍在实施。**
+>
+> 范围覆写：当前用户明确要求不做代码签名、公证、Gatekeeper/DMG/Sparkle 发布。本文保留相关研究作为未来参考，但所有当前验收以 exact dependency lock、manifest/hash、Node 版本/架构和真实 Runtime smoke 为准。
 >
 > 调研快照：**2026-08-03**。Pi SDK、Node、Bun 与 macOS API 仍会演进；进入每个发布阶段前必须重新核对锁定版本和平台行为。
 >
@@ -17,7 +19,7 @@ Pi Agent 的正式架构采用**原生 App + 内嵌 Runtime 的混合方案**：
 - Swift 只依赖稳定、版本化、可生成类型的 **Native Contract**，当前传输继续使用本机 Unix domain socket 上的 HTTP + WebSocket；
 - Pi RPC 保留为 Runtime 内部的兼容 driver、第三方 harness 接入和故障隔离工具，不负责产品级多 session orchestration；
 - 第一版随 App 打包经过验证的固定 Node LTS 和裁剪、锁定的 production dependency tree；调研时优先候选是 Node 24 LTS，Node SEA 与 Bun 单文件仅保留为后续 spike；
-- Runtime 与 App 是一个签名、公证和升级单元，普通用户不需要安装 Node、npm 或 Pi CLI。
+- Runtime 与 App 是一个不可拆分的本地构建单元，普通用户不需要安装 Node、npm 或 Pi CLI；本阶段不对外宣称已签名、公证或可经 Gatekeeper 分发。
 
 最终推荐结构如下：
 
@@ -40,6 +42,8 @@ Pi Agent.app
 ```
 
 一句话结论：**完整嵌入 Pi 能力，但把它嵌入 App 自带的 Node Runtime，而不是嵌入 Swift GUI 进程。**
+
+当前实现已经提供：`macos/PiAgentRuntime/package-lock.json` 的 exact production closure、`build-runtime.mjs` 生成的 `runtime-manifest.json`、启动前的 SHA-256/Node 版本/架构自检、`/runtime/hello` 协议握手、Swift `RuntimeSupervisor` 的按需启动/重连、Application Support 专属 socket、项目 security-scoped bookmark，以及 `verify-app.sh` 驱动的 bundle/Runtime/Swift socket smoke。
 
 ## 2. 本次研究要回答的问题
 
@@ -274,6 +278,8 @@ Pi 官方文档指出：new/switch/fork/import 后 `runtime.session` 会替换�
 
 这也是防止 SDK 升级扩散的关键 seam。升级 Pi 包时，绝大多数变化应限制在 adapter、fixture 和 compatibility tests 内。
 
+当前已完成第一层收口：`PiSessionService` 不再直接调用 `createAgentSessionRuntime`、`createAgentSessionServices` 或 `createAgentSessionFromServices`；这些 SDK lifecycle factory 调用和 `SessionManager` 的运行时校验都在 `PiSdkRuntimeAdapter` 内。服务仍保留项目自定义 tool、delegation 与 session event orchestration，避免为了“只有一个 import”而把产品规则也塞进 SDK adapter。session replacement 的 subscription/extension rebind 与稳定 event projection 仍是下一层待收口工作。
+
 ## 7. Swift 与 Runtime 的 Native Contract
 
 ### 7.1 Contract 不等于 Pi SDK，也不等于 Pi RPC
@@ -373,14 +379,14 @@ RPC adapter 输出的仍是相同 `SessionRuntimeDriver` 语义，不把 JSONL �
 
 ```text
 App launch
-  → validate signed runtime manifest
+  → validate exact Runtime manifest and resource hashes
   → discover compatible runtime socket
   → connect existing compatible runtime OR launch bundled runtime
   → hello / version / epoch handshake
   → restore projections from snapshot + events
 ```
 
-`RuntimeSupervisor` 必须使用 single-instance lock 和确定的 socket namespace，避免盲目拉起两个 Runtime。检测到不兼容旧 Runtime 时，不得直接覆盖或并行写同一份状态；先进入升级协调。
+`RuntimeSupervisor` 使用确定的 socket namespace 与跨进程 `.sessiond-launch.lock`：失败探测后先持锁、再次 hello/health，只有锁内仍不可用才启动 bundled child，并持锁直到 handshake 成功或失败。因此两个 App 实例不会因为同时看见空 socket 而各自拉起 child。检测到不兼容旧 Runtime 时，不得直接覆盖或并行写同一份状态；先进入升级协调。
 
 ### 8.2 关闭窗口与退出 App
 
@@ -391,6 +397,8 @@ App launch
 3. 取消退出。
 
 没有活动任务时，按照用户的“关闭后继续运行”设置决定保留或优雅停止 Runtime。不能在 `applicationShouldTerminate` 中无等待地杀进程。
+
+当前已实现最小退出协调：App 在 `applicationShouldTerminate` 中先异步刷新 `/health`；有活动 session 或 health 不可用时显示“保持 Runtime 并退出 / 停止自有 Runtime 并退出 / 取消”。`RuntimeSupervisor.stop()` 只会终止它自行 `Process.run()` 的 child，不会停止 `PI_AGENT_RUNTIME_SOCKET` 指向的开发/外部 Runtime。当前“停止 Runtime”是确定的 ownership stop，不是 agent-level graceful abort；后者仍需在 Native Contract 中加入有界、可回读的 command receipt 后实现。
 
 ### 8.3 Runtime crash 与 App crash
 
@@ -404,7 +412,7 @@ App launch
 Apple 在 macOS 13+ 提供 [`SMAppService`](https://developer.apple.com/documentation/servicemanagement/smappservice) 管理 Login Item、LaunchAgent 和 daemon。推荐分两阶段：
 
 1. 第一阶段由 App 打开时启动 bundled Runtime，不默认注册后台服务；
-2. 用户明确开启“登录启动/关闭窗口后继续运行”后，注册签名的 Login Item 或 LaunchAgent。
+2. 用户明确开启“登录启动/关闭窗口后继续运行”后，再评估 Login Item 或 LaunchAgent 的独立交付。
 
 后台能力必须可见、可撤销，并在设置中显示当前注册状态。不要在首次启动时静默安装常驻项。
 
@@ -414,7 +422,7 @@ Apple 在 macOS 13+ 提供 [`SMAppService`](https://developer.apple.com/document
 
 可选的 `PiAgentRuntimeHost` 应保持很薄：
 
-- 验证 manifest 和 code signature；
+- 验证 manifest、资源完整性和 Runtime 兼容性；
 - 启动、监督和停止 Node Runtime；
 - 回报 pid、版本、health 与退出原因；
 - 协调 Login Item/LaunchAgent 和 App update；
@@ -431,7 +439,7 @@ update downloaded
   → notify user / wait / checkpoint according to policy
   → stop or hand off runtime with explicit final state
   → replace complete App + helper + Runtime unit
-  → verify signature and manifest
+  → verify manifest、Node 架构和资源 hash
   → migrate protocol/state
   → launch and reconcile old command receipts
 ```
@@ -442,33 +450,33 @@ Sparkle 只负责安全分发 App bundle；active-session gate、checkpoint、Ru
 
 ### 9.1 首发：真实 Node + production staging tree
 
-第一版不追求单文件。推荐生成如下逻辑布局，最终物理位置由签名 spike 验证：
+第一版不追求单文件。当前实现生成如下逻辑布局；它是未签名 App 内的自包含 Runtime，不会从用户 PATH 或全局 npm 环境寻找依赖：
 
 ```text
 Pi Agent.app/Contents/
 ├── MacOS/
-│   ├── PiAgent
-│   └── pi-agent-runtime            固定、重命名的 Node executable 或 launcher
-├── Helpers/
-│   └── PiAgentRuntimeHost          可选原生 helper
-├── Frameworks/
-│   └── AgentRuntimeNative/         可安全重定位的 Mach-O addons/helpers
+│   └── PiAgent
 └── Resources/
     └── AgentRuntime/
+        ├── node/bin/node
+        ├── node/lib/                Node 的动态库闭包
         ├── dist/
-        ├── node_modules/           裁剪后的 production closure
-        ├── assets/
-        ├── licenses/
-        ├── sbom.spdx.json
+        ├── node_modules/            Runtime package-lock 的 production closure
+        ├── package.json
+        ├── package-lock.json
+        ├── runtime-launcher.mjs
         └── runtime-manifest.json
 ```
 
-某些 npm native addon 依赖相对路径，不能为了目录好看就直接移动。构建 spike 必须在下面两种方式中验证后再定：
+`scripts/macos/build-runtime.mjs` 在受控 staging 目录中以 `npm ci --omit=dev` 安装
+`macos/PiAgentRuntime/package-lock.json`，复制根项目编译后的 `dist/`、Node executable 与 Node `lib/`，然后生成每个普通文件及 symlink 的 SHA-256 manifest。`runtime-launcher.mjs` 在加载 `sessiond` 前复核 Node 版本、架构、Node hash 与所有 Runtime 资源；Swift 在启动其拥有的 child 前进行同一份资源预检。`scripts/macos/smoke-runtime.sh` 则使用 App 内的真实 Node/Runtime，经 Unix socket 验证 `/health`、`/runtime/hello` 和 Swift contract check。
 
-- 保持 production package layout，逐个签名 Mach-O，再签外层 App；
+某些 npm native addon 依赖相对路径，不能为了目录好看就直接移动。后续 dependency-closure 裁剪必须先在下面两种方式中验证后再定：
+
+- 保持 production package layout，并对每个 Mach-O 的架构、依赖与可加载性做审计；
 - 将 native code 放入标准 code location，并由受测 loader manifest 映射到稳定路径。
 
-Apple 的 [Code Signing Guide](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html)要求 nested code 在外层 App 之前完成签名，并建议 helper、framework、XPC service 与 Login Item 放在标准 bundle 位置。最终流水线必须从最深层 native code 向外签名，不能依赖 `codesign --deep` 猜测依赖关系。
+当前范围不执行 `codesign`、公证、Gatekeeper、DMG 或 Sparkle。完整性基线不是“未签名即不验证”：exact lock、manifest、SHA-256、symlink escape check、Node 版本/架构检查与真实 Runtime smoke 都是当前发布前必须通过的检查。若将来重新启用公开分发，Apple 的 [Code Signing Guide](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html) 才是嵌套代码由内向外签名的参考；它不属于本阶段验收。
 
 仓库当前 `engines.node` 的 `>=22.19.0` 是兼容下限，不是桌面发布 pin。根据 [Node 官方发布状态](https://nodejs.org/en/about/previous-releases)，调研时 Node 24 是 LTS，首发应优先用 Node 24 最新安全补丁做完整验证；如果 Pi SDK 或 native addon 的证据要求 Node 22，再把 Node 22 作为有期限的兼容基线。最终 manifest 必须记录完整 patch 版本和官方 binary checksum，不能只写 major。
 
@@ -480,20 +488,20 @@ Apple 的 [Code Signing Guide](https://developer.apple.com/library/archive/docum
 - 只包含 production dependencies；
 - `npm ci` 在干净 staging directory 执行；
 - 禁止生命周期脚本从网络下载未记录 binary；
-- 对每个 Mach-O 执行 `file`、`lipo -info`、`codesign -dv` 和依赖审计；
-- 生成文件清单、SHA-256、许可证和 SBOM；
+- 对每个 Mach-O 执行 `file`、`lipo -info` 和依赖审计；
+- 生成文件清单和 SHA-256；许可证与 SBOM 在 dependency closure 裁剪完成后补入；
 - App build 消费已经完成验证的 staging artifact。
 
 当前 npm package 的 peer dependency 仍可服务 CLI/Web 分发；bundled Runtime 的 manifest 是另一个发布边界，不应依赖 consumer resolution。
 
 ### 9.3 架构策略
 
-首发分别生成：
+当前仅在本机构建并验证与当前 Node 架构一致的 App bundle；尚未产出 DMG。后续若决定支持多个 CPU 架构，分别生成：
 
-- Apple Silicon arm64 DMG；
-- Intel x86_64 DMG（如果产品决定支持 Intel）。
+- Apple Silicon arm64 App bundle；
+- Intel x86_64 App bundle（如果产品决定支持 Intel）。
 
-只有在 Node、所有 `.node`、spawn helper 和 Swift dependencies 的 universal2 合并、签名、公证、自动更新全部通过后，才合并 universal artifact。不要在同一 App 中混入“可能永远不会加载”的其他平台 binary。
+只有在 Node、所有 `.node`、spawn helper 和 Swift dependencies 的 universal2 合并、Runtime manifest、完整 smoke 与生命周期验收全部通过后，才合并 universal artifact。不要在同一 App 中混入“可能永远不会加载”的其他平台 binary。
 
 ### 9.4 Node SEA 为什么暂缓
 
@@ -505,7 +513,7 @@ PI WEB 当前依赖动态 extension/resource discovery、`node-pty`、clipboard 
 
 - Runtime 已有完整资源 manifest；
 - 动态 extension 安装边界已经冻结；
-- native addon extraction 目录、签名、清理和并发规则有 E2E 证明；
+- native addon extraction 目录、完整性、清理和并发规则有 E2E 证明；
 - 连续长 session、PTY、auth、插件和更新 smoke 与普通 Node 基线等价。
 
 ### 9.5 Bun compile 为什么只做后续 spike
@@ -520,7 +528,7 @@ PI WEB 当前依赖动态 extension/resource discovery、`node-pty`、clipboard 
 - provider auth/OAuth 与 Keychain bridge；
 - clipboard/native addon 与 WASM；
 - sleep/wake、App crash reconnect、Runtime crash recovery；
-- Developer ID、Hardened Runtime、notarization 和 Sparkle update。
+- Runtime manifest 校验、App move、重启与本地替换安装。
 
 若任何一项需要维护大规模兼容 patch，继续使用真实 Node。单文件体积不是产品成功指标，可靠升级和 session 不丢才是。
 
@@ -530,17 +538,17 @@ Pi 的 JavaScript extension、skill、prompt 和 context discovery 可以保留�
 
 - 允许从已授权项目读取受 policy 管理的 JavaScript/TypeScript extension 和文本资源；
 - 不允许 extension 在 App 首次启动或运行中执行不受控的 `npm install`；
-- 不允许 Node Runtime 加载未进入发布 manifest、未签名或 architecture 不匹配的 `.node`/dylib；
-- 需要 native addon 的第三方扩展必须经过独立审核、构建、签名和兼容测试，或放入受限 subprocess，不得自动注入主 Runtime；
+- 不允许 Node Runtime 加载未进入发布 manifest 或 architecture 不匹配的 bundled `.node`/dylib；
+- 需要 native addon 的第三方扩展必须经过独立审核、构建、manifest/兼容测试，或放入受限 subprocess，不得自动注入主 Runtime；
 - Runtime 应记录 extension id、来源、hash 与加载结果，但日志不得包含 credential 或完整敏感 Prompt。
 
-Node executable、RuntimeHost、spawn helper 和允许加载的 native addon 使用同一 Team ID 从内向外签名。Hardened Runtime 下优先保持 library validation，不为方便插件加载而默认加入 `com.apple.security.cs.disable-library-validation`；若某个依赖确实要求例外，必须通过单独 ADR、威胁模型和公证 E2E 证明后才可放宽。
+未签名阶段以 Runtime manifest 为唯一 bundled-native-code allowlist；不接受运行时 `npm install` 或未审计 native addon。若未来开启签名/沙盒，必须另立 ADR 决定 Team ID、Hardened Runtime 与 library validation，不为方便插件加载而默认放宽限制。
 
 ## 10. 安全与 macOS 权限边界
 
 ### 10.1 首发分发与 Sandbox
 
-第一版目标是 Developer ID + Hardened Runtime + Notarization 的站外分发，不把 Mac App Store sandbox 作为首发前提。原因不是放弃安全，而是 coding agent 需要用户授权后的任意项目目录、PTY、Git、shell、provider CLI 和动态工具能力。
+第一阶段是受开发者主动安装、未签名的本地 App bundle，不把 Mac App Store sandbox 作为前提。原因不是放弃安全，而是 coding agent 需要用户授权后的任意项目目录、PTY、Git、shell、provider CLI 和动态工具能力。它不应被表述成可对所有普通用户直接公开分发的 artifact。
 
 即使不启用 App Sandbox，也必须实现最小权限和明确授权：
 
@@ -561,9 +569,11 @@ Node executable、RuntimeHost、spawn helper 和允许加载的 native addon 使
 - nonce 通过权限受限文件、继承 fd 或 RuntimeHost 安全通道传递，不写命令行；
 - 所有外部 remote connection 走独立的认证和 TLS 设计，不能复用本地信任假设。
 
+当前 bundled Runtime 已执行前两项：`prepareSessiondSocketPath()` 只清理 stale socket，并拒绝替换普通文件、symlink、FIFO 或设备；Fastify listen 后以 `0600` 固化 socket。退出时按 `dev`/`ino` 删除自身创建的 socket，避免误删后来替换路径的进程。owner/类型/权限的连接端 preflight、hello nonce 和受限 nonce 传递仍待作为下一版 Native Contract 安全门实现。
+
 ### 10.3 Keychain 与 credential bridge
 
-目标状态是 secret 存入 Keychain，由签名的受限 broker 提供给 Runtime；Swift feature store 和普通 Native Contract 不持有明文 API key。
+目标状态是 secret 存入 Keychain，由受限 broker 提供给 Runtime；Swift feature store 和普通 Native Contract 不持有明文 API key。当前尚未实现 credential broker，不能因此误报 Pi 现有 auth 文件已迁移。
 
 迁移必须渐进：
 
@@ -647,13 +657,13 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 ### Phase C：把 Runtime 装入 `.app`
 
 - 实现 `RuntimeSupervisor`；
-- 加入 manifest/signature/architecture preflight；
+- 加入 manifest/hash/architecture preflight；
 - 实现 single instance、socket discovery、hello/epoch/capability handshake；
 - App launch 按需启动 bundled Runtime；
 - App 重开先重连，不盲目生成第二个 Runtime；
 - systemd 继续作为 Linux/开发部署方式，不进入 macOS 产品路径。
 
-退出条件：移动到随机路径的签名 `.app` 能完成 session、stream、terminal、App crash/reopen 和 Runtime graceful quit。
+退出条件：移动到随机路径的 bundled `.app` 能完成 session、stream、terminal、App crash/reopen 和 Runtime graceful quit，并且不会连接全局 daemon 或用户 PATH 中的 Node。
 
 ### Phase D：后台 host 与系统集成
 
@@ -664,7 +674,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 
 退出条件：后台开关可见且可撤销；登录启动、App crash、sleep/wake、权限撤销均有确定行为。
 
-### Phase E：签名、公证、更新和发布
+### Phase E：未来的签名、公证、更新和发布（当前不执行）
 
 - 从内到外签名所有 nested code；
 - 验证 Hardened Runtime entitlements；
@@ -672,7 +682,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 接入 Sparkle，完成 active-session gate 和完整 bundle rollback；
 - 在干净 arm64/x64 账户执行 Gatekeeper、session、PTY、Keychain、升级与卸载 E2E。
 
-退出条件：普通用户只需下载 DMG、拖入 Applications、打开并选择项目；无需终端修复步骤。
+此阶段仅在用户明确重新授权公开分发时恢复；它不是当前完成原生 Runtime 的退出条件。
 
 ### Phase F：可选打包优化
 
@@ -713,18 +723,17 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 更新时有活动 Agent，能够等待、取消或明确停止；
 - 新 Runtime 启动失败可回滚旧完整 App bundle。
 
-### 13.4 分发
+### 13.4 当前本地 artifact 验收
 
 - 干净 macOS 账户，无 Node/npm/Pi；
-- quarantine 下 Gatekeeper 首次打开；
-- `codesign --verify --strict --deep` 之外再逐项验证 nested Mach-O；
-- notarization ticket/staple；
 - arm64/x64 与 manifest 一致；
 - `node-pty` spawn/resize/signal/exit；
 - provider auth、Keychain、bookmark stale/re-authorize；
 - 10 MB terminal 输出和长 transcript；
 - App 移动路径后仍能启动；
-- DMG 安装、Sparkle 升级和卸载。
+- 通过 `scripts/macos/verify-app.sh` 的 manifest、Runtime socket 与 Swift contract smoke。
+
+签名、公证、Gatekeeper、DMG、Sparkle 升级和卸载的 E2E 仅属于未来独立发布阶段，不在当前验收中。
 
 ## 14. 最终验收条件
 
@@ -736,12 +745,12 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - Runtime 内通过 `PiSdkRuntimeAdapter` 使用 `AgentSessionRuntime`；
 - 多 session、stream transcript、tool events 和 terminal reconnect 均通过；
 - App 关闭、崩溃、重开和升级不丢失或重复提交活动工作；
-- Runtime、helper、Node、native addon、App 和 DMG 已完成签名、公证和 Gatekeeper 验证；
+- Runtime manifest、Node、资源 hash、架构与本地 socket smoke 均通过；
 - Keychain/bookmark 权限边界可解释并可撤销；
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。当前已经完成的是原生 vertical slice、事件流 transcript、原生 terminal surface，以及本架构决策；下一步应从 Phase A 的 SDK adapter 隔离和 Phase B 的 Runtime production artifact 开始。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface，以及第一层 Pi SDK lifecycle adapter。下一步是完成 adapter 内的 services/session factory 收口、single-instance/quit lifecycle、native contract receipts 与 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

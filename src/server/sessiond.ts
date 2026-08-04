@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import { mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { WorkspaceActivityService } from "./activity/workspaceActivityService.js";
@@ -37,8 +35,18 @@ import { createActiveAgentProfileDescriptor } from "../sessiond/activeAgentProfi
 import { runSessionDaemonStartup } from "./sessiond/sessionDaemonStartup.js";
 import { MultiRuntimeSessionService } from "./runtimes/multiRuntimeSessionService.js";
 import { OmpSessionService } from "./runtimes/omp/ompSessionService.js";
+import {
+	loadNativeRuntimeIdentity,
+	nativeRuntimeHello,
+} from "./nativeRuntimeManifest.js";
+import {
+	prepareSessiondSocketPath,
+	removeOwnedSessiondSocket,
+	secureSessiondSocket,
+} from "../sessiond/sessiondSocketSecurity.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
+const nativeRuntimeIdentity = loadNativeRuntimeIdentity(daemonEnvironment);
 const { config } = effectivePiWebConfig({ env: daemonEnvironment });
 const activeAgentProfile = createActiveAgentProfileDescriptor({
 	command: config.agent.command,
@@ -162,6 +170,7 @@ await runSessionDaemonStartup({
 		}));
 
 		app.get("/runtime", () => runtimeComponent);
+		app.get("/runtime/hello", () => nativeRuntimeHello(nativeRuntimeIdentity));
 	},
 	async listen({ auth, sessions, terminals, unreadStore }) {
 		let shuttingDown = false;
@@ -212,10 +221,12 @@ await runSessionDaemonStartup({
 			await app.listen({ port, host });
 		} else {
 			const path = sessiondSocketPath();
-			await mkdir(dirname(path), { recursive: true });
-			await rm(path, { force: true });
+			await prepareSessiondSocketPath(path);
 			await app.listen({ path });
-			process.on("exit", () => void rm(path, { force: true }));
+			const socketIdentity = await secureSessiondSocket(path);
+			process.on("exit", () =>
+				void removeOwnedSessiondSocket(path, socketIdentity),
+			);
 		}
 	},
 });

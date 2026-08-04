@@ -5,14 +5,19 @@ import PiAgentCore
 struct PiAgentContractCheck {
     static func main() async throws {
         try checkHealthDecoding()
+        try checkRuntimeHelloDecoding()
+        try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
         try checkStreamingAndTerminalDecoding()
+        try await checkRuntimeSupervisorOwnership()
         checkImplicitLaunchIsDisabled()
         try checkExplicitLaunchPlan()
         if let socketPath = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SOCKET"] {
             let client = UnixSocketRuntimeClient(socketPath: socketPath)
             let health = try await client.health()
             precondition(health.ok)
+            let hello = try await client.hello()
+            try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
             print("Connected to Runtime: \(health.version.label), active sessions: \(health.activeSessions)")
             let cwd = ProcessInfo.processInfo.environment["PI_AGENT_PROJECT_PATH"]
                 ?? FileManager.default.currentDirectoryPath
@@ -86,6 +91,29 @@ struct PiAgentContractCheck {
         precondition(health.version.label == "PI WEB Session Daemon")
     }
 
+    private static func checkRuntimeHelloDecoding() throws {
+        let data = Data(
+            #"{"kind":"pi-agent-runtime","protocol":{"major":1,"minor":0},"runtimeEpoch":"epoch-1","nodeVersion":"v24.18.0","architecture":"arm64","manifest":{"schemaVersion":1,"appVersion":"0.1.0","runtimeVersion":"0.1.0","piSdkVersion":"0.81.1"}}"#.utf8
+        )
+        let hello = try JSONDecoder().decode(RuntimeHello.self, from: data)
+        try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
+        precondition(hello.runtimeEpoch == "epoch-1")
+        precondition(hello.manifest?.piSdkVersion == "0.81.1")
+    }
+
+    private static func checkProjectAuthorization() throws {
+        let suite = "PiAgentContractCheck.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            throw ContractCheckError.projectAuthorizationStoreUnavailable
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProjectAuthorizationStore(defaults: defaults, key: "project")
+        let access = try store.authorize(URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true))
+        precondition(access.url.path == FileManager.default.currentDirectoryPath)
+        let restored = store.restore()
+        precondition(restored?.url.path == access.url.path)
+    }
+
     private static func checkSessionAndMessageDecoding() throws {
         let sessionData = Data(
             #"{"id":"s1","cwd":"/tmp/project","runtimeId":"pi","path":"/tmp/session.jsonl","persisted":true,"name":"Native smoke test","created":"2026-08-03T00:00:00Z","modified":"2026-08-03T00:01:00Z","messageCount":2,"firstMessage":"hello"}"#.utf8
@@ -133,6 +161,159 @@ struct PiAgentContractCheck {
         precondition(terminal.type == "output")
         precondition(terminal.data == "$ ")
         precondition(terminal.replay == true)
+    }
+
+    /// This executable doubles as the portable native smoke harness because
+    /// the current Command Line Tools installation cannot load XCTest or the
+    /// Swift Testing macro plugin. These checks exercise the same public
+    /// boundary that the packaged app uses without starting a Pi provider.
+    private static func checkRuntimeSupervisorOwnership() async throws {
+        let compatibleClient = ContractRuntimeClient(
+            hello: compatibleRuntimeHello(),
+            health: healthyRuntime()
+        )
+        let reuseValidation = ValidationCounter()
+        let reuseSupervisor = RuntimeSupervisor(
+            plan: contractShellPlan("exit 97"),
+            validateBeforeStart: { reuseValidation.increment() }
+        )
+        let reusedHealth = try await reuseSupervisor.ensureRunning(
+            using: compatibleClient,
+            attempts: 1,
+            retryDelayNanoseconds: 0
+        )
+        precondition(reusedHealth == healthyRuntime())
+        precondition(reuseValidation.count == 0)
+        precondition(!reuseSupervisor.isRunning)
+
+        let launchGate = RuntimeReadinessGate()
+        let unavailableClient = ContractRuntimeClient(
+            hello: compatibleRuntimeHello(),
+            health: healthyRuntime(),
+            readinessGate: launchGate
+        )
+        let ownedValidation = ValidationCounter()
+        let ownedSupervisor = RuntimeSupervisor(
+            plan: contractShellPlan("sleep 20"),
+            validateBeforeStart: {
+                ownedValidation.increment()
+                launchGate.open()
+            }
+        )
+        defer { ownedSupervisor.stop() }
+        let startedHealth = try await ownedSupervisor.ensureRunning(
+            using: unavailableClient,
+            attempts: 2,
+            retryDelayNanoseconds: 0
+        )
+        precondition(startedHealth == healthyRuntime())
+        precondition(ownedValidation.count == 1)
+        precondition(ownedSupervisor.isRunning)
+
+        let lockDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("pi-agent-contract-lock-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: lockDirectory) }
+        let contentionGate = RuntimeReadinessGate()
+        let contentionStarts = ValidationCounter()
+        let contentionPlan = contractShellPlan(
+            "sleep 20",
+            socketPath: lockDirectory.appendingPathComponent("sessiond.sock").path
+        )
+        let firstSupervisor = RuntimeSupervisor(
+            plan: contentionPlan,
+            validateBeforeStart: {
+                contentionStarts.increment()
+                contentionGate.open()
+            }
+        )
+        let secondSupervisor = RuntimeSupervisor(
+            plan: contentionPlan,
+            validateBeforeStart: {
+                contentionStarts.increment()
+                contentionGate.open()
+            }
+        )
+        defer {
+            firstSupervisor.stop()
+            secondSupervisor.stop()
+        }
+        let contentionClient = ContractRuntimeClient(
+            hello: compatibleRuntimeHello(),
+            health: healthyRuntime(),
+            readinessGate: contentionGate
+        )
+        async let firstHealth = firstSupervisor.ensureRunning(
+            using: contentionClient,
+            attempts: 2,
+            retryDelayNanoseconds: 0
+        )
+        async let secondHealth = secondSupervisor.ensureRunning(
+            using: contentionClient,
+            attempts: 2,
+            retryDelayNanoseconds: 0
+        )
+        let firstResult = try await firstHealth
+        let secondResult = try await secondHealth
+        precondition(firstResult == healthyRuntime())
+        precondition(secondResult == healthyRuntime())
+        precondition(contentionStarts.count == 1)
+        precondition(firstSupervisor.isRunning != secondSupervisor.isRunning)
+
+        let incompatibleClient = ContractRuntimeClient(
+            hello: RuntimeHello(
+                kind: "pi-agent-runtime",
+                protocolVersion: RuntimeProtocolVersion(major: 2, minor: 0),
+                runtimeEpoch: "old-runtime",
+                nodeVersion: "v26.5.0",
+                architecture: "arm64",
+                manifest: nil
+            ),
+            health: healthyRuntime()
+        )
+        let incompatibleSupervisor = RuntimeSupervisor(plan: contractShellPlan("sleep 20"))
+        defer { incompatibleSupervisor.stop() }
+        do {
+            _ = try await incompatibleSupervisor.ensureRunning(
+                using: incompatibleClient,
+                attempts: 1,
+                retryDelayNanoseconds: 0
+            )
+            preconditionFailure("Incompatible Runtime must not be reused")
+        } catch let error as RuntimeClientError {
+            guard case .incompatibleRuntime = error else { throw error }
+        }
+        precondition(incompatibleSupervisor.isRunning)
+    }
+
+    private static func contractShellPlan(
+        _ command: String,
+        socketPath: String = "/tmp/pi-agent-contract-check.sock"
+    ) -> RuntimeLaunchPlan {
+        RuntimeLaunchPlan(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", command],
+            socketPath: socketPath
+        )
+    }
+
+    private static func healthyRuntime() -> RuntimeHealth {
+        RuntimeHealth(
+            ok: true,
+            activeSessions: 2,
+            checkedAt: Date(timeIntervalSince1970: 1_722_643_200),
+            version: .init(component: "sessiond", label: "Session daemon", stale: false, available: true)
+        )
+    }
+
+    private static func compatibleRuntimeHello() -> RuntimeHello {
+        RuntimeHello(
+            kind: "pi-agent-runtime",
+            protocolVersion: RuntimeProtocolVersion(major: BundledRuntime.protocolMajor, minor: 0),
+            runtimeEpoch: "current-runtime",
+            nodeVersion: "v26.5.0",
+            architecture: "arm64",
+            manifest: nil
+        )
     }
 
     private static func checkImplicitLaunchIsDisabled() {
@@ -185,5 +366,80 @@ struct PiAgentContractCheck {
 
 private enum ContractCheckError: Error {
     case missingExplicitPlan
+    case projectAuthorizationStoreUnavailable
     case timeout
+}
+
+private actor ContractRuntimeClient: RuntimeHelloClient {
+    private let helloResponse: RuntimeHello
+    private let healthResponse: RuntimeHealth
+    private var remainingFailures: Int
+    private let readinessGate: RuntimeReadinessGate?
+
+    init(
+        hello: RuntimeHello,
+        health: RuntimeHealth,
+        failuresBeforeSuccess: Int = 0,
+        readinessGate: RuntimeReadinessGate? = nil
+    ) {
+        helloResponse = hello
+        healthResponse = health
+        remainingFailures = failuresBeforeSuccess
+        self.readinessGate = readinessGate
+    }
+
+    func health() async throws -> RuntimeHealth {
+        if readinessGate?.isOpen == false {
+            throw RuntimeClientError.connectionFailed("Runtime socket is not ready")
+        }
+        if remainingFailures > 0 {
+            remainingFailures -= 1
+            throw RuntimeClientError.connectionFailed("Runtime socket is not ready")
+        }
+        return healthResponse
+    }
+
+    func hello() async throws -> RuntimeHello {
+        if readinessGate?.isOpen == false {
+            throw RuntimeClientError.connectionFailed("Runtime socket is not ready")
+        }
+        if remainingFailures > 0 {
+            throw RuntimeClientError.connectionFailed("Runtime socket is not ready")
+        }
+        return helloResponse
+    }
+}
+
+private final class RuntimeReadinessGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func open() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    var isOpen: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class ValidationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }

@@ -507,6 +507,7 @@ public enum RuntimeClientError: LocalizedError, Equatable, Sendable {
     case unexpectedHTTPStatus(Int)
     case serverError(Int, String)
     case invalidJSON(String)
+    case incompatibleRuntime(String)
 
     public var errorDescription: String? {
         switch self {
@@ -522,6 +523,8 @@ public enum RuntimeClientError: LocalizedError, Equatable, Sendable {
             return "The Runtime returned HTTP \(status): \(message)"
         case let .invalidJSON(message):
             return "The Runtime returned invalid health JSON: \(message)"
+        case let .incompatibleRuntime(message):
+            return message
         }
     }
 }

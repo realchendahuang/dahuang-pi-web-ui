@@ -1,12 +1,14 @@
 # Pi Agent for macOS：彻底原生化方案
 
-> 状态：Phase 0 已落地，Phase 1 单机 vertical slice 已落地（仍不是完整原生产品），后续生命周期、分发和 workspace 能力继续实施。
+> 状态：Phase 0、Phase 1 与 bundled Runtime 的本机实现已落地；当前可构建、校验并启动未签名的原生 `.app`，生命周期、完整 workspace、Keychain 迁移和远程能力继续实施。
+>
+> 当前范围覆盖：用户明确要求**不做代码签名、公证或 Gatekeeper 发布**。本地完整性依赖固定 Node、exact npm lock、runtime manifest、SHA-256、架构检查和真实 socket smoke；签名相关工作不构成本阶段门槛。
 >
 > 目标：把 PI WEB 改造成真正的 macOS 原生桌面应用 **Pi Agent**。产品主界面、窗口、菜单、设置、通知、权限、更新与安装全部使用 macOS 原生能力；不使用 Electron、Tauri 或 WebView 作为产品界面。现有 TypeScript/Node 会话核心作为 App 内嵌运行时保留，逐步从浏览器控制面中解耦。
 >
 > 开源与产品调研快照：**2026-08-03**。外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
 
-当前已经可验证的切片位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health contract、Unix-socket client、项目目录选择、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable 和本地 `.app` 组装/签名/验证脚本。Prompt 不再通过固定间隔轮询等待完成。它还不是可分发的稳定 DMG，不改变现有 Web UI 或 sessiond 的事实所有权；内嵌 Runtime、签名公证和完整项目/工作区投影仍在后续阶段。
+当前已经可验证的实现位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health/hello contract、Unix-socket client、项目目录选择与 security-scoped bookmark、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable。`scripts/macos/build-app.sh` 会组装 App 内的固定 Node、production dependency closure、launcher 与 SHA-256 manifest；`verify-app.sh` 会完整校验 bundle、启动内部 Runtime，并以 Swift client 做 socket smoke。Prompt 不再通过固定间隔轮询等待完成。它仍不是 DMG/自动更新产品，也不改变现有 Web UI 或 sessiond 的事实所有权。
 
 ## 1. 结论
 
@@ -14,13 +16,13 @@
 
 - **SwiftUI + AppKit** 构建完整原生界面，不嵌入现有 Lit 页面。
 - **Pi Agent.app** 是唯一面向普通用户的安装、启动、设置和升级入口。
-- 现有 Pi/OMP、会话持久化、PTY、Git、工作区、认证和插件核心保留为随 App 签名并打包的 **Agent Runtime**。
+- 现有 Pi/OMP、会话持久化、PTY、Git、工作区、认证和插件核心保留为随 App 打包、由 manifest 校验的 **Agent Runtime**。
 - App 与 Runtime 默认通过仅限本机用户访问的 **Unix domain socket** 通信，不开放 localhost 端口。
 - App 关闭窗口不等于结束任务。Runtime 生命周期由 App 明确管理，活动会话存在时必须给用户清晰选择。
-- 第一阶段不依赖 LaunchAgent；后台持续运行作为用户主动开启的能力，在后续阶段通过签名的 Login Item / Helper 提供。
+- 第一阶段不依赖 LaunchAgent；后台持续运行作为用户主动开启的能力，当前 App-managed Runtime 保留这一生命周期边界。
 - API Key、OAuth token 与其他秘密迁移到 **Keychain**；一般设置存入 Application Support，项目授权使用 security-scoped bookmarks。
 - 初期继续保留 `pi-web` CLI 和 Web UI 作为迁移、自动化与诊断兼容层，但不再是产品默认入口。
-- 第一版使用 Developer ID 签名、Hardened Runtime、Notarization 和 Sparkle 更新，不以 Mac App Store 沙盒为交付前提。
+- 当前本地版本不使用 Developer ID、Hardened Runtime、Notarization、Sparkle 或 Mac App Store sandbox；它通过未签名 `.app`、manifest/hash 与本机 smoke 交付和验证。
 
 这不是“给网页套一个窗口”。完成后的用户路径应是：下载 DMG、拖入 Applications、打开 Pi Agent、选择项目、创建会话。用户不需要安装 npm 包、理解端口、配置 LaunchAgent、修复 `node-pty` 权限或手动编辑全局 JSON 才能开始工作。
 
@@ -300,7 +302,7 @@ Pi Agent.app
 │  ├─ capability negotiation
 │  └─ reconnect / epoch handling
 └─ RuntimeSupervisor
-   ├─ validates signed bundled runtime
+   ├─ validates bundled runtime manifest/hash
    ├─ starts one runtime per user session
    ├─ owns socket and process lifecycle
    ├─ captures structured logs
@@ -355,7 +357,7 @@ macos/
 │  └─ Platform/
 ├─ PiAgentTests/
 ├─ PiAgentUITests/
-├─ RuntimeResources/
+├─ PiAgentRuntime/                 # exact dependency lock + runtime launcher
 └─ Config/
    ├─ Debug.xcconfig
    ├─ Release.xcconfig
@@ -369,9 +371,9 @@ src/nativeApp/
 
 scripts/macos/
 ├─ build-runtime.mjs
-├─ assemble-app.sh
-├─ sign-and-notarize.sh
-└─ verify-app.sh
+├─ build-app.sh
+├─ verify-app.sh
+└─ smoke-runtime.sh
 ```
 
 Swift 代码按 feature 和边界组织，不建立巨型 `AppViewModel`。每个 feature 使用小型 `Observable` store，依赖 `RuntimeClient`、文件授权、通知或 Keychain 时通过协议注入。SwiftUI View 只负责渲染、收集输入和调用 feature action，不直接拼 IPC 请求或读写磁盘。
@@ -395,8 +397,8 @@ Pi Agent.app/Contents/
 ├─ MacOS/Pi Agent
 ├─ Frameworks/
 ├─ Resources/
-│  ├─ runtime/
-│  │  ├─ node
+│  ├─ AgentRuntime/
+│  │  ├─ node/bin/node + node/lib/
 │  │  ├─ dist/
 │  │  ├─ node_modules/
 │  │  └─ runtime-manifest.json
@@ -404,9 +406,9 @@ Pi Agent.app/Contents/
 └─ Helpers/
 ```
 
-必须打包固定、已验证的 Node 和 native dependencies，不能在用户首次启动时执行 `npm install`。`node-pty` 必须在 CI 的 macOS 构建环境中为 `arm64` 和 `x86_64` 分别构建/验证，再随对应 App artifact 签名。首个版本可以分别发布 Apple Silicon 与 Intel DMG；只有验证 native module 的 universal2 组合流程后才合并通用包。
+必须打包固定、已验证的 Node 和 native dependencies，不能在用户首次启动时执行 `npm install`。`node-pty` 必须在 macOS 构建环境中为 `arm64` 和 `x86_64` 分别构建/验证，并由 manifest 纳入对应 artifact。首个版本可以分别生成 Apple Silicon 与 Intel App；只有验证 native module 的 universal2 组合流程后才合并通用包。
 
-`runtime-manifest.json` 至少包含：App 版本、Runtime 版本、协议版本、Node 版本、架构、每个关键资源的 SHA-256。RuntimeSupervisor 启动前验证 manifest、架构、执行权限与签名完整性；失败时显示可操作的诊断页面，不尝试联网下载任意脚本修复。
+`runtime-manifest.json` 至少包含：App 版本、Runtime 版本、协议版本、Node 版本、架构、每个关键资源的 SHA-256。RuntimeSupervisor 启动前验证 manifest、Node 架构/版本、执行权限与每个资源 hash；失败时显示可操作的诊断页面，不尝试联网下载任意脚本修复。
 
 ### 7.2 进程模型
 
@@ -420,13 +422,13 @@ Pi Agent.app/Contents/
 6. App 崩溃或窗口关闭时，Runtime 根据明确的 keep-alive lease 决定继续或退出；
 7. App 重开时先重连，再决定是否新建 Runtime，绝不盲目启动第二个实例。
 
-为了保证“窗口关闭但 Agent 继续工作”，App 的默认行为是关闭主窗口后仍保留菜单栏/Dock 进程；真正退出 App 时，如果存在活动会话或终端，显示三个明确选项：
+关闭窗口不应成为 `SIGTERM` 的同义词。真正退出 App 时，App 先从 Runtime 刷新活动 session 数；如果仍有活动 session，显示三个明确选项：
 
-- **继续后台运行**：保留 App 与 Runtime，关闭窗口；
-- **停止任务并退出**：先请求有界的 graceful shutdown，再退出；
+- **保持 Runtime 并退出**：退出原生 UI，保留正在运行的 bundled Runtime；
+- **停止 Runtime 并退出**：只停止当前 App 自己启动的 bundled Runtime，绝不触碰显式连接的开发/外部 daemon；
 - **取消**：返回应用。
 
-不得把 macOS 的窗口关闭事件直接映射为 `SIGTERM`。
+没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。后续仍需补齐真正的 agent graceful-abort、后台菜单栏与 Login Item；当前没有把“停止 Runtime”误称为“已完成有界 graceful shutdown”。
 
 ### 7.3 后台与登录启动
 
@@ -447,10 +449,10 @@ Pi Agent.app/Contents/
 本机默认使用 Unix domain socket：
 
 ```text
-~/Library/Application Support/Pi Agent/runtime/runtime.sock
+~/Library/Application Support/Pi Agent/Runtime/sessiond.sock
 ```
 
-目录权限为 `0700`，socket 只能由当前用户访问。协议不依赖浏览器 Cookie、CORS、Host allowlist 或公开 TCP 端口。远程能力使用单独的网络 transport adapter，不能把本机 socket 认证假设复制到网络边界。
+目录权限为 `0700`，socket 权限为 `0600`，只能由当前用户访问。Runtime 启动前只会删除同一路径的 stale Unix socket，拒绝替换普通文件、链接、FIFO 或设备；退出清理按 inode identity 执行，不会误删被后续进程替换的路径。协议不依赖浏览器 Cookie、CORS、Host allowlist 或公开 TCP 端口。远程能力使用单独的网络 transport adapter，不能把本机 socket 认证假设复制到网络边界。
 
 第一阶段已经复用当前 Unix socket 上的 HTTP + WebSocket 实现以降低迁移风险。Swift feature 只依赖 `RuntimeClient`、`RuntimeEventStreamClient` 和 `RuntimeTerminalClient` 协议，不让 HTTP 概念渗入 View。当前兼容路径使用 `PI_AGENT_RUNTIME_SOCKET`，未配置时回退到 `~/.pi-web/sessiond.sock`；最终打包 Runtime 的 socket 位置仍按本方案后续的 Application Support 布局收口。session event 连接 `/sessions/:sessionId/events`，加入前读取 `/stream-snapshot`，在同一 Runtime epoch 内按单调 `seq` 去重；terminal 连接 `/terminals/:terminalId/socket`，PTY 仍由 Node `TerminalService` 所有。第二阶段再把本机 transport 收敛为统一的长度前缀 JSON message stream：
 
@@ -638,7 +640,7 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 
 第一版优先支持 core features 和 Pi Package 管理。第三方浏览器 panel 不作为原生首发阻塞项，但 App 必须明确显示“此插件仅支持兼容 Web UI”，不能静默消失。
 
-任何 Runtime extension 仍是以用户权限执行的受信任代码。原生 App 应显示来源、作用域、版本与启用状态；签名 App 不能把“App 已签名”包装成“所有用户安装插件都可信”。
+任何 Runtime extension 仍是以用户权限执行的受信任代码。原生 App 应显示来源、作用域、版本与启用状态；manifest 完整性不能被包装成“所有用户安装插件都可信”。
 
 ## 13. 安全模型
 
@@ -649,14 +651,14 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 | 其他本机用户连接 Runtime | `0700` 目录、socket owner 校验、每次启动的握手 token |
 | 恶意网页访问本地 Agent | 默认无 TCP listener；兼容 Web 服务必须显式开启 |
 | Secret 出现在日志/UI | Keychain、redaction、类型化 secret boundary |
-| 被替换的 bundled Runtime | Code Signature、manifest hash、Hardened Runtime |
+| 被替换的 bundled Runtime | exact dependency lock、manifest hash、Node 架构/版本与启动前完整性检查 |
 | 插件取得用户权限 | 明确信任警告、来源/作用域、默认禁用未知 native contribution |
 | 更新中断活动会话 | update coordination、checkpoint、延迟安装 |
 | App 重连造成重复 Prompt | idempotency key、epoch/sequence、未知结果不盲重试 |
 | 任意路径访问 | bookmark 授权 + Runtime path policy |
 | 远程协议复用本机信任 | 本地/远程 transport 与认证完全分离 |
 
-## 14. 更新、签名和分发
+## 14. 更新和本地分发
 
 ### 14.1 Release artifact
 
@@ -672,15 +674,12 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 2. Swift unit tests 与 UI smoke tests；
 3. 构建对应架构的 Runtime 和 native modules；
 4. 组装 `.app`；
-5. 对 nested executable、helper、framework 和 App 从内到外签名；
-6. 验证 Hardened Runtime、entitlements 和 Gatekeeper；
-7. notarize 并 staple；
-8. 在干净 macOS 用户账户安装 DMG；
-9. 验证首次启动、迁移、创建会话、PTY、退出/重连和升级；
-10. 发布 Sparkle appcast；
-11. 最后才将该版本标记为 stable。
+5. 运行 `verify-app.sh`：manifest hash、Node launcher、Runtime health/hello 与 Swift socket client；
+6. 在干净 macOS 用户账户直接运行 `.app`；
+7. 验证首次启动、迁移、创建会话、PTY、退出/重连；
+8. 仅在这些检查通过后将 artifact 标记为可本地安装。
 
-签名、公证和 appcast 凭据放在本机构建 Keychain 或受控发布环境中，不提交到仓库。日志只能报告身份摘要和成功/失败，不能回显 secret。
+当前范围没有签名、公证、DMG、Gatekeeper 或 Sparkle 凭据；如果未来重新引入这些能力，必须另开 ADR，而不能把未签名流程误报为可公开分发流程。
 
 ### 14.3 自动更新行为
 
@@ -716,16 +715,16 @@ Diagnostics 页面至少展示：
 
 - Contract tests：同一 fixture 在 TypeScript 与 Swift 中解码结果一致；
 - RuntimeClient tests：断线、epoch 切换、sequence 缺口、超时、未知结果；
-- RuntimeSupervisor tests：单实例、异常退出、版本不匹配、签名/manifest 失败；
+- RuntimeSupervisor tests：单实例、异常退出、版本不匹配、manifest/hash 失败；
 - Feature store tests：纯 Swift 状态转移与 injected fake client；
 - Snapshot tests：关键原生 View 的状态，不依赖真实 Runtime；
 - UI tests：首次启动、添加项目、创建会话、发送 Prompt、停止、恢复；
 - Migration tests：旧数据、部分迁移、冲突、重试、回滚；
 - PTY tests：resize、Unicode、粘贴、中断、大输出；
-- Packaging tests：DMG 安装、公证、quarantine、首次运行、升级；
+- Packaging tests：未签名 `.app` 组装、manifest/hash、首次运行、Runtime health/hello、Swift socket client；
 - Long-run tests：App 窗口关闭/重开、Runtime 继续、休眠/唤醒、网络变化。
 
-每个阶段都需要真实 `.app` smoke test。只在 Xcode Preview 或 unit test 中通过不能证明打包后的 Runtime、权限、native module 和签名可用。
+每个阶段都需要真实 `.app` smoke test。只在 Xcode Preview 或 unit test 中通过不能证明打包后的 Runtime、权限和 native module 可用。
 
 ## 17. 分阶段实施
 
@@ -737,27 +736,29 @@ Diagnostics 页面至少展示：
 - Unix socket health/hello、HTTP contract 和 WebSocket transport；
 - SwiftTerm 1.11.2 原生 terminal surface（真实 PTY output/input/resize/reconnect smoke）；
 - TypeScript/Swift contract fixture 与 native contract checks；
-- release `.app` 组装、ad-hoc 签名和本机验证脚本。
+- 未签名 `.app` 组装、exact Runtime dependency lock、manifest/hash 与本机验证脚本。
 
-Bundled Runtime、node-pty 随 App 签名、Textual/Markdown renderer、dependency inventory 和正式 ADR 仍是后续交付，不在本轮 vertical slice 的已完成范围内。
+bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-pty`、dependency inventory、runtime manifest、App 自动启动与 Swift socket smoke 已交付。Textual/Markdown renderer、完整 workspace 与自动更新仍是后续交付。
 
-当前切片退出证据：在本机 Apple Silicon 上，release contract check 与签名 `.app` artifact 已验证；contract check 连接现有 sessiond，完成真实 session event WebSocket 101 握手、terminal WebSocket 握手、PTY resize 和命令回显。干净机安装、公证、窗口关闭/重开后的 Runtime 生命周期仍是后续 Phase 2/3 门槛。
+当前切片退出证据：在本机 Apple Silicon 上，未签名 `.app` artifact 已验证；验证器完成所有 bundle resources 的 hash 检查，启动内部 Node Runtime，检查 `/health` 和 `/runtime/hello`，并由 Swift ContractCheck 读取真实 session projection。App 退出时会 refresh active-session health 并仅管理自己拥有的 child Runtime；真正的 agent graceful-abort、窗口关闭后后台入口、干净账户安装与远程能力仍是后续门槛。
 
 ### Phase 1：原生单机 MVP
 
 交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
 
-退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 和完整 workspace 仍未达到该门槛。
+退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 已达到本机门槛，完整 workspace 仍未达到该门槛。
 
 ### Phase 2：生命周期与 macOS 集成
 
-交付：多窗口、菜单、通知、Dock、Keychain、bookmarks、退出协调、崩溃重连、菜单栏后台模式、Login Item helper。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；退出前 active-session health refresh；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、agent graceful-abort、崩溃重连、sleep/wake、Login Item helper。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 
 ### Phase 3：分发与迁移
 
-交付：DMG、Developer ID、notarization、Sparkle、旧 PI WEB 迁移向导、诊断包、卸载/保留数据路径。
+交付：可复制的未签名 `.app`、旧 PI WEB 迁移向导、诊断包、卸载/保留数据路径。签名、公证、DMG 和 Sparkle 明确不在当前范围内。
 
 退出门槛：干净用户账户可完成安装、迁移、更新和卸载；无需 npm、手动 chmod 或 plist 操作。
 
@@ -829,12 +830,12 @@ ADR 必须记录选择、拒绝方案、证据、回滚路径和需要复核的�
 只有同时满足以下条件，产品才可以称为“macOS 原生 Pi Agent”：
 
 - 产品主窗口无 WebView、Electron 或浏览器依赖；
-- 下载 DMG 后无需 npm 即可启动真实 Pi/OMP 会话；
+- 本地复制的未签名 `.app` 无需 npm 即可启动真实 Pi/OMP 会话；
 - 项目、会话、聊天、工具调用、Git、文件和终端都有原生交互；
 - 关闭窗口、App 重连、休眠/唤醒不会无提示终止活动任务；
 - secret 使用 Keychain，项目目录使用可解释的授权模型；
 - 没有默认 localhost 控制端口；
-- App、Runtime、native module 均已签名和公证；
+- App、Runtime、native module 均由 exact lock、manifest、SHA-256、架构检查和真实 smoke 验证；
 - 更新不会在未知状态下重复命令或破坏活动会话；
 - 旧 PI WEB 数据迁移有预览、验证、journal 和回滚；
 - 干净机器安装、迁移、工作、升级和卸载均通过端到端验证；
@@ -842,7 +843,7 @@ ADR 必须记录选择、拒绝方案、证据、回滚路径和需要复核的�
 
 ## 22. 推荐的第一个实现切片
 
-第一个实现切片中的原生窗口、health/session contract、事件驱动 transcript、SwiftTerm terminal 和签名 artifact 已在本轮完成并通过本机 smoke；bundled Runtime、App 关闭后生命周期协调和完整 workspace projection 仍是下一轮，不把当前 prototype 宣称为完整产品。
+第一个实现切片中的原生窗口、health/session contract、事件驱动 transcript、SwiftTerm terminal、bundled Runtime 与 App quit ownership 协调已在本轮完成并通过本机 smoke；完整 workspace、agent graceful-abort、后台入口和远程能力仍是下一轮，不把当前 prototype 宣称为完整产品。
 
 第一个切片严格限制为一个 vertical slice：
 

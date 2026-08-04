@@ -4,13 +4,9 @@ import { open, readFile, writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
 	createEditToolDefinition,
 	defineTool,
 	readStoredCredential,
-	SessionManager,
 	type AgentSessionRuntimeDiagnostic,
 	type AgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
@@ -19,6 +15,10 @@ import {
 	type ModelRuntime,
 	type ResourceDiagnostic,
 } from "@earendil-works/pi-coding-agent";
+import {
+	createPiSdkRuntimeAdapter,
+	type PiSdkRuntimeAdapter,
+} from "./piSdkRuntimeAdapter.js";
 import type {
 	ClientArchiveSessionsResponse,
 	ClientCommand,
@@ -737,17 +737,16 @@ type CreateAgentRuntime = (
 ) => Promise<PiSessionRuntime>;
 
 function defaultCreateAgentRuntime(
+	piSdkRuntime: PiSdkRuntimeAdapter,
 	createRuntime: PiWebCreateAgentSessionRuntimeFactory,
 	options: CreateAgentRuntimeOptions,
 ): Promise<PiSessionRuntime> {
-	if (!(options.sessionManager instanceof SessionManager))
-		throw new Error("Default runtime creation requires an SDK SessionManager");
 	const runtimeFactory = createRuntimeWithOneShotSessionOptions(
 		createRuntime,
 		options.initialModel,
 		options.delegationToolsEnabled,
 	);
-	return createAgentSessionRuntime(runtimeFactory, {
+	return piSdkRuntime.createRuntime(runtimeFactory, {
 		cwd: options.cwd,
 		agentDir: options.agentDir,
 		sessionManager: options.sessionManager,
@@ -801,6 +800,7 @@ export function createPiWebCustomToolDefinitions(
 }
 
 function createDefaultRuntimeFactory(
+	piSdkRuntime: PiSdkRuntimeAdapter,
 	modelRuntime: ModelRuntime,
 	sessionManagers: Pick<PiSessionManagerGateway, "open">,
 	spawn?: SpawnSessionFn,
@@ -814,11 +814,6 @@ function createDefaultRuntimeFactory(
 		initialModel,
 		delegationToolsEnabled,
 	}) => {
-		const services: AgentSessionServices = await createAgentSessionServices({
-			cwd,
-			agentDir,
-			modelRuntime,
-		});
 		const resolvedDelegationToolsEnabled =
 			delegationToolsEnabled ??
 			(await sessionAllowsDelegationTools(sessionManager, sessionManagers));
@@ -828,14 +823,15 @@ function createDefaultRuntimeFactory(
 			spawn,
 			subsessions,
 		);
-		const result = await createAgentSessionFromServices({
-			services,
+		return await piSdkRuntime.createSessionFromServices({
+			cwd,
+			agentDir,
+			modelRuntime,
 			sessionManager,
 			customTools,
 			...(sessionStartEvent === undefined ? {} : { sessionStartEvent }),
 			...(initialModel === undefined ? {} : { model: initialModel }),
 		});
-		return { ...result, services, diagnostics: services.diagnostics };
 	};
 }
 
@@ -886,6 +882,8 @@ export interface PiSessionServiceDependencies {
 	archiveStore?: SessionArchiveRepository;
 	createRuntime?: PiWebCreateAgentSessionRuntimeFactory;
 	createAgentRuntime?: CreateAgentRuntime;
+	/** Pi SDK lifecycle boundary; replace only in focused integration tests. */
+	piSdkRuntimeAdapter?: PiSdkRuntimeAdapter;
 	modelRuntime: ModelRuntime;
 	heartbeatIntervalMs?: number;
 	workspaceActivity?: Pick<
@@ -1033,9 +1031,11 @@ export class PiSessionService implements SessionRouteService {
 		// also require the spawn capability (they share its project-scope resolver).
 		const subsessionsActive =
 			this.spawnTargets !== undefined && deps.subsessionsEnabled === true;
+		const piSdkRuntime = deps.piSdkRuntimeAdapter ?? createPiSdkRuntimeAdapter();
 		this.createRuntime =
 			deps.createRuntime ??
 			createDefaultRuntimeFactory(
+				piSdkRuntime,
 				this.modelRuntime,
 				this.sessionManager,
 				this.spawnTargets === undefined
@@ -1063,7 +1063,9 @@ export class PiSessionService implements SessionRouteService {
 						},
 			);
 		this.createAgentRuntime =
-			deps.createAgentRuntime ?? defaultCreateAgentRuntime;
+			deps.createAgentRuntime ??
+			((createRuntime, options) =>
+				defaultCreateAgentRuntime(piSdkRuntime, createRuntime, options));
 		this.workspaceActivity = deps.workspaceActivity;
 		this.heartbeat = setInterval(() => {
 			this.publishHeartbeats();
