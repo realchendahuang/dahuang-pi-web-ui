@@ -10,10 +10,16 @@ import Glibc
 public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeLegacyProjectMigrationClient, RuntimeLegacyMigrationOverviewClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
 	public let projectCapabilityToken: String?
+	public let socketSecurity: RuntimeSocketSecurity
 
-    public init(socketPath: String, projectCapabilityToken: String? = nil) {
+    public init(
+        socketPath: String,
+        projectCapabilityToken: String? = nil,
+        socketSecurity: RuntimeSocketSecurity = .permissive
+    ) {
         self.socketPath = socketPath
 		self.projectCapabilityToken = projectCapabilityToken
+		self.socketSecurity = socketSecurity
     }
 
     public func health() async throws -> RuntimeHealth {
@@ -554,6 +560,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             path: "/sessions/\(Self.pathSegment(sessionId))/events",
             query: query(cwd: cwd, runtimeId: runtimeId),
 			capabilityToken: projectCapabilityToken,
+			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeSessionEvent.self, from: data)
             }
@@ -579,6 +586,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             path: "/sessions/notifications/events",
             query: [("cwd", cwd)],
 			capabilityToken: projectCapabilityToken,
+			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeNotificationSummaryEvent.self, from: data)
             }
@@ -641,6 +649,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             path: "/terminals/\(Self.pathSegment(id))/socket",
             query: [("cols", String(cols)), ("rows", String(rows))],
 			capabilityToken: projectCapabilityToken,
+			socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeTerminalEvent.self, from: data)
             }
@@ -698,13 +707,14 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         let socketPath = socketPath
         let encodedBody = try body.map { try JSONEncoder().encode(AnyEncodable($0)) }
         let capabilityToken = projectCapabilityToken
+		let socketSecurity = socketSecurity
         return try await Task.detached(priority: .userInitiated) {
             try UnixSocketHTTP.requestJSON(
                 method: method,
                 path: path,
                 query: query,
                 socketPath: socketPath,
-                body: encodedBody, capabilityToken: capabilityToken
+                body: encodedBody, capabilityToken: capabilityToken, socketSecurity: socketSecurity
             )
         }.value
     }
@@ -980,14 +990,14 @@ private enum UnixSocketHTTP {
         path: String,
         query: [(String, String)]?,
         socketPath: String,
-        body: Data?, capabilityToken: String?
+        body: Data?, capabilityToken: String?, socketSecurity: RuntimeSocketSecurity
     ) throws -> Response {
         let response = try request(
             method: method,
             path: path,
             query: query,
             socketPath: socketPath,
-            body: body, capabilityToken: capabilityToken
+            body: body, capabilityToken: capabilityToken, socketSecurity: socketSecurity
         )
         guard (200..<300).contains(response.status) else {
             if let error = try? JSONDecoder().decode(RuntimeErrorResponse.self, from: response.body),
@@ -1013,13 +1023,13 @@ private enum UnixSocketHTTP {
         path: String,
         query: [(String, String)]?,
         socketPath: String,
-        body: Data?, capabilityToken: String?
+        body: Data?, capabilityToken: String?, socketSecurity: RuntimeSocketSecurity
     ) throws -> (status: Int, body: Data) {
         guard !socketPath.isEmpty else {
             throw RuntimeClientError.invalidSocketPath
         }
 
-        let descriptor = try UnixSocketTransport.connect(socketPath: socketPath)
+        let descriptor = try UnixSocketTransport.connect(socketPath: socketPath, security: socketSecurity)
         defer { close(descriptor) }
 
         let requestPath = path + queryString(query)
@@ -1080,10 +1090,11 @@ private struct RuntimeErrorResponse: Decodable {
 /// upgrades use the same address/write boundary so the native client cannot
 /// accidentally drift into a second transport implementation.
 private enum UnixSocketTransport {
-    static func connect(socketPath: String) throws -> Int32 {
+    static func connect(socketPath: String, security: RuntimeSocketSecurity) throws -> Int32 {
         guard !socketPath.isEmpty else {
             throw RuntimeClientError.invalidSocketPath
         }
+		try security.validate(socketPath: socketPath)
 
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else {
@@ -1117,6 +1128,7 @@ private enum UnixSocketTransport {
             Darwin.close(descriptor)
             throw RuntimeClientError.connectionFailed(message)
         }
+		try security.validateConnectedPeer(descriptor: descriptor)
         return descriptor
     }
 
@@ -1174,8 +1186,8 @@ private final class UnixSocketWebSocket: @unchecked Sendable {
         self.readBuffer = initialData
     }
 
-    static func connect(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?) throws -> UnixSocketWebSocket {
-        let descriptor = try UnixSocketTransport.connect(socketPath: socketPath)
+    static func connect(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?, socketSecurity: RuntimeSocketSecurity) throws -> UnixSocketWebSocket {
+        let descriptor = try UnixSocketTransport.connect(socketPath: socketPath, security: socketSecurity)
         do {
             var randomBytes = [UInt8](repeating: 0, count: 16)
             for index in randomBytes.indices {
@@ -1464,6 +1476,7 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     private let path: String
     private let query: [(String, String)]?
 	private let capabilityToken: String?
+	private let socketSecurity: RuntimeSocketSecurity
     private let decode: (Data) throws -> Event
     private let lock = NSLock()
     private let eventContinuation: AsyncThrowingStream<Event, Error>.Continuation
@@ -1476,11 +1489,12 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     private var cancelled = false
     private var finished = false
 
-    init(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?, decode: @escaping (Data) throws -> Event) {
+    init(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?, socketSecurity: RuntimeSocketSecurity, decode: @escaping (Data) throws -> Event) {
         self.socketPath = socketPath
         self.path = path
         self.query = query
 		self.capabilityToken = capabilityToken
+		self.socketSecurity = socketSecurity
         self.decode = decode
         let eventStream = AsyncThrowingStream<Event, Error>.makeStream()
         let readyStream = AsyncThrowingStream<Void, Error>.makeStream()
@@ -1500,12 +1514,13 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
         let path = self.path
         let query = self.query
 		let capabilityToken = self.capabilityToken
+		let socketSecurity = self.socketSecurity
         lock.unlock()
 
         let newTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                let socket = try UnixSocketWebSocket.connect(socketPath: socketPath, path: path, query: query, capabilityToken: capabilityToken)
+                let socket = try UnixSocketWebSocket.connect(socketPath: socketPath, path: path, query: query, capabilityToken: capabilityToken, socketSecurity: socketSecurity)
                 guard self.install(socket) else { return }
                 self.readyContinuation.yield(())
                 self.readyContinuation.finish()

@@ -9,6 +9,7 @@ struct PiAgentContractCheck {
         try checkRuntimeCommandReceiptDecoding()
         try checkProjectCapabilityReceiptDecoding()
 		try checkLegacyMigrationOverviewDecoding()
+		try checkBundledRuntimeSocketSecurity()
         try checkGitContractDecoding()
 		try checkSupportReportEncoding()
         try checkWorkspaceContractDecoding()
@@ -391,6 +392,24 @@ struct PiAgentContractCheck {
 		precondition(overview.items[0].action == "reauthorize-projects")
 		precondition(overview.items[0].itemCount == 2)
 		precondition(overview.items[1].issue == nil)
+	}
+
+	private static func checkBundledRuntimeSocketSecurity() throws {
+		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+			.appendingPathComponent("pi-agent-socket-security-\(UUID().uuidString)", isDirectory: true)
+		let socketPath = root.appendingPathComponent("sessiond.sock").path
+		defer { try? FileManager.default.removeItem(at: root) }
+		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+		try Data("not-a-socket".utf8).write(to: URL(fileURLWithPath: socketPath), options: .atomic)
+		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: socketPath)
+		do {
+			try RuntimeSocketSecurity.bundled.validate(socketPath: socketPath)
+			preconditionFailure("Bundled Runtime must reject a regular file at its socket path")
+		} catch let error as RuntimeClientError {
+			guard case let .connectionFailed(message) = error,
+					message.contains("not a Unix domain socket")
+			else { throw error }
+		}
 	}
 
     private static func checkProjectAuthorization() throws {

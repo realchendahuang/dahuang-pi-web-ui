@@ -3060,7 +3060,11 @@ final class AppModel: ObservableObject {
         do {
             if let bundledRuntime = try BundledRuntime.discover(environment: environment) {
                 return RuntimeConnection(
-                    client: UnixSocketRuntimeClient(socketPath: bundledRuntime.launchPlan.socketPath, projectCapabilityToken: bundledRuntime.projectCapabilityToken),
+                    client: UnixSocketRuntimeClient(
+						socketPath: bundledRuntime.launchPlan.socketPath,
+						projectCapabilityToken: bundledRuntime.projectCapabilityToken,
+						socketSecurity: .bundled
+					),
                     supervisor: bundledRuntime.makeSupervisor(),
                     startupError: nil
                 )
