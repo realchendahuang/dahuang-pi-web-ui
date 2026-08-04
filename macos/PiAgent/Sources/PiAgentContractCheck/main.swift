@@ -14,6 +14,7 @@ struct PiAgentContractCheck {
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkNativeProjectMigrationJournal()
+        try checkNativeAppUninstallPlan()
         try checkSessionAndMessageDecoding()
         try checkTaskNotificationDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -489,6 +490,58 @@ struct PiAgentContractCheck {
         }
         let mismatchCatalogRecord = try mismatchCatalog.record(id: mismatchRecord.id)
         precondition(mismatchCatalogRecord == mismatchRecord)
+    }
+
+    private static func checkNativeAppUninstallPlan() throws {
+        let fileManager = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("pi-agent-uninstall-plan-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+        let appURL = root.appendingPathComponent("Pi Agent.app", isDirectory: true)
+        let helperURL = appURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent(NativeAppUninstallPlan.helperName)
+        try fileManager.createDirectory(at: helperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let info = ["CFBundleIdentifier": NativeAppUninstallPlan.expectedBundleIdentifier] as NSDictionary
+        try info.write(to: appURL.appendingPathComponent("Contents/Info.plist"), atomically: true)
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: helperURL)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helperURL.path)
+
+        let plan = try NativeAppUninstallPlan.prepare(
+            appBundleURL: appURL,
+            helperURL: helperURL,
+            waitForProcessID: 42,
+            fileManager: fileManager
+        )
+        precondition(plan.appBundleURL == appURL.standardizedFileURL.resolvingSymlinksInPath())
+        precondition(plan.helperURL == helperURL.standardizedFileURL.resolvingSymlinksInPath())
+        precondition(plan.helperArguments == [
+            "--uninstall-when-parent-exits",
+            "--wait-for-pid", "42",
+            "--app-path", plan.appBundleURL.path,
+        ])
+        do {
+            _ = try NativeAppUninstallPlan.prepare(
+                appBundleURL: appURL,
+                helperURL: helperURL,
+                waitForProcessID: 0,
+                fileManager: fileManager
+            )
+            preconditionFailure("The uninstaller must reject an invalid parent process")
+        } catch NativeAppMaintenanceError.invalidParentProcess {
+            // A stale or missing parent must leave the app bundle untouched.
+        }
+        do {
+            _ = try NativeAppUninstallPlan.prepare(
+                appBundleURL: root,
+                helperURL: helperURL,
+                waitForProcessID: 42,
+                fileManager: fileManager
+            )
+            preconditionFailure("The uninstaller must reject a non-Pi-Agent bundle")
+        } catch NativeAppMaintenanceError.invalidAppBundle {
+            // The helper never accepts a broad directory as its target.
+        }
     }
 
     private static func checkSessionAndMessageDecoding() throws {

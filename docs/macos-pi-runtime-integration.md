@@ -783,6 +783,8 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 
 旧 PI WEB `projects.json` 的迁移采用更窄的 App-owned 流程：Runtime 只能做只读候选预览，最多返回 legacy project ID、名称、绝对路径和创建时间；Finder 中逐项选择同一路径才会创建 native bookmark。native catalog 写入后必须按 ID/path 重新读取，才会在 App-owned `UserDefaults` migration journal 写入迁移 ID、legacy/native ID 与路径、`created` 所有权标记、时间和状态。该 journal 不保存 bookmark data、旧 JSON 副本、项目内容或任何 credential，因而不能宣称为 `0600` Runtime 文件。若记录 journal 失败，App 只补偿删除本次新建且回读匹配的 catalog 项。Rollback 先持久化 `rollingBack`，再按 journal 验证每个 ID/path，只删除 `created: true` 的 native bookmark，最后 readback 为 `rolledBack`；旧文件、项目目录、session、credential 与手动添加的项目都不在其写入集合内。遇到中断或不匹配时保留显式状态并报错，不猜测性删除。
 
+未签名分发的卸载也保持同样的最小写入面：App 只提供“卸载 App、保留数据”，不提供隐式清除。它先通过 bundled Runtime health 拒绝 active session，再由 `PiAgentUninstaller` 等待 App 退出；helper 只接受当前父 PID、`Pi Agent.app` 名称、`com.realchendahuang.pi-agent` bundle identifier 和 bundle 内固定 `Contents/Helpers/PiAgentUninstaller` 路径同时匹配的请求，随后使用 macOS Trash API 移动 app bundle。`PiAgentUninstaller` 与 Keychain helper 均由 `native-helpers-manifest.json` 的 SHA-256 覆盖，bundled Runtime 启动前会校验两者。`~/Library/Application Support/Pi Agent`、Keychain、bookmarks、migration journals、项目目录和 legacy PI WEB data 都不在卸载 helper 的写入集合内；App 可在 Settings 直接 Reveal 该保留目录。未签名交付不实现 Login Item 注销，helper 等待超时或任一身份/路径校验失败时不会移动 app 或删除数据。
+
 ## 11. 版本、兼容和升级策略
 
 ### 11.1 四个版本轴

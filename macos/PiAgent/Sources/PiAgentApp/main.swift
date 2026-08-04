@@ -237,6 +237,9 @@ final class AppModel: ObservableObject {
     @Published var showLegacyAuthMigrationConfirmation = false
 	@Published var isSupportReportExporting = false
 	@Published var supportReportMessage: String?
+	@Published var isUninstallPreparing = false
+	@Published var showUninstallConfirmation = false
+	@Published var uninstallMessage: String?
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -268,6 +271,8 @@ final class AppModel: ObservableObject {
     private var terminationActiveSessionCount: Int?
     private var terminationAbortInFlight = false
     private var terminationAbortError: String?
+    private var uninstallPlan: NativeAppUninstallPlan?
+    private var uninstallLaunched = false
     private var runtimeEpoch: String?
     private var authPollingTask: Task<Void, Never>?
 
@@ -373,10 +378,20 @@ final class AppModel: ObservableObject {
         return "The Runtime status could not be refreshed. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
     }
 
+	var nativeAppDataPath: String {
+		FileManager.default.homeDirectoryForCurrentUser
+			.appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
+			.path
+	}
+
     /// Called synchronously from `NSApplicationDelegate`. The authoritative
     /// active-session count is fetched before choosing whether App termination
     /// may proceed, so a stale UI projection cannot silently stop work.
     func requestApplicationTermination() -> NSApplication.TerminateReply {
+		if uninstallLaunched {
+			runtimeSupervisor?.stop()
+			return .terminateNow
+		}
         guard runtimeSupervisor != nil else {
             // A development or externally supplied socket is never owned by
             // the App and must survive an App quit.
@@ -1792,6 +1807,87 @@ final class AppModel: ObservableObject {
 				self.supportReportMessage = "Could not save support report: \(error.localizedDescription)"
 			}
 			self.isSupportReportExporting = false
+		}
+	}
+
+	/// Opens only the App-owned data folder. Project checkouts, legacy PI WEB
+	/// state and Keychain credentials are intentionally outside this operation.
+	func revealNativeAppData() {
+		let dataURL = URL(fileURLWithPath: nativeAppDataPath, isDirectory: true)
+		let fileManager = FileManager.default
+		if fileManager.fileExists(atPath: dataURL.path) {
+			NSWorkspace.shared.activateFileViewerSelecting([dataURL])
+		} else {
+			NSWorkspace.shared.open(dataURL.deletingLastPathComponent())
+		}
+	}
+
+	func requestUninstallKeepingData() {
+		guard !isUninstallPreparing, !uninstallLaunched else { return }
+		guard runtimeSupervisor != nil else {
+			uninstallMessage = "Automatic uninstall is available only from the bundled Pi Agent.app Runtime. This connection is external, so Pi Agent will not stop or remove it."
+			return
+		}
+		do {
+			let bundleURL = Bundle.main.bundleURL
+			let helperURL = bundleURL
+				.appendingPathComponent("Contents/Helpers", isDirectory: true)
+				.appendingPathComponent(NativeAppUninstallPlan.helperName)
+			uninstallPlan = try NativeAppUninstallPlan.prepare(
+				appBundleURL: bundleURL,
+				helperURL: helperURL,
+				waitForProcessID: ProcessInfo.processInfo.processIdentifier
+			)
+		} catch {
+			uninstallMessage = error.localizedDescription
+			return
+		}
+
+		isUninstallPreparing = true
+		uninstallMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let health = try await self.runtimeClient.health()
+				guard health.activeSessions == 0 else {
+					throw RuntimeClientError.serverError(409, "Finish or stop the \(health.activeSessions) active session\(health.activeSessions == 1 ? "" : "s") before uninstalling Pi Agent.")
+				}
+				self.isUninstallPreparing = false
+				self.showUninstallConfirmation = true
+			} catch {
+				self.isUninstallPreparing = false
+				self.uninstallMessage = "Pi Agent did not begin uninstalling: \(error.localizedDescription)"
+			}
+		}
+	}
+
+	func cancelUninstallKeepingData() {
+		showUninstallConfirmation = false
+		uninstallPlan = nil
+	}
+
+	func confirmUninstallKeepingData() {
+		guard let uninstallPlan, !isUninstallPreparing, !uninstallLaunched else { return }
+		showUninstallConfirmation = false
+		isUninstallPreparing = true
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let health = try await self.runtimeClient.health()
+				guard health.activeSessions == 0 else {
+					throw RuntimeClientError.serverError(409, "An active session started before uninstall. Pi Agent left the app bundle untouched.")
+				}
+				let process = Process()
+				process.executableURL = uninstallPlan.helperURL
+				process.arguments = uninstallPlan.helperArguments
+				try process.run()
+				self.uninstallLaunched = true
+				self.isUninstallPreparing = false
+				NSApp.terminate(nil)
+			} catch {
+				self.isUninstallPreparing = false
+				self.uninstallMessage = "Pi Agent did not begin uninstalling: \(error.localizedDescription)"
+			}
 		}
 	}
 
@@ -4381,6 +4477,26 @@ struct SettingsView: View {
 				LabeledContent("Runtime access", value: model.projectRuntimeAuthorizationLabel)
                 Button("Choose Project…") { model.openProject() }
             }
+			Section("Installation and Data") {
+				LabeledContent("Pi Agent data", value: model.nativeAppDataPath)
+				Text("Uninstall moves only Pi Agent.app to the Trash. It keeps this App-owned state, saved project bookmarks, migration records, sessions, and Keychain credentials. Your project directories and legacy PI WEB data are never changed.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				Button("Reveal Pi Agent Data") { model.revealNativeAppData() }
+				Button("Uninstall Pi Agent, Keep Data…", role: .destructive) {
+					model.requestUninstallKeepingData()
+				}
+				.disabled(model.isUninstallPreparing)
+				if model.isUninstallPreparing {
+					ProgressView("Checking active sessions before uninstall…")
+				} else if let message = model.uninstallMessage {
+					Text(message)
+						.font(.caption)
+						.foregroundStyle(.red)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+			}
 			Section("Legacy PI WEB projects") {
 				Text("Each migration is read back into the native Project Library before Pi Agent records it. Rolling back removes only a bookmark created by that exact migration; it never changes the legacy projects.json, your directory, sessions, or manually added projects.")
 					.font(.caption)
@@ -4482,6 +4598,16 @@ struct SettingsView: View {
         .padding()
         .frame(width: 520)
         .confirmationDialog(
+			"Uninstall Pi Agent and keep data?",
+			isPresented: $model.showUninstallConfirmation,
+			titleVisibility: .visible
+		) {
+			Button("Move Pi Agent.app to Trash", role: .destructive) { model.confirmUninstallKeepingData() }
+			Button("Cancel", role: .cancel) { model.cancelUninstallKeepingData() }
+		} message: {
+			Text("Pi Agent verifies that no session is active, exits, then moves only its own bundle-ID-verified app to the Trash. It keeps Pi Agent data, project folders, legacy PI WEB state, and Keychain credentials.")
+		}
+		.confirmationDialog(
 			"Roll back the last project migration?",
 			isPresented: $model.showLegacyProjectMigrationRollbackConfirmation,
 			titleVisibility: .visible

@@ -113,6 +113,8 @@ public struct BundledRuntime: Sendable {
         let launcherURL = try runtimeURL(root: runtimeRoot, relativePath: "runtime-launcher.mjs")
         let keychainHelperURL = bundle.bundleURL
             .appendingPathComponent("Contents/Helpers/PiAgentKeychainHelper")
+        let uninstallerHelperURL = bundle.bundleURL
+            .appendingPathComponent("Contents/Helpers/PiAgentUninstaller")
         let helperManifestURL = resourcesURL.appendingPathComponent("native-helpers-manifest.json")
         guard fileManager.isExecutableFile(atPath: nodeURL.path) else {
             throw BundledRuntimeError.invalidManifest("Bundled Node executable is missing or not executable: \(nodeURL.path)")
@@ -122,6 +124,9 @@ public struct BundledRuntime: Sendable {
         }
         guard fileManager.isExecutableFile(atPath: keychainHelperURL.path) else {
             throw BundledRuntimeError.invalidManifest("Pi Agent Keychain helper is missing or not executable: \(keychainHelperURL.path)")
+        }
+        guard fileManager.isExecutableFile(atPath: uninstallerHelperURL.path) else {
+            throw BundledRuntimeError.invalidManifest("Pi Agent uninstall helper is missing or not executable: \(uninstallerHelperURL.path)")
         }
         let helperManifest: NativeHelpersManifest
         do {
@@ -133,12 +138,16 @@ public struct BundledRuntime: Sendable {
             throw BundledRuntimeError.invalidManifest("Could not decode \(helperManifestURL.path): \(error.localizedDescription)")
         }
         guard helperManifest.schemaVersion == 1,
-              helperManifest.keychainHelper.path == "Contents/Helpers/PiAgentKeychainHelper"
+              helperManifest.keychainHelper.path == "Contents/Helpers/PiAgentKeychainHelper",
+              helperManifest.uninstallerHelper.path == "Contents/Helpers/PiAgentUninstaller"
         else {
             throw BundledRuntimeError.invalidManifest("Pi Agent Keychain helper manifest is invalid")
         }
         guard sha256(try Data(contentsOf: keychainHelperURL)) == helperManifest.keychainHelper.sha256 else {
             throw BundledRuntimeError.integrityFailure("Pi Agent Keychain helper hash changed")
+        }
+        guard sha256(try Data(contentsOf: uninstallerHelperURL)) == helperManifest.uninstallerHelper.sha256 else {
+            throw BundledRuntimeError.integrityFailure("Pi Agent uninstall helper hash changed")
         }
 
         let applicationSupport = fileManager.homeDirectoryForCurrentUser
@@ -234,6 +243,7 @@ private struct NativeHelpersManifest: Decodable, Sendable {
 
     let schemaVersion: Int
     let keychainHelper: Helper
+    let uninstallerHelper: Helper
 }
 
 private struct RuntimeBundleVerification: @unchecked Sendable {
