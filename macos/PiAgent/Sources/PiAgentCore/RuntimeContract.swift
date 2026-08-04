@@ -437,6 +437,27 @@ public protocol RuntimeClient: RuntimeHealthClient {
         commandId: String,
         expectedRuntimeEpoch: String
     ) async throws -> RuntimeCommandReceipt
+    func archiveSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
+    func restoreSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
+    func deleteArchivedSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
     func abortActiveWork(commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
 }
@@ -457,14 +478,18 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
     }
 
     /// The result is intentionally an open product projection: an abort has
-    /// target counts while an accepted prompt carries a session identifier.
-    /// Unknown future fields remain harmless to an older native shell.
+    /// target counts while prompt, session lifecycle, and archive mutations
+    /// carry their product-level completion state. Unknown future fields
+    /// remain harmless to an older native shell.
     public struct Result: Decodable, Equatable, Sendable {
         public let requested: Int?
         public let aborted: [AbortTarget]?
         public let failures: [AbortFailure]?
         public let accepted: Bool?
         public let created: Bool?
+        public let archived: Bool?
+        public let restored: Bool?
+        public let deleted: Bool?
         public let sessionId: String?
         public let cwd: String?
         public let runtimeId: String?

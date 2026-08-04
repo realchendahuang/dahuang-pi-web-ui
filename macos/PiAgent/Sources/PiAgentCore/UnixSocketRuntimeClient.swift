@@ -108,6 +108,58 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func archiveSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await sessionMutation(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/archive",
+            cwd: cwd,
+            runtimeId: runtimeId,
+            commandId: commandId,
+            expectedRuntimeEpoch: expectedRuntimeEpoch
+        )
+    }
+
+    public func restoreSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await sessionMutation(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/restore",
+            cwd: cwd,
+            runtimeId: runtimeId,
+            commandId: commandId,
+            expectedRuntimeEpoch: expectedRuntimeEpoch
+        )
+    }
+
+    public func deleteArchivedSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "DELETE",
+            path: "/sessions/\(Self.pathSegment(sessionId))",
+            query: query(cwd: cwd, runtimeId: runtimeId),
+            body: RuntimeCommandPayload(
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "GET",
@@ -195,6 +247,26 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         return values
     }
 
+    private func sessionMutation(
+        method: String,
+        path: String,
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: method,
+            path: path,
+            body: SessionMutationPayload(
+                cwd: cwd,
+                runtimeId: runtimeId,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     private func request<Response: Decodable & Sendable>(
         method: String,
         path: String,
@@ -271,6 +343,28 @@ private struct PromptPayload: Encodable {
 private struct RuntimeCommandPayload: Encodable {
     let commandId: String
     let runtimeEpoch: String
+}
+
+private struct SessionMutationPayload: Encodable {
+    let cwd: String
+    let runtimeId: String?
+    let commandId: String
+    let runtimeEpoch: String
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case cwd
+        case runtimeId
+        case commandId
+        case runtimeEpoch
+    }
 }
 
 private struct TerminalCreatePayload: Encodable {

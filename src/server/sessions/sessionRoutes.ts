@@ -16,7 +16,10 @@ import { requireAgentRuntimeId } from "../../shared/agentRuntime.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import {
 	RUNTIME_COMMAND_KINDS,
+	type RuntimeArchiveSessionCommandResult,
 	type RuntimeCommandReceipts,
+	type RuntimeDeleteArchivedSessionCommandResult,
+	type RuntimeRestoreSessionCommandResult,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
 	runtimeCommandErrorStatus,
@@ -717,19 +720,31 @@ export function registerSessionRoutes(
 
 	app.post<{
 		Params: { sessionId: string };
-		Body: { cwd?: unknown } | undefined;
+		Body: Record<string, unknown> | undefined;
 	}>(`${prefix}/sessions/:sessionId/archive`, async (request, reply) => {
 		try {
-			await sessions.archive(
-				sessionLookupFromBody(
-					request.params.sessionId,
-					optionalRecord(request.body),
-				),
+			const body = optionalRecord(request.body);
+			const ref = sessionLookupFromBody(request.params.sessionId, body);
+			const nativeCommand = nativeSessionMutationCommand(
+				RUNTIME_COMMAND_KINDS.archiveSession,
+				request.params.sessionId,
+				ref,
+				body,
 			);
+			if (nativeCommand !== undefined) {
+				const receipts = options.runtimeCommandReceipts;
+				if (receipts === undefined)
+					throw new Error("Native Runtime command receipts are unavailable");
+				return await receipts.execute(nativeCommand, async () => {
+					await sessions.archive(ref);
+					return sessionMutationResult("archived", request.params.sessionId, ref);
+				});
+			}
+			await sessions.archive(ref);
 			return { archived: true };
 		} catch (error) {
 			return reply
-				.code(mutationErrorStatus(error))
+				.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
 				.send({ error: errorMessage(error) });
 		}
 	});
@@ -754,34 +769,64 @@ export function registerSessionRoutes(
 
 	app.post<{
 		Params: { sessionId: string };
-		Body: { cwd?: unknown } | undefined;
+		Body: Record<string, unknown> | undefined;
 	}>(`${prefix}/sessions/:sessionId/restore`, async (request, reply) => {
 		try {
-			await sessions.restore(
-				sessionLookupFromBody(
-					request.params.sessionId,
-					optionalRecord(request.body),
-				),
+			const body = optionalRecord(request.body);
+			const ref = sessionLookupFromBody(request.params.sessionId, body);
+			const nativeCommand = nativeSessionMutationCommand(
+				RUNTIME_COMMAND_KINDS.restoreSession,
+				request.params.sessionId,
+				ref,
+				body,
 			);
+			if (nativeCommand !== undefined) {
+				const receipts = options.runtimeCommandReceipts;
+				if (receipts === undefined)
+					throw new Error("Native Runtime command receipts are unavailable");
+				return await receipts.execute(nativeCommand, async () => {
+					await sessions.restore(ref);
+					return sessionMutationResult("restored", request.params.sessionId, ref);
+				});
+			}
+			await sessions.restore(ref);
 			return { restored: true };
 		} catch (error) {
 			return reply
-				.code(mutationErrorStatus(error))
+				.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
 				.send({ error: errorMessage(error) });
 		}
 	});
 
-	app.delete<{ Params: { sessionId: string }; Querystring: SessionQuery }>(
+	app.delete<{
+		Params: { sessionId: string };
+		Querystring: SessionQuery;
+		Body: Record<string, unknown> | undefined;
+	}>(
 		`${prefix}/sessions/:sessionId`,
 		async (request, reply) => {
 			try {
-				await sessions.deleteArchived(
-					sessionLookupFromQuery(request.params.sessionId, request.query),
+				const ref = sessionLookupFromQuery(request.params.sessionId, request.query);
+				const nativeCommand = nativeSessionMutationCommand(
+					RUNTIME_COMMAND_KINDS.deleteArchivedSession,
+					request.params.sessionId,
+					ref,
+					optionalRecord(request.body),
 				);
+				if (nativeCommand !== undefined) {
+					const receipts = options.runtimeCommandReceipts;
+					if (receipts === undefined)
+						throw new Error("Native Runtime command receipts are unavailable");
+					return await receipts.execute(nativeCommand, async () => {
+						await sessions.deleteArchived(ref);
+						return sessionMutationResult("deleted", request.params.sessionId, ref);
+					});
+				}
+				await sessions.deleteArchived(ref);
 				return { deleted: true };
 			} catch (error) {
 				return reply
-					.code(mutationErrorStatus(error))
+					.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
 					.send({ error: errorMessage(error) });
 			}
 		},
@@ -889,6 +934,72 @@ function nativeStartSessionCommand(
 		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
 		fingerprint: runtimeCommandFingerprint({ cwd, runtimeId }),
 	};
+}
+
+function nativeSessionMutationCommand(
+	kind:
+		| typeof RUNTIME_COMMAND_KINDS.archiveSession
+		| typeof RUNTIME_COMMAND_KINDS.restoreSession
+		| typeof RUNTIME_COMMAND_KINDS.deleteArchivedSession,
+	sessionId: string,
+	ref: SessionRouteLookup,
+	body: Record<string, unknown> | undefined,
+) {
+	if (body === undefined) return undefined;
+	const hasCommandId = body["commandId"] !== undefined;
+	const hasRuntimeEpoch = body["runtimeEpoch"] !== undefined;
+	if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+	if (!hasCommandId || !hasRuntimeEpoch) {
+		throw new Error("commandId and runtimeEpoch must be provided together");
+	}
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({ sessionId, cwd, runtimeId }),
+	};
+}
+
+function sessionMutationResult(
+	state: "archived",
+	sessionId: string,
+	ref: SessionRouteLookup,
+): RuntimeArchiveSessionCommandResult;
+function sessionMutationResult(
+	state: "restored",
+	sessionId: string,
+	ref: SessionRouteLookup,
+): RuntimeRestoreSessionCommandResult;
+function sessionMutationResult(
+	state: "deleted",
+	sessionId: string,
+	ref: SessionRouteLookup,
+): RuntimeDeleteArchivedSessionCommandResult;
+function sessionMutationResult(
+	state: "archived" | "restored" | "deleted",
+	sessionId: string,
+	ref: SessionRouteLookup,
+):
+	| RuntimeArchiveSessionCommandResult
+	| RuntimeRestoreSessionCommandResult
+	| RuntimeDeleteArchivedSessionCommandResult {
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	const context = {
+		sessionId,
+		...(cwd === undefined ? {} : { cwd }),
+		...(runtimeId === undefined ? {} : { runtimeId }),
+	};
+	switch (state) {
+		case "archived":
+			return { archived: true, ...context };
+		case "restored":
+			return { restored: true, ...context };
+		case "deleted":
+			return { deleted: true, ...context };
+	}
 }
 
 function bulkMutationRefsFromBody(

@@ -31,6 +31,22 @@ struct PiAgentApp: App {
                 } message: {
                     Text(model.terminationConfirmationMessage)
                 }
+                .alert(
+                    "Delete archived thread permanently?",
+                    isPresented: Binding(
+                        get: { model.sessionPendingPermanentDeletion != nil },
+                        set: { if !$0 { model.cancelPermanentDelete() } }
+                    )
+                ) {
+                    Button("Delete Permanently", role: .destructive) {
+                        model.confirmPermanentDelete()
+                    }
+                    Button("Cancel", role: .cancel) {
+                        model.cancelPermanentDelete()
+                    }
+                } message: {
+                    Text("This removes the archived transcript from Pi Agent storage and cannot be undone.")
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -74,6 +90,7 @@ final class AppModel: ObservableObject {
     @Published var terminalInfo: RuntimeTerminalInfo?
     @Published var terminalErrorMessage: String?
     @Published var showTerminationConfirmation = false
+    @Published var sessionPendingPermanentDeletion: RuntimeSession?
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
@@ -130,6 +147,14 @@ final class AppModel: ObservableObject {
     var selectedSession: RuntimeSession? {
         guard let selectedSessionID else { return nil }
         return sessions.first { $0.id == selectedSessionID }
+    }
+
+    var activeSessions: [RuntimeSession] {
+        sessions.filter { $0.archived != true }
+    }
+
+    var archivedSessions: [RuntimeSession] {
+        sessions.filter { $0.archived == true }
     }
 
     var runtimeLabel: String {
@@ -320,7 +345,9 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         guard sessionID != nil else { return }
         loadSelectedSession()
-        startSessionEventStream()
+        if selectedSession?.archived != true {
+            startSessionEventStream()
+        }
     }
 
     func startNewSession() {
@@ -372,14 +399,9 @@ final class AppModel: ObservableObject {
                         "Runtime created the session, but it was not present in the session projection. Reconnect to refresh it."
                     )
                 }
-                self.sessions.removeAll { $0.id == session.id }
-                self.sessions.insert(session, at: 0)
-                self.selectedSessionID = session.id
-                self.transcriptMessages = []
-                self.streamingMessage = nil
-                self.lastSessionSequence = 0
+                self.replaceSessions(sessions)
                 self.isSending = false
-                self.startSessionEventStream()
+                self.selectSession(session.id)
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.isSending = false
@@ -394,6 +416,10 @@ final class AppModel: ObservableObject {
         }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
+		guard session.archived != true else {
+			errorMessage = "Restore this archived thread before sending a prompt."
+			return
+		}
 
         let client = runtimeClient
         let cwd = projectPath
@@ -439,6 +465,125 @@ final class AppModel: ObservableObject {
                 }
                 self.prompt = ""
                 self.isSending = false
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isSending = false
+            }
+        }
+    }
+
+    func archiveSession(_ session: RuntimeSession) {
+        performSessionMutation(
+            session,
+            kind: "archive-session",
+            accepted: { $0.archived == true },
+            execute: { client, commandId, epoch in
+                try await client.archiveSession(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    commandId: commandId,
+                    expectedRuntimeEpoch: epoch
+                )
+            }
+        )
+    }
+
+    func restoreSession(_ session: RuntimeSession) {
+        performSessionMutation(
+            session,
+            kind: "restore-session",
+            accepted: { $0.restored == true },
+            execute: { client, commandId, epoch in
+                try await client.restoreSession(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    commandId: commandId,
+                    expectedRuntimeEpoch: epoch
+                )
+            }
+        )
+    }
+
+    func requestPermanentDelete(_ session: RuntimeSession) {
+        guard session.archived == true, !isSending else { return }
+        sessionPendingPermanentDeletion = session
+    }
+
+    func cancelPermanentDelete() {
+        sessionPendingPermanentDeletion = nil
+    }
+
+    func confirmPermanentDelete() {
+        guard let session = sessionPendingPermanentDeletion else { return }
+        sessionPendingPermanentDeletion = nil
+        performSessionMutation(
+            session,
+            kind: "delete-archived-session",
+            accepted: { $0.deleted == true },
+            selectMutatedSession: false,
+            execute: { client, commandId, epoch in
+                try await client.deleteArchivedSession(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    commandId: commandId,
+                    expectedRuntimeEpoch: epoch
+                )
+            }
+        )
+    }
+
+    private func performSessionMutation(
+        _ session: RuntimeSession,
+        kind: String,
+        accepted: @escaping @Sendable (RuntimeCommandReceipt.Result) -> Bool,
+        selectMutatedSession: Bool = true,
+        execute: @escaping @Sendable (any RuntimeClient, String, String) async throws -> RuntimeCommandReceipt
+    ) {
+        guard !isSending else { return }
+        guard let expectedRuntimeEpoch = runtimeEpoch else {
+            errorMessage = "Reconnect the Runtime before changing a thread."
+            return
+        }
+        let client = runtimeClient
+        let commandId = UUID().uuidString
+        isSending = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await execute(client, commandId, expectedRuntimeEpoch)
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: client,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: kind,
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.sessionId == session.id,
+                      let result = receipt.result,
+                      accepted(result)
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime thread mutation receipt was missing its completed result."
+                    )
+                }
+                let refreshed = try await client.listSessions(cwd: session.cwd)
+                self.replaceSessions(refreshed)
+                self.isSending = false
+                if selectMutatedSession, self.sessions.contains(where: { $0.id == session.id }) {
+                    self.selectSession(session.id)
+                }
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.isSending = false
@@ -626,7 +771,7 @@ final class AppModel: ObservableObject {
     private func loadSelectedSession() {
         guard let session = selectedSession else { return }
         let client = runtimeClient
-        let cwd = projectPath
+        let cwd = session.cwd
         Task { [weak self] in
             do {
                 let page = try await client.messages(
@@ -652,6 +797,7 @@ final class AppModel: ObservableObject {
     private func startSessionEventStream() {
         stopSessionEventStream()
         guard let session = selectedSession,
+              session.archived != true,
               let client = runtimeClient as? any RuntimeEventStreamClient
         else { return }
 
@@ -659,7 +805,7 @@ final class AppModel: ObservableObject {
         let generation = sessionStreamGeneration
         lastSessionSequence = 0
         streamingMessage = nil
-        let cwd = projectPath
+        let cwd = session.cwd
 
         sessionStreamTask = Task { [weak self] in
             guard let self else { return }
@@ -869,19 +1015,17 @@ final class AppModel: ObservableObject {
     }
 
     private func replaceSessions(_ sessions: [RuntimeSession]) {
-        let visible = sessions
-            .filter { $0.archived != true }
-            .sorted { $0.modified > $1.modified }
-        self.sessions = visible
-        if let selectedSessionID, visible.contains(where: { $0.id == selectedSessionID }) {
+        let ordered = sessions.sorted { $0.modified > $1.modified }
+        self.sessions = ordered
+        if let selectedSessionID, ordered.contains(where: { $0.id == selectedSessionID }) {
             loadSelectedSession()
-            startSessionEventStream()
+            if selectedSession?.archived != true { startSessionEventStream() }
         } else {
             stopSessionEventStream()
-            self.selectedSessionID = visible.first?.id
+            self.selectedSessionID = ordered.first(where: { $0.archived != true })?.id ?? ordered.first?.id
             if self.selectedSessionID != nil {
                 loadSelectedSession()
-                startSessionEventStream()
+                if selectedSession?.archived != true { startSessionEventStream() }
             }
         }
     }
@@ -966,6 +1110,27 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         commandId _: String,
         expectedRuntimeEpoch _: String
     ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func archiveSession(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func restoreSession(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func deleteArchivedSession(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func abortActiveWork(
         commandId _: String,
         expectedRuntimeEpoch _: String
@@ -1029,17 +1194,46 @@ struct SidebarView: View {
         )) {
             Section("Projects") {
                 DisclosureGroup(isExpanded: $model.isProjectExpanded) {
-                    if model.sessions.isEmpty {
+                    if model.activeSessions.isEmpty {
                         Label(
-                            model.isLoading ? "Loading…" : "No threads yet",
+                            model.isLoading ? "Loading…" : "No active threads yet",
                             systemImage: "bubble.left.and.bubble.right"
                         )
                         .foregroundStyle(.secondary)
                     } else {
-                        ForEach(model.sessions) { session in
+                        ForEach(model.activeSessions) { session in
                             SessionRow(session: session, status: model.statusBySession[session.id])
                                 .padding(.leading, 12)
                                 .tag(Optional(session.id))
+                                .contextMenu {
+                                    Button("Archive Thread") {
+                                        model.archiveSession(session)
+                                    }
+                                    .disabled(model.isSending)
+                                }
+                        }
+                    }
+                    if !model.archivedSessions.isEmpty {
+                        Divider()
+                        Text("Archived")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 12)
+                        ForEach(model.archivedSessions) { session in
+                            SessionRow(session: session, status: nil)
+                                .padding(.leading, 12)
+                                .tag(Optional(session.id))
+                                .contextMenu {
+                                    Button("Restore Thread") {
+                                        model.restoreSession(session)
+                                    }
+                                    .disabled(model.isSending)
+                                    Divider()
+                                    Button("Delete Permanently…", role: .destructive) {
+                                        model.requestPermanentDelete(session)
+                                    }
+                                    .disabled(model.isSending)
+                                }
                         }
                     }
                 } label: {
@@ -1077,14 +1271,14 @@ struct SessionRow: View {
                 HStack(spacing: 5) {
                     Text(session.runtimeId.uppercased())
                     Text("·")
-                    Text(statusLabel)
+                    Text(session.archived == true ? "Archived" : statusLabel)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
         } icon: {
-            Image(systemName: status?.isStreaming == true ? "circle.dotted" : "circle")
-                .foregroundStyle(status?.isStreaming == true ? .orange : .secondary)
+            Image(systemName: session.archived == true ? "archivebox" : (status?.isStreaming == true ? "circle.dotted" : "circle"))
+                .foregroundStyle(session.archived == true ? Color.secondary : (status?.isStreaming == true ? Color.orange : Color.secondary))
         }
     }
 
@@ -1120,6 +1314,11 @@ struct TranscriptView: View {
                         Text("\(session.runtimeId.uppercased()) · \(session.messageCount) messages")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if session.archived == true {
+                            Label("Archived threads are read-only. Restore this thread to continue it.", systemImage: "archivebox")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
                         if model.transcriptMessages.isEmpty {
                             Text(session.firstMessage.isEmpty ? "No transcript messages yet." : session.firstMessage)
@@ -1156,6 +1355,7 @@ struct TranscriptView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(
                     model.selectedSession == nil
+                        || model.selectedSession?.archived == true
                         || model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || model.isSending
                 )

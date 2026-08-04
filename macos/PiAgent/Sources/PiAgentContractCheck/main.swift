@@ -128,6 +128,25 @@ struct PiAgentContractCheck {
 		let startReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: startData)
 		precondition(startReceipt.result?.created == true)
 		precondition(startReceipt.result?.cwd == "/repo")
+
+		let archiveData = Data(
+			#"{"commandId":"command-4","kind":"archive-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"archived":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
+		)
+		let archiveReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: archiveData)
+		precondition(archiveReceipt.result?.archived == true)
+		precondition(archiveReceipt.result?.sessionId == "s2")
+
+		let restoreData = Data(
+			#"{"commandId":"command-5","kind":"restore-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"restored":true,"sessionId":"s2"}}"#.utf8
+		)
+		let restoreReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: restoreData)
+		precondition(restoreReceipt.result?.restored == true)
+
+		let deleteData = Data(
+			#"{"commandId":"command-6","kind":"delete-archived-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"deleted":true,"sessionId":"s2"}}"#.utf8
+		)
+		let deleteReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: deleteData)
+		precondition(deleteReceipt.result?.deleted == true)
 	}
 
     private static func checkProjectAuthorization() throws {

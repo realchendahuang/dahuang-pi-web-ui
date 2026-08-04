@@ -744,15 +744,15 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 1：原生单机 MVP
 
-交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
+交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、活动/Archived 分组、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。会话可在原生侧边栏归档、恢复；永久删除只对 Archived 会话开放且要求二次确认。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
 
 退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 已达到本机门槛，完整 workspace 仍未达到该门槛。
 
 ### Phase 2：生命周期与 macOS 集成
 
-已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt 与 New Thread 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、archive、restore 和 archived delete 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、fork/import、归档/删除、terminal、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、fork/import、terminal、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

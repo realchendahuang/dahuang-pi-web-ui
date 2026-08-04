@@ -5,6 +5,9 @@ export const RUNTIME_COMMAND_KINDS = {
 	abortActiveWork: "abort-active-work",
 	prompt: "prompt",
 	startSession: "start-session",
+	archiveSession: "archive-session",
+	restoreSession: "restore-session",
+	deleteArchivedSession: "delete-archived-session",
 } as const;
 
 export type RuntimeCommandKind =
@@ -23,10 +26,34 @@ export interface RuntimeStartSessionCommandResult {
 	runtimeId: string;
 }
 
+export interface RuntimeArchiveSessionCommandResult {
+	archived: true;
+	sessionId: string;
+	cwd?: string;
+	runtimeId?: string;
+}
+
+export interface RuntimeRestoreSessionCommandResult {
+	restored: true;
+	sessionId: string;
+	cwd?: string;
+	runtimeId?: string;
+}
+
+export interface RuntimeDeleteArchivedSessionCommandResult {
+	deleted: true;
+	sessionId: string;
+	cwd?: string;
+	runtimeId?: string;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
-	| RuntimeStartSessionCommandResult;
+	| RuntimeStartSessionCommandResult
+	| RuntimeArchiveSessionCommandResult
+	| RuntimeRestoreSessionCommandResult
+	| RuntimeDeleteArchivedSessionCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

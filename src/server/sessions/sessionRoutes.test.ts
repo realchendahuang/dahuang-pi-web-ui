@@ -811,6 +811,121 @@ describe("session routes", () => {
 		}
 	});
 
+	it("executes native archive, restore, and archived deletion once per command id", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(
+			routeApp,
+			routeService,
+			new SessionEventHub(),
+			"",
+			{ runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+		);
+		const cwd = resolve("/repo");
+		try {
+			const archivePayload = {
+				cwd,
+				runtimeId: "pi",
+				commandId: "archive-command-1",
+				runtimeEpoch: "epoch-1",
+			};
+			const archive = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/archive",
+				payload: archivePayload,
+			});
+			const archiveRetry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/archive",
+				payload: archivePayload,
+			});
+			const restore = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/restore",
+				payload: {
+					cwd,
+					runtimeId: "pi",
+					commandId: "restore-command-1",
+					runtimeEpoch: "epoch-1",
+				},
+			});
+			const deleted = await routeApp.inject({
+				method: "DELETE",
+				url: `/sessions/session-1?cwd=${encodeURIComponent(cwd)}&runtimeId=pi`,
+				payload: {
+					commandId: "delete-command-1",
+					runtimeEpoch: "epoch-1",
+				},
+			});
+
+			expect(archive.statusCode).toBe(200);
+			expect(archive.json()).toMatchObject({
+				kind: "archive-session",
+				status: "completed",
+				result: { archived: true, sessionId: "session-1", cwd, runtimeId: "pi" },
+			});
+			expect(archiveRetry.json()).toEqual(archive.json());
+			expect(restore.statusCode).toBe(200);
+			expect(restore.json()).toMatchObject({
+				kind: "restore-session",
+				result: { restored: true, sessionId: "session-1", cwd, runtimeId: "pi" },
+			});
+			expect(deleted.statusCode).toBe(200);
+			expect(deleted.json()).toMatchObject({
+				kind: "delete-archived-session",
+				result: { deleted: true, sessionId: "session-1", cwd, runtimeId: "pi" },
+			});
+			expect(routeService.archiveCalls).toEqual([{ id: "session-1", cwd, runtimeId: "pi" }]);
+			expect(routeService.restoreCalls).toEqual([{ id: "session-1", cwd, runtimeId: "pi" }]);
+			expect(routeService.deleteArchivedCalls).toEqual([{ id: "session-1", cwd, runtimeId: "pi" }]);
+
+			const conflict = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/archive",
+				payload: { ...archivePayload, cwd: resolve("/other-repo") },
+			});
+			expect(conflict.statusCode).toBe(409);
+			expect(routeService.archiveCalls).toHaveLength(1);
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
+	it("keeps legacy archive, restore, and delete routes compatible", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(routeApp, routeService, new SessionEventHub());
+		const cwd = resolve("/repo");
+		try {
+			const archive = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/archive",
+				payload: { cwd },
+			});
+			const restore = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/restore",
+				payload: { cwd },
+			});
+			const deleted = await routeApp.inject({
+				method: "DELETE",
+				url: `/sessions/session-1?cwd=${encodeURIComponent(cwd)}`,
+			});
+			expect(archive.json()).toEqual({ archived: true });
+			expect(restore.json()).toEqual({ restored: true });
+			expect(deleted.json()).toEqual({ deleted: true });
+			expect(routeService.archiveCalls).toEqual([{ id: "session-1", cwd }]);
+			expect(routeService.restoreCalls).toEqual([{ id: "session-1", cwd }]);
+			expect(routeService.deleteArchivedCalls).toEqual([{ id: "session-1", cwd }]);
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
 	it("passes cwd when per-session routes include workspace context", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);
@@ -1209,6 +1324,9 @@ describe("session routes", () => {
 class CapturingRouteSessionService implements SessionRouteService {
 	readonly calls: unknown[] = [];
 	readonly startCalls: { cwd: string; runtimeId?: AgentRuntimeId }[] = [];
+	readonly archiveCalls: SessionRouteLookup[] = [];
+	readonly restoreCalls: SessionRouteLookup[] = [];
+	readonly deleteArchivedCalls: SessionRouteLookup[] = [];
 	readonly reloadCalls: SessionRouteLookup[] = [];
 	readonly clearQueueCalls: SessionRouteLookup[] = [];
 	readonly dismissWarningCalls: {
@@ -1535,17 +1653,20 @@ class CapturingRouteSessionService implements SessionRouteService {
 	stop(): never {
 		throw unusedRouteMethod("stop");
 	}
-	archive(): never {
-		throw unusedRouteMethod("archive");
+	archive(lookup: SessionRouteLookup): Promise<void> {
+		this.archiveCalls.push(lookup);
+		return Promise.resolve();
 	}
 	archiveTree(): never {
 		throw unusedRouteMethod("archiveTree");
 	}
-	restore(): never {
-		throw unusedRouteMethod("restore");
+	restore(lookup: SessionRouteLookup): Promise<void> {
+		this.restoreCalls.push(lookup);
+		return Promise.resolve();
 	}
-	deleteArchived(): never {
-		throw unusedRouteMethod("deleteArchived");
+	deleteArchived(lookup: SessionRouteLookup): Promise<void> {
+		this.deleteArchivedCalls.push(lookup);
+		return Promise.resolve();
 	}
 
 	detachParent(): never {
