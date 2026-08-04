@@ -284,6 +284,26 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         try await request(method: "GET", path: "/auth/providers", query: [("mode", "login")])
     }
 
+    public func startOAuthLogin(providerId: String) async throws -> RuntimeAuthFlow {
+        try await request(method: "POST", path: "/auth/oauth", body: AuthProviderPayload(providerId: providerId))
+    }
+
+    public func startInteractiveApiKeyLogin(providerId: String) async throws -> RuntimeAuthFlow {
+        try await request(method: "POST", path: "/auth/api-key/interactive", body: AuthProviderPayload(providerId: providerId))
+    }
+
+    public func authFlow(id: String) async throws -> RuntimeAuthFlow {
+        try await request(method: "GET", path: "/auth/oauth/\(Self.pathSegment(id))")
+    }
+
+    public func respondAuthFlow(id: String, requestId: String, value: String) async throws -> RuntimeAuthFlow {
+        try await request(method: "POST", path: "/auth/oauth/\(Self.pathSegment(id))/respond", body: AuthResponsePayload(requestId: requestId, value: value))
+    }
+
+    public func cancelAuthFlow(id: String) async throws -> RuntimeAuthFlow {
+        try await request(method: "POST", path: "/auth/oauth/\(Self.pathSegment(id))/cancel", body: EmptyAuthPayload())
+    }
+
     public func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile {
         try await request(
             method: "GET",
@@ -683,6 +703,9 @@ private struct RuntimeCommandPayload: Encodable {
 }
 
 private struct AuthorizeProjectPayload: Encodable { let path: String; let commandId: String; let runtimeEpoch: String }
+private struct AuthProviderPayload: Encodable { let providerId: String }
+private struct AuthResponsePayload: Encodable { let requestId: String; let value: String }
+private struct EmptyAuthPayload: Encodable {}
 
 private struct SessionMutationPayload: Encodable {
     let cwd: String

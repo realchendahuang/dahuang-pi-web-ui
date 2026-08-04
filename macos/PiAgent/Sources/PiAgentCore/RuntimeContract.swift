@@ -119,8 +119,68 @@ public struct RuntimeAuthProviders: Codable, Equatable, Sendable {
     public let providers: [RuntimeAuthProvider]
 }
 
+public struct RuntimeAuthChoice: Codable, Equatable, Identifiable, Sendable {
+    public let value: String
+    public let label: String
+    public let description: String?
+    public var id: String { value }
+}
+
+public struct RuntimeAuthPrompt: Codable, Equatable, Sendable {
+    public let requestId: String
+    public let message: String
+    public let placeholder: String?
+    public let allowEmpty: Bool?
+    public let promptType: String?
+    public let kind: String
+}
+
+public struct RuntimeAuthSelect: Codable, Equatable, Sendable {
+    public let requestId: String
+    public let message: String
+    public let options: [RuntimeAuthChoice]
+}
+
+public struct RuntimeAuthLink: Codable, Equatable, Sendable {
+    public let url: String
+    public let label: String?
+}
+
+public struct RuntimeAuthFlow: Codable, Equatable, Identifiable, Sendable {
+    public struct Authorization: Codable, Equatable, Sendable {
+        public let url: String
+        public let instructions: String?
+        public let deviceCode: DeviceCode?
+    }
+    public struct DeviceCode: Codable, Equatable, Sendable {
+        public let userCode: String
+        public let intervalSeconds: Int?
+        public let expiresInSeconds: Int?
+    }
+    public struct Info: Codable, Equatable, Sendable {
+        public let message: String
+        public let links: [RuntimeAuthLink]?
+    }
+    public let flowId: String
+    public let providerId: String
+    public let providerName: String
+    public let status: String
+    public let auth: Authorization?
+    public let prompt: RuntimeAuthPrompt?
+    public let select: RuntimeAuthSelect?
+    public let progress: [String]
+    public let info: [Info]?
+    public let error: String?
+    public var id: String { flowId }
+}
+
 public protocol RuntimeAuthClient: Sendable {
     func authProviders() async throws -> RuntimeAuthProviders
+    func startOAuthLogin(providerId: String) async throws -> RuntimeAuthFlow
+    func startInteractiveApiKeyLogin(providerId: String) async throws -> RuntimeAuthFlow
+    func authFlow(id: String) async throws -> RuntimeAuthFlow
+    func respondAuthFlow(id: String, requestId: String, value: String) async throws -> RuntimeAuthFlow
+    func cancelAuthFlow(id: String) async throws -> RuntimeAuthFlow
 }
 
 /// Stable, UI-facing projection of one session returned by sessiond.
