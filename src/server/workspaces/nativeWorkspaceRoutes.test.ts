@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { RuntimeCommandReceipts } from "../runtimeCommandReceipts.js";
 import { registerNativeWorkspaceRoutes } from "./nativeWorkspaceRoutes.js";
 
 const temporaryRoots: string[] = [];
@@ -60,11 +61,72 @@ describe("native workspace routes", () => {
             await app.close();
         }
     });
+
+    it("writes, moves, and deletes a text file once per epoch-bound receipt", async () => {
+        const root = await temporaryProject();
+        const app = createApp();
+        try {
+            const write = {
+                cwd: root,
+                path: "Notes/agent.txt",
+                content: "native edit\n",
+                commandId: "write-1",
+                runtimeEpoch: "epoch-1",
+            };
+            const firstWrite = await app.inject({ method: "PUT", url: "/workspace/file", payload: write });
+            const repeatWrite = await app.inject({ method: "PUT", url: "/workspace/file", payload: write });
+            expect(firstWrite.statusCode).toBe(200);
+            expect(repeatWrite.json()).toEqual(firstWrite.json());
+            expect(firstWrite.json()).toMatchObject({
+                kind: "write-workspace-file",
+                status: "completed",
+                result: { written: true, path: "Notes/agent.txt", created: true },
+            });
+
+            const protectedCreate = await app.inject({
+                method: "PUT",
+                url: "/workspace/file",
+                payload: { ...write, commandId: "write-existing", overwrite: false },
+            });
+            expect(protectedCreate.json()).toMatchObject({
+                kind: "write-workspace-file",
+                status: "failed",
+                error: "File already exists: Notes/agent.txt",
+            });
+
+            const moved = await app.inject({
+                method: "POST",
+                url: "/workspace/file/move",
+                payload: {
+                    cwd: root,
+                    fromPath: "Notes/agent.txt",
+                    toPath: "Notes/renamed.txt",
+                    commandId: "move-1",
+                    runtimeEpoch: "epoch-1",
+                },
+            });
+            expect(moved.json()).toMatchObject({ result: { moved: true, fromPath: "Notes/agent.txt", toPath: "Notes/renamed.txt" } });
+
+            const deleted = await app.inject({
+                method: "DELETE",
+                url: "/workspace/file",
+                payload: { cwd: root, path: "Notes/renamed.txt", commandId: "delete-1", runtimeEpoch: "epoch-1" },
+            });
+            expect(deleted.json()).toMatchObject({ result: { deletedFile: true, path: "Notes/renamed.txt", existed: true } });
+
+            const changedIntent = await app.inject({ method: "PUT", url: "/workspace/file", payload: { ...write, content: "different" } });
+            const staleEpoch = await app.inject({ method: "PUT", url: "/workspace/file", payload: { ...write, commandId: "write-2", runtimeEpoch: "old" } });
+            expect(changedIntent.statusCode).toBe(409);
+            expect(staleEpoch.statusCode).toBe(409);
+        } finally {
+            await app.close();
+        }
+    });
 });
 
 function createApp() {
     const app = Fastify({ logger: false });
-    registerNativeWorkspaceRoutes(app);
+    registerNativeWorkspaceRoutes(app, new RuntimeCommandReceipts("epoch-1"));
     return app;
 }
 

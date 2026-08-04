@@ -47,6 +47,22 @@ struct PiAgentApp: App {
                 } message: {
                     Text("This removes the archived transcript from Pi Agent storage and cannot be undone.")
                 }
+                .alert(
+                    "Delete workspace file?",
+                    isPresented: Binding(
+                        get: { model.workspaceFilePendingDeletion != nil },
+                        set: { if !$0 { model.cancelWorkspaceFileDeletion() } }
+                    )
+                ) {
+                    Button("Delete File", role: .destructive) {
+                        model.confirmWorkspaceFileDeletion()
+                    }
+                    Button("Cancel", role: .cancel) {
+                        model.cancelWorkspaceFileDeletion()
+                    }
+                } message: {
+                    Text("This permanently removes the selected file from the authorized project.")
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -129,6 +145,13 @@ final class AppModel: ObservableObject {
     @Published var workspaceFile: RuntimeWorkspaceFile?
     @Published var isWorkspaceLoading = false
     @Published var workspaceErrorMessage: String?
+    @Published var workspaceEditorText = ""
+    @Published var isWorkspaceMutationInFlight = false
+    @Published var workspaceFilePendingDeletion: RuntimeWorkspaceFile?
+    @Published var workspaceFilePendingMove: RuntimeWorkspaceFile?
+    @Published var workspaceMoveDestination = ""
+    @Published var showWorkspaceNewFileSheet = false
+    @Published var workspaceNewFilePath = ""
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -448,6 +471,12 @@ final class AppModel: ObservableObject {
         workspaceTree = nil
         workspacePath = ""
         workspaceFile = nil
+        workspaceEditorText = ""
+        workspaceFilePendingDeletion = nil
+        workspaceFilePendingMove = nil
+        workspaceMoveDestination = ""
+        showWorkspaceNewFileSheet = false
+        workspaceNewFilePath = ""
         workspaceErrorMessage = nil
         refreshRuntime()
     }
@@ -1132,6 +1161,7 @@ final class AppModel: ObservableObject {
                 self.workspaceTree = tree
                 self.workspacePath = tree.path
                 self.workspaceFile = nil
+                self.workspaceEditorText = ""
                 self.isWorkspaceLoading = false
             } catch {
                 guard let self,
@@ -1172,6 +1202,7 @@ final class AppModel: ObservableObject {
                       self.isCurrentWorkspaceRequest(generation, cwd: cwd)
                 else { return }
                 self.workspaceFile = file
+                self.workspaceEditorText = file.content
                 self.isWorkspaceLoading = false
             } catch {
                 guard let self,
@@ -1179,6 +1210,232 @@ final class AppModel: ObservableObject {
                 else { return }
                 self.workspaceErrorMessage = error.localizedDescription
                 self.isWorkspaceLoading = false
+            }
+        }
+    }
+
+    func saveWorkspaceFile() {
+        guard let file = workspaceFile,
+              !file.binary,
+              !file.truncated,
+              let client = runtimeClient as? any RuntimeWorkspaceClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              !isWorkspaceMutationInFlight
+        else { return }
+        let cwd = projectPath
+        let commandId = UUID().uuidString
+        let content = workspaceEditorText
+        isWorkspaceMutationInFlight = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.writeWorkspaceFile(
+                        cwd: cwd,
+                        path: file.path,
+                        content: content,
+                        overwrite: true,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(receipt, kind: "write-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.written == true else {
+                    throw RuntimeClientError.serverError(500, "Runtime file write receipt was incomplete.")
+                }
+                self.isWorkspaceMutationInFlight = false
+                self.loadWorkspaceFile(path: file.path)
+            } catch {
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceMutationInFlight = false
+            }
+        }
+    }
+
+    func requestWorkspaceFileDeletion() {
+        guard workspaceFile != nil, !isWorkspaceMutationInFlight else { return }
+        workspaceFilePendingDeletion = workspaceFile
+    }
+
+    func cancelWorkspaceFileDeletion() {
+        workspaceFilePendingDeletion = nil
+    }
+
+    func requestWorkspaceFileMove() {
+        guard let file = workspaceFile, !isWorkspaceMutationInFlight else { return }
+        workspaceFilePendingMove = file
+        workspaceMoveDestination = file.path
+    }
+
+    func cancelWorkspaceFileMove() {
+        workspaceFilePendingMove = nil
+        workspaceMoveDestination = ""
+    }
+
+    func confirmWorkspaceFileMove() {
+        guard let file = workspaceFilePendingMove,
+              let client = runtimeClient as? any RuntimeWorkspaceClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              !isWorkspaceMutationInFlight
+        else { return }
+        let destination = workspaceMoveDestination.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !destination.isEmpty else {
+            workspaceErrorMessage = "A destination path is required."
+            return
+        }
+        guard destination != file.path else {
+            cancelWorkspaceFileMove()
+            return
+        }
+        let cwd = projectPath
+        let commandId = UUID().uuidString
+        workspaceFilePendingMove = nil
+        isWorkspaceMutationInFlight = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.moveWorkspaceFile(
+                        cwd: cwd,
+                        fromPath: file.path,
+                        toPath: destination,
+                        overwrite: false,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(receipt, kind: "move-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.moved == true else {
+                    throw RuntimeClientError.serverError(500, "Runtime file move receipt was incomplete.")
+                }
+                self.workspaceFile = nil
+                self.workspaceEditorText = ""
+                self.workspaceMoveDestination = ""
+                self.isWorkspaceMutationInFlight = false
+                self.refreshWorkspace()
+            } catch {
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceMutationInFlight = false
+            }
+        }
+    }
+
+    func startWorkspaceFileCreation() {
+        guard !isWorkspaceMutationInFlight else { return }
+        workspaceNewFilePath = workspacePath.isEmpty ? "" : "\(workspacePath)/"
+        showWorkspaceNewFileSheet = true
+    }
+
+    func cancelWorkspaceFileCreation() {
+        showWorkspaceNewFileSheet = false
+        workspaceNewFilePath = ""
+    }
+
+    func createWorkspaceFile() {
+        guard let client = runtimeClient as? any RuntimeWorkspaceClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              !isWorkspaceMutationInFlight
+        else { return }
+        let path = workspaceNewFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            workspaceErrorMessage = "A file path is required."
+            return
+        }
+        let cwd = projectPath
+        let commandId = UUID().uuidString
+        isWorkspaceMutationInFlight = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.writeWorkspaceFile(
+                        cwd: cwd,
+                        path: path,
+                        content: "",
+                        overwrite: false,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(receipt, kind: "write-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.written == true else {
+                    throw RuntimeClientError.serverError(500, "Runtime file create receipt was incomplete.")
+                }
+                self.showWorkspaceNewFileSheet = false
+                self.workspaceNewFilePath = ""
+                self.isWorkspaceMutationInFlight = false
+                self.refreshWorkspace()
+            } catch {
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceMutationInFlight = false
+            }
+        }
+    }
+
+    func confirmWorkspaceFileDeletion() {
+        guard let file = workspaceFilePendingDeletion,
+              let client = runtimeClient as? any RuntimeWorkspaceClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              !isWorkspaceMutationInFlight
+        else { return }
+        let cwd = projectPath
+        let commandId = UUID().uuidString
+        workspaceFilePendingDeletion = nil
+        isWorkspaceMutationInFlight = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.deleteWorkspaceFile(
+                        cwd: cwd,
+                        path: file.path,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(receipt, kind: "delete-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.deletedFile == true else {
+                    throw RuntimeClientError.serverError(500, "Runtime file delete receipt was incomplete.")
+                }
+                self.workspaceFile = nil
+                self.workspaceEditorText = ""
+                self.isWorkspaceMutationInFlight = false
+                self.refreshWorkspace()
+            } catch {
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceMutationInFlight = false
             }
         }
     }
@@ -1947,6 +2204,15 @@ struct ContentView: View {
         .sheet(isPresented: $model.showGitCommitSheet) {
 			GitCommitSheet(model: model)
 		}
+        .sheet(item: Binding(
+            get: { model.workspaceFilePendingMove },
+            set: { if $0 == nil { model.cancelWorkspaceFileMove() } }
+        )) { file in
+            WorkspaceMoveSheet(model: model, file: file)
+        }
+        .sheet(isPresented: $model.showWorkspaceNewFileSheet, onDismiss: model.cancelWorkspaceFileCreation) {
+            WorkspaceNewFileSheet(model: model)
+        }
 		.sheet(item: Binding(
 			get: { model.activeExtensionInteraction },
 			set: { _ in }
@@ -2328,6 +2594,9 @@ struct WorkspaceFilesView: View {
                 }
                 Button("Refresh") { model.refreshWorkspace() }
                     .buttonStyle(.borderless)
+                Button("New File…") { model.startWorkspaceFileCreation() }
+                    .buttonStyle(.borderless)
+                    .disabled(model.isWorkspaceMutationInFlight || !model.canUseProjectRuntime)
             }
 
             if model.isWorkspaceLoading {
@@ -2371,22 +2640,41 @@ struct WorkspaceFilesView: View {
                 Divider()
                 LabeledContent("File", value: file.path)
                     .font(.caption)
+                HStack {
+                    Button("Move/Rename…") { model.requestWorkspaceFileMove() }
+                    Button("Delete…", role: .destructive) {
+                        model.requestWorkspaceFileDeletion()
+                    }
+                    Spacer()
+                }
+                .disabled(model.isWorkspaceMutationInFlight)
                 if file.binary {
                     Label("Binary or image preview is not available yet.", systemImage: "doc.richtext")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ScrollView([.horizontal, .vertical]) {
-                        Text(file.content)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 220)
                     if file.truncated {
+                        ScrollView([.horizontal, .vertical]) {
+                            Text(file.content)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 220)
                         Text("Preview is truncated at 512 KB.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    } else {
+                        TextEditor(text: $model.workspaceEditorText)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(minHeight: 160, maxHeight: 260)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        HStack {
+                            Button("Save") { model.saveWorkspaceFile() }
+                                .buttonStyle(.borderedProminent)
+                            Spacer()
+                        }
+                        .disabled(model.isWorkspaceMutationInFlight)
                     }
                 }
             }
@@ -2585,6 +2873,61 @@ struct GitCommitSheet: View {
 		.padding(24)
 		.frame(width: 520)
 	}
+}
+
+struct WorkspaceMoveSheet: View {
+    @ObservedObject var model: AppModel
+    let file: RuntimeWorkspaceFile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Move or Rename File")
+                .font(.title2.weight(.semibold))
+            Text("Move \(file.path) within the authorized project. Existing files will not be overwritten.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Destination relative path", text: $model.workspaceMoveDestination)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { model.cancelWorkspaceFileMove() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Move") { model.confirmWorkspaceFileMove() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.workspaceMoveDestination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .disabled(model.isWorkspaceMutationInFlight)
+    }
+}
+
+struct WorkspaceNewFileSheet: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New File")
+                .font(.title2.weight(.semibold))
+            Text("Create an empty UTF-8 text file inside the authorized project. Existing files will not be overwritten.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Relative path", text: $model.workspaceNewFilePath)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { model.cancelWorkspaceFileCreation() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { model.createWorkspaceFile() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.workspaceNewFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .disabled(model.isWorkspaceMutationInFlight)
+    }
 }
 
 struct SettingsView: View {

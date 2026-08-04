@@ -229,6 +229,21 @@ struct PiAgentContractCheck {
         precondition(file.language == "swift")
         precondition(file.content == "import SwiftUI")
         precondition(!file.binary)
+
+        let writeReceipt = try decoder.decode(
+            RuntimeCommandReceipt.self,
+            from: Data(#"{"commandId":"workspace-write","kind":"write-workspace-file","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"written":true,"path":"Sources/PiAgent.swift","size":42,"modifiedAt":"2026-08-04T00:00:01Z","created":false}}"#.utf8)
+        )
+        precondition(writeReceipt.result?.written == true)
+        precondition(writeReceipt.result?.path == "Sources/PiAgent.swift")
+        precondition(writeReceipt.result?.created == false)
+
+        let deleteReceipt = try decoder.decode(
+            RuntimeCommandReceipt.self,
+            from: Data(#"{"commandId":"workspace-delete","kind":"delete-workspace-file","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"deletedFile":true,"path":"Sources/PiAgent.swift","existed":true}}"#.utf8)
+        )
+        precondition(deleteReceipt.result?.deletedFile == true)
+        precondition(deleteReceipt.result?.existed == true)
     }
 
     private static func checkExtensionInteractionContractDecoding() throws {

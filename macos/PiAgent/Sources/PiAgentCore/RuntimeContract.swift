@@ -554,7 +554,7 @@ public struct RuntimeWorkspaceEntry: Codable, Equatable, Identifiable, Sendable 
     public var isDirectory: Bool { type == "directory" }
 }
 
-public struct RuntimeWorkspaceFile: Codable, Equatable, Sendable {
+public struct RuntimeWorkspaceFile: Codable, Equatable, Identifiable, Sendable {
     public let path: String
     public let language: String?
     public let mediaType: String?
@@ -565,11 +565,16 @@ public struct RuntimeWorkspaceFile: Codable, Equatable, Sendable {
     public let content: String
     public let truncated: Bool
     public let binary: Bool
+
+    public var id: String { path }
 }
 
 public protocol RuntimeWorkspaceClient: Sendable {
     func workspaceTree(cwd: String, path: String?) async throws -> RuntimeWorkspaceTree
     func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile
+    func writeWorkspaceFile(cwd: String, path: String, content: String, overwrite: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func deleteWorkspaceFile(cwd: String, path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func moveWorkspaceFile(cwd: String, fromPath: String, toPath: String, overwrite: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
 public protocol RuntimeProjectCapabilityClient: Sendable {
@@ -666,7 +671,15 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let status: RuntimeGitStatus?
 		public let responded: Bool?
 		public let interaction: RuntimeExtensionInteraction?
-		public let authorized: Bool?
+        public let authorized: Bool?
+		public let written: Bool?
+		public let deletedFile: Bool?
+		public let moved: Bool?
+		public let existed: Bool?
+		public let fromPath: String?
+		public let toPath: String?
+		public let size: Int?
+		public let modifiedAt: Date?
 		/// Canonical real path returned only by the Runtime after it has accepted
 		/// the App-selected project capability. This is never a capability token.
 		public let path: String?

@@ -189,7 +189,7 @@ await runSessionDaemonStartup({
 		});
 		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 		registerNativeGitRoutes(app, runtimeCommandReceipts);
-		registerNativeWorkspaceRoutes(app);
+		registerNativeWorkspaceRoutes(app, runtimeCommandReceipts);
 		app.get("/health", () => ({
 			ok: true,
 			activeSessions: sessions.activeCount(),

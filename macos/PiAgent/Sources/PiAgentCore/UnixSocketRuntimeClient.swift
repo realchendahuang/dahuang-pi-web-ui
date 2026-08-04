@@ -288,6 +288,68 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func writeWorkspaceFile(
+        cwd: String,
+        path: String,
+        content: String,
+        overwrite: Bool,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "PUT",
+            path: "/workspace/file",
+            body: WorkspaceWritePayload(
+                cwd: cwd,
+                path: path,
+                content: content,
+                overwrite: overwrite,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
+    public func deleteWorkspaceFile(
+        cwd: String,
+        path: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "DELETE",
+            path: "/workspace/file",
+            body: WorkspaceDeletePayload(
+                cwd: cwd,
+                path: path,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
+    public func moveWorkspaceFile(
+        cwd: String,
+        fromPath: String,
+        toPath: String,
+        overwrite: Bool,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST",
+            path: "/workspace/file/move",
+            body: WorkspaceMovePayload(
+                cwd: cwd,
+                fromPath: fromPath,
+                toPath: toPath,
+                overwrite: overwrite,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func listExtensionInteractions(
         sessionId: String,
         cwd: String,
@@ -659,6 +721,31 @@ private struct GitPathsPayload: Encodable {
 private struct GitCommitPayload: Encodable {
     let cwd: String
     let message: String
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct WorkspaceWritePayload: Encodable {
+    let cwd: String
+    let path: String
+    let content: String
+    let overwrite: Bool
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct WorkspaceDeletePayload: Encodable {
+    let cwd: String
+    let path: String
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct WorkspaceMovePayload: Encodable {
+    let cwd: String
+    let fromPath: String
+    let toPath: String
+    let overwrite: Bool
     let commandId: String
     let runtimeEpoch: String
 }

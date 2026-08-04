@@ -1,6 +1,6 @@
 # macOS 原生客户端与 Pi Runtime 融合：研究与架构决策
 
-> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验和 Unix-socket smoke 已完成；完整 workspace、后台/登录生命周期、Keychain 迁移和远程能力仍在实施。**
+> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验、Unix-socket smoke 与 Runtime-owned workspace 文本创建/编辑/移动/删除已完成；图片/附件预览、review/checkpoint、后台/登录生命周期、Keychain 迁移和远程能力仍在实施。**
 >
 > 范围覆写：当前用户明确要求不做代码签名、公证、Gatekeeper/DMG/Sparkle 发布。本文保留相关研究作为未来参考，但所有当前验收以 exact dependency lock、manifest/hash、Node 版本/架构和真实 Runtime smoke 为准。
 >
@@ -896,7 +896,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock、Runtime-owned read-only workspace tree/file projection、App-bundled Keychain `CredentialStore`，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。App-owned Runtime 的 socket 断线、sleep/wake 和 restart recovery 已有单次恢复 gate、refresh generation 与打包 smoke 覆盖。Keychain helper 仅允许 Pi Agent 固定 service 和 provider-id account，secret 经 stdin/stdout 在 Runtime 与 `Security.framework` helper 间传递，不写入 SwiftUI state、JSON log 或 command-line argument；list 仅投影 provider/type。下一步是完成旧 `auth.json` 的显式预览/迁移、复杂 OAuth 流与 provider UI、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off、dependency-closure/SBOM/license 审计和完整的人工 crash/lifecycle matrix；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock、Runtime-owned workspace tree/file projection，以及文本文件的新建、编辑保存、移动/重命名和二次确认删除；这些 mutation 都使用 runtime epoch、`commandId`、payload fingerprint 与可查询 receipt，bundled smoke 在自建临时授权项目中验证写入、receipt retry、读取、移动和删除。App-bundled Keychain `CredentialStore`，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt 也已交付。App-owned Runtime 的 socket 断线、sleep/wake 和 restart recovery 已有单次恢复 gate、refresh generation 与打包 smoke 覆盖。Keychain helper 仅允许 Pi Agent 固定 service 和 provider-id account，secret 经 stdin/stdout 在 Runtime 与 `Security.framework` helper 间传递，不写入 SwiftUI state、JSON log 或 command-line argument；list 仅投影 provider/type。下一步是完成图片/附件预览、workspace review/checkpoint、旧 `auth.json` 的显式预览/迁移、复杂 OAuth 流与 provider UI、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off、dependency-closure/SBOM/license 审计和完整的人工 crash/lifecycle matrix；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

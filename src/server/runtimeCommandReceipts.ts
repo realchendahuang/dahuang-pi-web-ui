@@ -21,6 +21,9 @@ export const RUNTIME_COMMAND_KINDS = {
 	commitGit: "commit-git",
 	respondExtensionInteraction: "respond-extension-interaction",
 	authorizeProject: "authorize-project",
+	writeWorkspaceFile: "write-workspace-file",
+	deleteWorkspaceFile: "delete-workspace-file",
+	moveWorkspaceFile: "move-workspace-file",
 } as const;
 
 export type RuntimeCommandKind =
@@ -102,6 +105,28 @@ export interface RuntimeAuthorizeProjectCommandResult {
 	path: string;
 }
 
+export interface RuntimeWriteWorkspaceFileCommandResult {
+	written: true;
+	path: string;
+	size: number;
+	modifiedAt: string;
+	created: boolean;
+}
+
+export interface RuntimeDeleteWorkspaceFileCommandResult {
+	deletedFile: true;
+	path: string;
+	existed: boolean;
+}
+
+export interface RuntimeMoveWorkspaceFileCommandResult {
+	moved: true;
+	fromPath: string;
+	toPath: string;
+	size: number;
+	modifiedAt: string;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
@@ -115,7 +140,10 @@ export type RuntimeCommandResult =
 	| RuntimeContinueTerminalCommandResult
 	| RuntimeGitMutationCommandResult
 	| RuntimeExtensionInteractionResponseCommandResult
-	| RuntimeAuthorizeProjectCommandResult;
+	| RuntimeAuthorizeProjectCommandResult
+	| RuntimeWriteWorkspaceFileCommandResult
+	| RuntimeDeleteWorkspaceFileCommandResult
+	| RuntimeMoveWorkspaceFileCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

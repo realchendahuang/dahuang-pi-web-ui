@@ -1,6 +1,6 @@
 # Pi Agent for macOS：彻底原生化方案
 
-> 状态：Phase 0、Phase 1 与 bundled Runtime 的本机实现已落地；当前可构建、校验并启动未签名的原生 `.app`，生命周期、只读 workspace 与 App-bundled Keychain credential store 已实现，完整 workspace、旧 auth 迁移和远程能力继续实施。
+> 状态：Phase 0、Phase 1 与 bundled Runtime 的本机实现已落地；当前可构建、校验并启动未签名的原生 `.app`，生命周期、Runtime-owned workspace 文本创建/编辑/移动/删除与 App-bundled Keychain credential store 已实现；图片/附件预览、review/checkpoint、旧 auth 迁移和远程能力继续实施。
 >
 > 当前范围覆盖：用户明确要求**不做代码签名、公证或 Gatekeeper 发布**。本地完整性依赖固定 Node、exact npm lock、runtime manifest、SHA-256、架构检查和真实 socket smoke；签名相关工作不构成本阶段门槛。
 >
@@ -738,13 +738,13 @@ Diagnostics 页面至少展示：
 - TypeScript/Swift contract fixture 与 native contract checks；
 - 未签名 `.app` 组装、exact Runtime dependency lock、manifest/hash 与本机验证脚本。
 
-bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-pty`、dependency inventory、runtime manifest、App 自动启动与 Swift socket smoke 已交付。原生 Inspector 现已通过 Runtime-owned read-only file tree/file contract 提供项目文件浏览与文本预览；Textual/Markdown renderer、文件编辑/图片预览、完整 workspace 与自动更新仍是后续交付。
+bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-pty`、dependency inventory、runtime manifest、App 自动启动与 Swift socket smoke 已交付。原生 Inspector 现已通过 Runtime-owned contract 提供项目文件浏览、文本预览、新建文本文件、编辑保存、移动/重命名和二次确认删除；所有 mutation 带 `commandId`、runtime epoch 和可回读 receipt，Swift 不直接写 checkout。真实 bundled smoke 会在自建临时授权项目中验证写入、相同 receipt 重试、读取、移动和删除。Textual/Markdown renderer、图片/附件预览、review/checkpoint、完整 workspace 与自动更新仍是后续交付。
 
 当前切片退出证据：在本机 Apple Silicon 上，未签名 `.app` artifact 已验证；验证器完成所有 bundle resources 的 hash 检查，启动内部 Node Runtime，检查 `/health`、`/runtime/hello` 和 idempotent abort receipt，并由 Swift ContractCheck 读取真实 session projection。App 退出时会 refresh active-session health、先 abort actual work，并仅管理自己拥有的 child Runtime；窗口关闭后后台入口、干净账户安装与远程能力仍是后续门槛。
 
 ### Phase 1：原生单机 MVP
 
-交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、活动/Archived 分组、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、Pi extension 原生 dialog、基础设置和诊断。会话可在原生侧边栏 Import、Fork、归档、恢复；Import 使用 macOS 文件选择器选择 JSONL，再让 Pi SDK 复制并切换到 imported session，Fork 则先展示 Runtime 投影的 user-message 候选项，再让 Pi SDK 执行真实 session replacement。永久删除只对 Archived 会话开放且要求二次确认。右侧 inspector 已提供 Runtime-owned Git status/diff、逐文件 stage/unstage 和原生 commit sheet；Swift 不直接运行 Git，socket 未知结果只回读 receipt，Git hooks 不会被绕过。Inspector 同时通过 Runtime-owned、project-capability 约束的只读 file tree/file contract 浏览目录并预览文本；Swift 不直接读取 checkout，relative path、目录穿越和 symlink escape 都在 Runtime 路径边界拒绝。Pi extension 的 select/confirm/input/editor 通过 Runtime-owned pending projection 显示为原生 Swift sheet，不会让 SDK callback 穿透到 App；session event stream 打开/关闭事件驱动 refresh，重连后会重读 pending 状态。当前不提供 push/reset/revert、子模块内部暂存、文件编辑/图片预览、OMP 完整投影、多窗口或完整 workspace projection。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal/Git/workspace/extension-interaction capability 协议。
+交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、活动/Archived 分组、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、Pi extension 原生 dialog、基础设置和诊断。会话可在原生侧边栏 Import、Fork、归档、恢复；Import 使用 macOS 文件选择器选择 JSONL，再让 Pi SDK 复制并切换到 imported session，Fork 则先展示 Runtime 投影的 user-message 候选项，再让 Pi SDK 执行真实 session replacement。永久删除只对 Archived 会话开放且要求二次确认。右侧 inspector 已提供 Runtime-owned Git status/diff、逐文件 stage/unstage 和原生 commit sheet；Swift 不直接运行 Git，socket 未知结果只回读 receipt，Git hooks 不会被绕过。Inspector 同时通过 Runtime-owned、project-capability 约束的 file tree/file contract 浏览目录并预览文本，并可新建 UTF-8 文本文件、编辑保存、移动/重命名和二次确认删除；新建与移动默认拒绝覆盖已有文件，所有文件 mutation 也在未知 socket 结果时只查询同一 receipt。Swift 不直接读写 checkout，relative path、目录穿越和 symlink escape 都在 Runtime 路径边界拒绝。Pi extension 的 select/confirm/input/editor 通过 Runtime-owned pending projection 显示为原生 Swift sheet，不会让 SDK callback 穿透到 App；session event stream 打开/关闭事件驱动 refresh，重连后会重读 pending 状态。当前不提供 push/reset/revert、子模块内部暂存、图片/附件预览、review/checkpoint、OMP 完整投影、多窗口或完整 workspace projection。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal/Git/workspace/extension-interaction capability 协议。
 
 退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 已达到本机门槛，完整 workspace 仍未达到该门槛。
 
