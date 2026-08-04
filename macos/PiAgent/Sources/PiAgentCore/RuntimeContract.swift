@@ -490,6 +490,46 @@ public struct RuntimeSessionEvent: Decodable, Sendable {
     }
 }
 
+/// Runtime-owned notification metadata. The message is supplied by a Pi
+/// extension's explicit notify call; the native App never derives notification
+/// text from a transcript or provider-private event payload.
+public struct RuntimeSessionNotification: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let message: String
+    public let truncated: Bool
+    public let severity: String
+    public let receivedAt: String
+    public let order: Int
+}
+
+/// Bounded Runtime projection used to fetch the message behind a notification
+/// summary. Its daemon instance id namespaces local OS-notification dedupe.
+public struct RuntimeSessionNotificationInbox: Codable, Equatable, Sendable {
+    public let daemonInstanceId: String
+    public let catalogRevision: Int
+    public let summary: Summary
+    public let notifications: [RuntimeSessionNotification]
+
+    public struct Summary: Codable, Equatable, Sendable {
+        public let sessionId: String
+        public let cwd: String
+        public let inboxRevision: Int
+        public let retainedCount: Int
+        public let discardedCount: Int
+        public let highestSeverity: String?
+    }
+}
+
+/// The deliberately narrow event sent to the native notification subscriber.
+/// It carries no transcript, tool, prompt, or provider data. The App uses it
+/// only as a signal to reread the bounded inbox through the Runtime contract.
+public struct RuntimeNotificationSummaryEvent: Codable, Equatable, Sendable {
+    public let type: String
+    public let daemonInstanceId: String
+    public let catalogRevision: Int
+    public let summary: RuntimeSessionNotificationInbox.Summary
+}
+
 /// A terminal record returned by the Node PTY owner.
 public struct RuntimeTerminalInfo: Codable, Equatable, Identifiable, Sendable {
     public let id: String
@@ -950,6 +990,15 @@ public protocol RuntimeEventStreamClient: Sendable {
     func subscribe(sessionId: String, cwd: String, runtimeId: String?) -> RuntimeEventSubscription
 }
 
+public protocol RuntimeNotificationClient: Sendable {
+    func notificationInbox(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> RuntimeSessionNotificationInbox
+    func subscribeNotificationSummaries(cwd: String) -> RuntimeNotificationSubscription
+}
+
 public protocol RuntimeTerminalClient: Sendable {
     func listTerminals(cwd: String) async throws -> [RuntimeTerminalInfo]
     func createTerminal(
@@ -977,6 +1026,29 @@ public final class RuntimeEventSubscription: @unchecked Sendable {
 
     public init(
         events: AsyncThrowingStream<RuntimeSessionEvent, Error>,
+        ready: AsyncThrowingStream<Void, Error>,
+        cancel: @escaping @Sendable () -> Void
+    ) {
+        self.events = events
+        self.ready = ready
+        self.cancelAction = cancel
+    }
+
+    public func cancel() {
+        cancelAction()
+    }
+}
+
+/// A cancellable project-scoped notification summary stream. Runtime route
+/// filtering and the App capability token ensure it cannot observe another
+/// project's global events.
+public final class RuntimeNotificationSubscription: @unchecked Sendable {
+    public let events: AsyncThrowingStream<RuntimeNotificationSummaryEvent, Error>
+    public let ready: AsyncThrowingStream<Void, Error>
+    private let cancelAction: @Sendable () -> Void
+
+    public init(
+        events: AsyncThrowingStream<RuntimeNotificationSummaryEvent, Error>,
         ready: AsyncThrowingStream<Void, Error>,
         cancel: @escaping @Sendable () -> Void
     ) {

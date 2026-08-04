@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeAuthClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
 	public let projectCapabilityToken: String?
 
@@ -511,6 +511,31 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             }
         )
         return runner.eventSubscription()
+    }
+
+    public func notificationInbox(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> RuntimeSessionNotificationInbox {
+        try await request(
+            method: "GET",
+            path: "/sessions/\(Self.pathSegment(sessionId))/notifications",
+            query: query(cwd: cwd, runtimeId: runtimeId)
+        )
+    }
+
+    public func subscribeNotificationSummaries(cwd: String) -> RuntimeNotificationSubscription {
+        let runner = UnixSocketStreamRunner<RuntimeNotificationSummaryEvent>(
+            socketPath: socketPath,
+            path: "/sessions/notifications/events",
+            query: [("cwd", cwd)],
+			capabilityToken: projectCapabilityToken,
+            decode: { data in
+                try JSONDecoder().decode(RuntimeNotificationSummaryEvent.self, from: data)
+            }
+        )
+        return runner.notificationSubscription()
     }
 
     public func listTerminals(cwd: String) async throws -> [RuntimeTerminalInfo] {
@@ -1536,6 +1561,17 @@ private extension UnixSocketStreamRunner where Event == RuntimeSessionEvent {
     func eventSubscription() -> RuntimeEventSubscription {
         start()
         return RuntimeEventSubscription(
+            events: events,
+            ready: ready,
+            cancel: { [self] in self.cancel() }
+        )
+    }
+}
+
+private extension UnixSocketStreamRunner where Event == RuntimeNotificationSummaryEvent {
+    func notificationSubscription() -> RuntimeNotificationSubscription {
+        start()
+        return RuntimeNotificationSubscription(
             events: events,
             ready: ready,
             cancel: { [self] in self.cancel() }

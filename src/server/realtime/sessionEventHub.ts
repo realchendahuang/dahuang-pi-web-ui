@@ -11,7 +11,7 @@ export interface RealtimeSocket {
 
 export class SessionEventHub {
   private readonly socketsBySession = new Map<string, Set<RealtimeSocket>>();
-  private readonly globalSockets = new Set<RealtimeSocket>();
+  private readonly globalSockets = new Map<RealtimeSocket, (event: RealtimeEvent) => boolean>();
   private readonly seqBySession = new Map<string, number>();
 
   add(sessionId: string, socket: RealtimeSocket): void {
@@ -26,8 +26,8 @@ export class SessionEventHub {
     });
   }
 
-  addGlobal(socket: RealtimeSocket): void {
-    this.globalSockets.add(socket);
+  addGlobal(socket: RealtimeSocket, accepts: (event: RealtimeEvent) => boolean = () => true): void {
+    this.globalSockets.set(socket, accepts);
     socket.on("close", () => this.globalSockets.delete(socket));
   }
 
@@ -53,13 +53,35 @@ export class SessionEventHub {
   }
 
   publishNotificationSummary(event: SessionNotificationSummaryEvent): void {
-    const payload = JSON.stringify(event);
-    this.sendToSockets(this.globalSockets, payload);
+    this.sendToGlobalSockets(event);
   }
 
   publishRealtime(event: RealtimeEvent): void {
+    this.sendToGlobalSockets(event);
+  }
+
+  private sendToGlobalSockets(event: RealtimeEvent): void {
     const payload = JSON.stringify(event);
-    this.sendToSockets(this.globalSockets, payload);
+    for (const [socket, accepts] of this.globalSockets) {
+      if (socket.readyState !== socket.OPEN) continue;
+      let accepted: boolean;
+      try {
+        accepted = accepts(event);
+      } catch {
+        accepted = false;
+      }
+      if (!accepted) continue;
+      try {
+        socket.send(payload);
+      } catch {
+        this.globalSockets.delete(socket);
+        try {
+          socket.terminate();
+        } catch {
+          // Removal is authoritative; cleanup failure must not block healthy sockets.
+        }
+      }
+    }
   }
 
   private sendToSockets(sockets: Set<RealtimeSocket> | undefined, payload: string): void {

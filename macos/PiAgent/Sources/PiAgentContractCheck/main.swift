@@ -13,6 +13,7 @@ struct PiAgentContractCheck {
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
+        try checkTaskNotificationDecoding()
         try checkStreamingAndTerminalDecoding()
         checkRuntimeLifecycleRecovery()
         try await checkRuntimeSupervisorOwnership()
@@ -359,6 +360,28 @@ struct PiAgentContractCheck {
 		precondition(encodedAttachment?["kind"] as? String == "image")
 		precondition(encodedAttachment?["id"] == nil)
         precondition(page.total == 2)
+    }
+
+    private static func checkTaskNotificationDecoding() throws {
+        let decoder = JSONDecoder()
+        let inbox = try decoder.decode(
+            RuntimeSessionNotificationInbox.self,
+            from: Data(#"{"daemonInstanceId":"daemon-1","catalogRevision":7,"summary":{"sessionId":"s1","cwd":"/repo","inboxRevision":3,"retainedCount":1,"discardedCount":0,"highestSeverity":"warning"},"notifications":[{"id":"notice-1","message":"Task needs attention","truncated":false,"severity":"warning","receivedAt":"2026-08-05T00:00:00.000Z","order":4}]}"#.utf8)
+        )
+        precondition(inbox.daemonInstanceId == "daemon-1")
+        precondition(inbox.summary.sessionId == "s1")
+        precondition(inbox.summary.cwd == "/repo")
+        precondition(inbox.notifications.first?.message == "Task needs attention")
+        precondition(inbox.notifications.first?.order == 4)
+
+        let event = try decoder.decode(
+            RuntimeNotificationSummaryEvent.self,
+            from: Data(#"{"type":"notifications.summary","daemonInstanceId":"daemon-1","catalogRevision":7,"summary":{"sessionId":"s1","cwd":"/repo","inboxRevision":3,"retainedCount":1,"discardedCount":0,"highestSeverity":"warning"}}"#.utf8)
+        )
+        precondition(event.type == "notifications.summary")
+        precondition(event.daemonInstanceId == "daemon-1")
+        precondition(event.summary.sessionId == "s1")
+        precondition(event.summary.cwd == "/repo")
     }
 
     private static func checkStreamingAndTerminalDecoding() throws {

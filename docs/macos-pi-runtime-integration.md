@@ -524,6 +524,14 @@ Runtime 在 Pi session 绑定 extensions 时，将 `ctx.ui.select`、`confirm`�
 
 ### 7.4 Event projection
 
+#### 项目隔离的原生活动通知
+
+原生任务提醒不是 broad global event stream 的另一种消费者。bundled App 用 project-capability token 调用 `GET /sessions/notifications/events?cwd=…`；该 WebSocket 在 Runtime 侧只转发同一 canonical cwd 的 `notifications.summary`，不会暴露其他项目的 status、activity、transcript 或 tool event。收到 summary 后，App 使用同一授权项目的 `GET /sessions/:sessionId/notifications` 读取 bounded inbox，再决定是否生成系统提醒。
+
+系统通知是显式 opt-in：Settings 默认关闭，只有用户切换后才请求 macOS alert/sound 授权。通知正文只来自 Pi extension 的明确 `notify` 记录；Swift 不会从 provider 事件、Prompt、terminal、tool output 或 transcript 生成正文。App 首次订阅会先将已有 inbox 项加入有界 seen cache，之后以 Runtime daemon instance、project、session 和通知 id 去重；所以断线重连、多窗口或同一 summary 的重复发送都不应产生重复 alert。App 在前台时只更新本地投影，不显示 macOS toast。
+
+通知点击携带的最小 metadata 只含 version、opaque session id 和 cwd。它只能选择一个当前已打开、已授权且 cwd 匹配的 Thread；如果没有这样的窗口，App 只被激活，用户仍需通过原有 bookmark 流程选择/重开项目。该点击不能以 raw path 扩展 filesystem authority，也不会把 notification body、secret 或 transcript 写入 `userInfo`。此交付与 Login Item 独立：Runtime 的背景运行入口已存在，但用户可选的登录启动仍是后续工作。
+
 Pi SDK 原始事件应投影为 UI 所需的稳定事件，例如：
 
 - `session.started`；

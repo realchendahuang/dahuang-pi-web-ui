@@ -178,6 +178,83 @@ describe("SessionEventHub", () => {
     expect(sessionSocket.send).not.toHaveBeenCalled();
   });
 
+  it("filters project-scoped notification subscribers without affecting global delivery", () => {
+    const hub = new SessionEventHub();
+    const unfiltered = new FakeSocket();
+    const matchingProject = new FakeSocket();
+    const otherProject = new FakeSocket();
+    const sessionSocket = new FakeSocket();
+    hub.addGlobal(unfiltered);
+    hub.addGlobal(matchingProject, (event) =>
+      event.type === "notifications.summary" && event.summary.cwd === "/workspace/a",
+    );
+    hub.addGlobal(otherProject, (event) =>
+      event.type === "notifications.summary" && event.summary.cwd === "/workspace/b",
+    );
+    hub.add("s1", sessionSocket);
+
+    const matching = {
+      type: "notifications.summary" as const,
+      daemonInstanceId: "daemon-test",
+      catalogRevision: 1,
+      summary: {
+        sessionId: "s1",
+        cwd: "/workspace/a",
+        inboxRevision: 1,
+        retainedCount: 1,
+        discardedCount: 0,
+        highestSeverity: "warning" as const,
+      },
+    };
+    const nonmatching = {
+      ...matching,
+      catalogRevision: 2,
+      summary: { ...matching.summary, cwd: "/workspace/b", inboxRevision: 2 },
+    };
+    const status = {
+      type: "status.update" as const,
+      status: {
+        sessionId: "s1",
+        isStreaming: false,
+        isCompacting: false,
+        isBashRunning: false,
+        pendingMessageCount: 0,
+        queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      },
+    };
+
+    hub.publishNotificationSummary(matching);
+    hub.publishNotificationSummary(nonmatching);
+    hub.publishGlobal(status);
+
+    expect(matchingProject.send).toHaveBeenCalledTimes(1);
+    expect(matchingProject.send).toHaveBeenCalledWith(JSON.stringify(matching));
+    expect(otherProject.send).toHaveBeenCalledTimes(1);
+    expect(otherProject.send).toHaveBeenCalledWith(JSON.stringify(nonmatching));
+    expect(unfiltered.send).toHaveBeenCalledWith(JSON.stringify(matching));
+    expect(unfiltered.send).toHaveBeenCalledWith(JSON.stringify(nonmatching));
+    expect(unfiltered.send).toHaveBeenCalledWith(JSON.stringify(status));
+    expect(sessionSocket.send).not.toHaveBeenCalled();
+  });
+
+  it("contains a global subscription predicate failure without disrupting healthy delivery", () => {
+    const hub = new SessionEventHub();
+    const failedPredicate = new FakeSocket();
+    const healthy = new FakeSocket();
+    hub.addGlobal(failedPredicate, () => {
+      throw new Error("bad filter");
+    });
+    hub.addGlobal(healthy);
+    const event = { type: "session.name" as const, sessionId: "s1", name: "Renamed" };
+
+    hub.publishGlobal(event);
+
+    expect(failedPredicate.send).not.toHaveBeenCalled();
+    expect(healthy.send).toHaveBeenCalledWith(JSON.stringify(event));
+  });
+
   it("contains termination failures while publishing unstamped global events", () => {
     const hub = new SessionEventHub();
     const failed = new FakeSocket();

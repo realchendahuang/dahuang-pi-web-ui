@@ -32,7 +32,7 @@ import {
 import type {
 	ExtensionInteractionResponse,
 } from "./extensionInteractionService.js";
-import { normalizeRequestCwd } from "../workingDirectory.js";
+import { cwdPathsEqual, normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type {
 	SessionRouteLookup,
@@ -1058,6 +1058,29 @@ export function registerSessionRoutes(
 			// Only the id matters for event subscription; cwd is intentionally ignored
 			// so a malformed value cannot throw inside the websocket handler.
 			eventHub.add(request.params.sessionId, socket);
+		},
+	);
+
+	/**
+	 * Native clients need background task notifications without subscribing to
+	 * the broad global stream, which can contain activity from another selected
+	 * project. The Native project-capability hook validates this cwd before the
+	 * websocket handler runs; this route then forwards only matching summaries.
+	 */
+	app.get<{ Querystring: SessionQuery }>(
+		`${prefix}/sessions/notifications/events`,
+		{ websocket: true },
+		(socket, request) => {
+			const cwd = request.query.cwd;
+			if (cwd === undefined || cwd === "") {
+				socket.close();
+				return;
+			}
+			const normalizedCwd = normalizeRequestCwd(cwd);
+			eventHub.addGlobal(socket, (event) =>
+				event.type === "notifications.summary" &&
+				cwdPathsEqual(event.summary.cwd, normalizedCwd),
+			);
 		},
 	);
 
