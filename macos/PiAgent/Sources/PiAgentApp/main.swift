@@ -129,6 +129,19 @@ struct PiAgentApp: App {
                     .padding()
             }
         }
+
+        // A visible background affordance: closing all document windows never
+        // implies stopping the Runtime, and this menu gives users a way back.
+        MenuBarExtra("Pi Agent", systemImage: "sparkles") {
+            Button("Open Pi Agent") {
+                openWindow(id: "pi-agent-main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            Divider()
+            Button("Quit Pi Agent") {
+                NSApp.terminate(nil)
+            }
+        }
     }
 }
 
