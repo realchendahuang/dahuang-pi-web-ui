@@ -155,6 +155,8 @@ final class AppModel: ObservableObject {
     @Published var authProviders: [RuntimeAuthProvider] = []
     @Published var isAuthLoading = false
     @Published var authErrorMessage: String?
+    @Published var activeAuthFlow: RuntimeAuthFlow?
+    @Published var authInput = ""
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -1199,6 +1201,55 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func startAuthFlow(_ provider: RuntimeAuthProvider) {
+        guard let client = runtimeClient as? any RuntimeAuthClient, !isAuthLoading else { return }
+        isAuthLoading = true
+        authErrorMessage = nil
+        Task { [weak self] in
+            do {
+                let flow = try await (provider.authType == "oauth" ? client.startOAuthLogin(providerId: provider.id) : client.startInteractiveApiKeyLogin(providerId: provider.id))
+                guard let self else { return }
+                self.activeAuthFlow = flow
+                self.authInput = ""
+                self.isAuthLoading = false
+            } catch {
+                self?.authErrorMessage = error.localizedDescription
+                self?.isAuthLoading = false
+            }
+        }
+    }
+
+    func refreshAuthFlow() {
+        guard let flow = activeAuthFlow, let client = runtimeClient as? any RuntimeAuthClient else { return }
+        Task { [weak self] in
+            do { self?.activeAuthFlow = try await client.authFlow(id: flow.flowId) }
+            catch { self?.authErrorMessage = error.localizedDescription }
+        }
+    }
+
+    func respondToAuthFlow(_ value: String? = nil) {
+        guard let flow = activeAuthFlow, let client = runtimeClient as? any RuntimeAuthClient,
+              let requestId = flow.prompt?.requestId ?? flow.select?.requestId else { return }
+        let submitted = value ?? authInput
+        Task { [weak self] in
+            do {
+                let updated = try await client.respondAuthFlow(id: flow.flowId, requestId: requestId, value: submitted)
+                self?.activeAuthFlow = updated
+                self?.authInput = ""
+                if updated.status == "complete" { self?.refreshAuthProviders() }
+            } catch { self?.authErrorMessage = error.localizedDescription }
+        }
+    }
+
+    func cancelAuthFlow() {
+        guard let flow = activeAuthFlow, let client = runtimeClient as? any RuntimeAuthClient else { activeAuthFlow = nil; return }
+        Task { [weak self] in
+            _ = try? await client.cancelAuthFlow(id: flow.flowId)
+            self?.activeAuthFlow = nil
+            self?.authInput = ""
+        }
+    }
+
     func openWorkspaceEntry(_ entry: RuntimeWorkspaceEntry) {
         if entry.isDirectory {
             refreshWorkspace(path: entry.path)
@@ -2239,6 +2290,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.showWorkspaceNewFileSheet, onDismiss: model.cancelWorkspaceFileCreation) {
             WorkspaceNewFileSheet(model: model)
         }
+        .sheet(item: $model.activeAuthFlow) { flow in
+            NativeAuthFlowSheet(model: model, flow: flow)
+        }
 		.sheet(item: Binding(
 			get: { model.activeExtensionInteraction },
 			set: { _ in }
@@ -2980,9 +3034,13 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.authProviders, id: \.displayID) { provider in
-                        LabeledContent(provider.name) {
-                            Text(providerStatusLabel(provider))
-                                .foregroundStyle(provider.status.configured ? .green : .secondary)
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(provider.name)
+                                Text(providerStatusLabel(provider)).font(.caption).foregroundStyle(provider.status.configured ? .green : .secondary)
+                            }
+                            Spacer()
+                            Button(provider.status.configured ? "Reconfigure…" : "Configure…") { model.startAuthFlow(provider) }
                         }
                     }
                 }
@@ -2997,6 +3055,38 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 520)
+    }
+}
+
+struct NativeAuthFlowSheet: View {
+    @ObservedObject var model: AppModel
+    let flow: RuntimeAuthFlow
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Connect \(flow.providerName)").font(.title2.weight(.semibold))
+            if let auth = flow.auth {
+                Button("Open authorization in browser") { openURL(URL(string: auth.url)!) }
+                if let instructions = auth.instructions { Text(instructions).foregroundStyle(.secondary) }
+                if let code = auth.deviceCode?.userCode { Text("Device code: \(code)").textSelection(.enabled) }
+            }
+            ForEach(flow.progress, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+            if let prompt = flow.prompt {
+                if prompt.promptType == "secret" { SecureField(prompt.message, text: $model.authInput).textFieldStyle(.roundedBorder) }
+                else { TextField(prompt.message, text: $model.authInput).textFieldStyle(.roundedBorder) }
+                Button("Continue") { model.respondToAuthFlow() }.buttonStyle(.borderedProminent)
+            }
+            if let select = flow.select {
+                Text(select.message)
+                ForEach(select.options) { option in Button(option.label) { model.respondToAuthFlow(option.value) } }
+            }
+            if let error = flow.error { Text(error).foregroundStyle(.red) }
+            HStack { Spacer(); Button("Refresh") { model.refreshAuthFlow() }; Button("Cancel") { model.cancelAuthFlow() }.keyboardShortcut(.cancelAction) }
+        }
+        .padding(24)
+        .frame(width: 500)
+        .onChange(of: flow.prompt?.requestId) { _, _ in model.authInput = "" }
     }
 }
 
