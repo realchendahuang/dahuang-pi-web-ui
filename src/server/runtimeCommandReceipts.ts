@@ -20,6 +20,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	unstageGitPaths: "unstage-git-paths",
 	commitGit: "commit-git",
 	respondExtensionInteraction: "respond-extension-interaction",
+	authorizeProject: "authorize-project",
 } as const;
 
 export type RuntimeCommandKind =
@@ -96,6 +97,11 @@ export interface RuntimeExtensionInteractionResponseCommandResult {
 	interaction: ExtensionInteraction;
 }
 
+export interface RuntimeAuthorizeProjectCommandResult {
+	authorized: true;
+	path: string;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
@@ -108,7 +114,8 @@ export type RuntimeCommandResult =
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult
 	| RuntimeGitMutationCommandResult
-	| RuntimeExtensionInteractionResponseCommandResult;
+	| RuntimeExtensionInteractionResponseCommandResult
+	| RuntimeAuthorizeProjectCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

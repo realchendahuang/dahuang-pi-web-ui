@@ -73,10 +73,12 @@ public struct BundledRuntime: Sendable {
     public static let protocolMajor = 1
 
     public let launchPlan: RuntimeLaunchPlan
+	public let projectCapabilityToken: String
     private let verification: RuntimeBundleVerification
 
-    private init(launchPlan: RuntimeLaunchPlan, verification: RuntimeBundleVerification) {
+    private init(launchPlan: RuntimeLaunchPlan, projectCapabilityToken: String, verification: RuntimeBundleVerification) {
         self.launchPlan = launchPlan
+		self.projectCapabilityToken = projectCapabilityToken
         self.verification = verification
     }
 
@@ -125,6 +127,8 @@ public struct BundledRuntime: Sendable {
         runtimeEnvironment["PI_WEB_SESSIOND_SOCKET"] = socketPath
         runtimeEnvironment["PI_AGENT_RUNTIME_MANIFEST"] = manifestURL.path
         runtimeEnvironment["PI_AGENT_RUNTIME_EPOCH"] = UUID().uuidString
+		let projectCapabilityToken = UUID().uuidString
+		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken
 
         let verification = RuntimeBundleVerification(
             root: runtimeRoot,
@@ -139,6 +143,7 @@ public struct BundledRuntime: Sendable {
                 workingDirectory: runtimeRoot,
                 socketPath: socketPath
             ),
+			projectCapabilityToken: projectCapabilityToken,
             verification: verification
         )
     }

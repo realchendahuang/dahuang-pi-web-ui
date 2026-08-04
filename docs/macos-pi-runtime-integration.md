@@ -112,11 +112,14 @@ Pi Agent.app
 
 ### 1.2.2 XPC 与安全授权的正确阶段
 
-当前未签名、非 Sandbox 的本机版本，应继续使用 private Unix socket：其合约已经覆盖 command receipt、
-snapshot、WebSocket events 和 terminal bytes，最适合先完成 session/reconnect/PTY 的可靠性矩阵。正在收口的
-project capability token + canonical real-path allow-list 应被表述为 **同用户 Runtime 的产品级授权边界**；它不是
-macOS 内核强制的 security scope，也不能替代 sandbox entitlement。只有对应 Runtime guard、原生授权调用和
-回归测试全部完成后，才能把这个 logical capability 标为已交付。
+当前未签名、非 Sandbox 的本机版本继续使用 private Unix socket：其合约已经覆盖 command receipt、
+snapshot、WebSocket events 和 terminal bytes，最适合先完成 session/reconnect/PTY 的可靠性矩阵。现已实现的
+project capability token + canonical real-path allow-list 是 **同用户 Runtime 的产品级授权边界**：App 每次启动
+bundled Runtime 生成仅在 child environment 中传递的 token；Runtime 对除 `/health` 与 `/runtime/hello` 外的
+所有请求要求该 header，并只接受授权 root 或其 canonical descendant 的 `cwd`。`authorize-project` 是 epoch-bound、
+receipt-safe mutation，原生客户端在读取 session projection 前先完成该 receipt；streaming WebSocket 同样发送 token。
+focused service/route/WebSocket tests 与 bundle smoke 分别覆盖缺 token `401`、未授权 cwd `403`、授权后访问以及
+receipt retry。这不是 macOS 内核强制的 security scope，也不能替代 sandbox entitlement。
 
 当产品进入签名/Sandbox 交付时，新增一个有明确验收的 XPC RuntimeHost spike，而不是将现有 Node Runtime
 草率改成 XPC：
@@ -155,7 +158,7 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 | --- | --- | --- |
 | P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **已交付**：Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue、Git stage/unstage/commit，以及 Pi extension dialog response。相同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。剩余工作是跨 Runtime restart 的持久 command ledger 与端到端断线矩阵。 |
 | P0 | 原生 approval/extension-UI bridge | **已交付**：Pi `select`、`confirm`、`input` 与 `editor` 被投影为 Swift 原生 sheet；取消、SDK timeout/Abort、session replacement、Runtime shutdown 和 App 重连都有确定语义。 |
-| P0 | project authorization 的 Runtime capability | 不只持久化 bookmark：验证 Runtime 对未授权 cwd 拒绝、授权续期/失效可见；若进入 Sandbox 路线，先做独立跨进程 spike。 |
+| P0 | project authorization 的 Runtime capability | **当前 non-sandbox logical capability 已交付**：project bookmark 仍由 Swift 持有；bundled Runtime 只接受 App launch token，并用 `realpath` 的 root/descendant allow-list 拒绝 raw/relative、缺失、sibling-prefix 和 symlink-escape cwd。Swift 显示 Authorizing/Authorized/failed 状态，未授权时不创建 thread/prompt/terminal。Sandbox 下 bookmark data → XPC RuntimeHost → Node 的真实 capability hand-off 仍是独立 P1 spike。 |
 | P1 | lifecycle recovery matrix | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。 |
 | P1 | dependency closure、SBOM 与冷启动测量 | 基于实际 staging tree 的资源清单、license/SBOM、arm64/x64 smoke、hash 时延和 Runtime 首次 ready 时间。 |
 | P2 | provider/harness driver 扩展 | 先以 `SessionRuntimeDriver` capability contract 接入，再决定 Pi RPC 或其他 CLI driver；不让 provider 特性穿透 Swift UI。 |
@@ -733,7 +736,7 @@ credential broker 必须限制调用方签名、provider id、操作类型和返
 
 Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookmark 及 stale 状态。[Apple 文件访问文档](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox)是未来 Sandbox/跨进程授权设计的基线。
 
-第一版站外分发仍保留 bookmark 层，原因是它提供明确的项目授权、路径移动恢复和未来 sandbox 迁移 seam。Runtime 只能启动已注册项目路径；bookmark stale、目录消失或权限撤销时返回可解释错误，不静默扩大到父目录或整个 Home。
+第一版站外分发仍保留 bookmark 层，原因是它提供明确的项目授权、路径移动恢复和未来 sandbox 迁移 seam。当前 bundled Runtime 额外要求 App launch token，并在 `POST /runtime/projects/authorize` 成功后才接受该 canonical root 或真实子目录的 cwd；错误 token、raw relative cwd、目录不存在、sibling prefix 和 symlink escape 都被拒绝。原生侧在加载 session 前完成授权 receipt，且把授权状态显示为 Authorizing、Authorized 或 failed。bookmark stale、目录消失或权限撤销时返回可解释错误，不静默扩大到父目录或整个 Home。该组合在非 Sandbox 分发中是产品级边界，**不能**表述为跨进程 security-scoped bookmark 已生效。
 
 ## 11. 版本、兼容和升级策略
 
@@ -893,7 +896,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。下一步是完成 crash/sleep lifecycle、Keychain broker、project bookmark 到 child Runtime 的 capability hand-off，以及 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。下一步是完成 crash/sleep lifecycle、Keychain broker、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off，以及 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

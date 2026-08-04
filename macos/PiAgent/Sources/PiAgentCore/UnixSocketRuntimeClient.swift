@@ -7,11 +7,13 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeExtensionInteractionClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, Sendable {
     public let socketPath: String
+	public let projectCapabilityToken: String?
 
-    public init(socketPath: String) {
+    public init(socketPath: String, projectCapabilityToken: String? = nil) {
         self.socketPath = socketPath
+		self.projectCapabilityToken = projectCapabilityToken
     }
 
     public func health() async throws -> RuntimeHealth {
@@ -107,6 +109,10 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             )
         )
     }
+
+	public func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
+		try await request(method: "POST", path: "/runtime/projects/authorize", body: AuthorizeProjectPayload(path: path, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch))
+	}
 
     public func archiveSession(
         sessionId: String,
@@ -324,6 +330,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/sessions/\(Self.pathSegment(sessionId))/events",
             query: query(cwd: cwd, runtimeId: runtimeId),
+			capabilityToken: projectCapabilityToken,
             decode: { data in
                 try JSONDecoder().decode(RuntimeSessionEvent.self, from: data)
             }
@@ -385,6 +392,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/terminals/\(Self.pathSegment(id))/socket",
             query: [("cols", String(cols)), ("rows", String(rows))],
+			capabilityToken: projectCapabilityToken,
             decode: { data in
                 try JSONDecoder().decode(RuntimeTerminalEvent.self, from: data)
             }
@@ -441,13 +449,14 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
     ) async throws -> Response {
         let socketPath = socketPath
         let encodedBody = try body.map { try JSONEncoder().encode(AnyEncodable($0)) }
+        let capabilityToken = projectCapabilityToken
         return try await Task.detached(priority: .userInitiated) {
             try UnixSocketHTTP.requestJSON(
                 method: method,
                 path: path,
                 query: query,
                 socketPath: socketPath,
-                body: encodedBody
+                body: encodedBody, capabilityToken: capabilityToken
             )
         }.value
     }
@@ -593,6 +602,8 @@ private struct RuntimeCommandPayload: Encodable {
     let runtimeEpoch: String
 }
 
+private struct AuthorizeProjectPayload: Encodable { let path: String; let commandId: String; let runtimeEpoch: String }
+
 private struct SessionMutationPayload: Encodable {
     let cwd: String
     let runtimeId: String?
@@ -660,14 +671,14 @@ private enum UnixSocketHTTP {
         path: String,
         query: [(String, String)]?,
         socketPath: String,
-        body: Data?
+        body: Data?, capabilityToken: String?
     ) throws -> Response {
         let response = try request(
             method: method,
             path: path,
             query: query,
             socketPath: socketPath,
-            body: body
+            body: body, capabilityToken: capabilityToken
         )
         guard (200..<300).contains(response.status) else {
             if let error = try? JSONDecoder().decode(RuntimeErrorResponse.self, from: response.body),
@@ -693,7 +704,7 @@ private enum UnixSocketHTTP {
         path: String,
         query: [(String, String)]?,
         socketPath: String,
-        body: Data?
+        body: Data?, capabilityToken: String?
     ) throws -> (status: Int, body: Data) {
         guard !socketPath.isEmpty else {
             throw RuntimeClientError.invalidSocketPath
@@ -707,6 +718,7 @@ private enum UnixSocketHTTP {
         if let body {
             request += "Content-Type: application/json\r\nContent-Length: \(body.count)\r\n"
         }
+		if let capabilityToken { request += "X-Pi-Agent-Project-Capability: \(capabilityToken)\r\n" }
         request += "\r\n"
         var payload = Data(request.utf8)
         if let body { payload.append(body) }
@@ -853,7 +865,7 @@ private final class UnixSocketWebSocket: @unchecked Sendable {
         self.readBuffer = initialData
     }
 
-    static func connect(socketPath: String, path: String, query: [(String, String)]?) throws -> UnixSocketWebSocket {
+    static func connect(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?) throws -> UnixSocketWebSocket {
         let descriptor = try UnixSocketTransport.connect(socketPath: socketPath)
         do {
             var randomBytes = [UInt8](repeating: 0, count: 16)
@@ -867,7 +879,9 @@ private final class UnixSocketWebSocket: @unchecked Sendable {
                 + "Connection: Upgrade\r\n"
                 + "Upgrade: websocket\r\n"
                 + "Sec-WebSocket-Version: 13\r\n"
-                + "Sec-WebSocket-Key: \(key)\r\n\r\n"
+                + "Sec-WebSocket-Key: \(key)\r\n"
+				+ (capabilityToken.map { "X-Pi-Agent-Project-Capability: \($0)\r\n" } ?? "")
+				+ "\r\n"
             try UnixSocketTransport.writeAll(descriptor, data: Data(request.utf8))
 
             let response = try readHTTPHeaders(descriptor)
@@ -1140,6 +1154,7 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     private let socketPath: String
     private let path: String
     private let query: [(String, String)]?
+	private let capabilityToken: String?
     private let decode: (Data) throws -> Event
     private let lock = NSLock()
     private let eventContinuation: AsyncThrowingStream<Event, Error>.Continuation
@@ -1152,10 +1167,11 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     private var cancelled = false
     private var finished = false
 
-    init(socketPath: String, path: String, query: [(String, String)]?, decode: @escaping (Data) throws -> Event) {
+    init(socketPath: String, path: String, query: [(String, String)]?, capabilityToken: String?, decode: @escaping (Data) throws -> Event) {
         self.socketPath = socketPath
         self.path = path
         self.query = query
+		self.capabilityToken = capabilityToken
         self.decode = decode
         let eventStream = AsyncThrowingStream<Event, Error>.makeStream()
         let readyStream = AsyncThrowingStream<Void, Error>.makeStream()
@@ -1174,12 +1190,13 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
         let socketPath = self.socketPath
         let path = self.path
         let query = self.query
+		let capabilityToken = self.capabilityToken
         lock.unlock()
 
         let newTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                let socket = try UnixSocketWebSocket.connect(socketPath: socketPath, path: path, query: query)
+                let socket = try UnixSocketWebSocket.connect(socketPath: socketPath, path: path, query: query, capabilityToken: capabilityToken)
                 guard self.install(socket) else { return }
                 self.readyContinuation.yield(())
                 self.readyContinuation.finish()

@@ -75,6 +75,29 @@ struct PiAgentApp: App {
 
 @MainActor
 final class AppModel: ObservableObject {
+	private enum ProjectRuntimeAuthorization: Equatable {
+		case notRequired
+		case authorizing
+		case authorized(path: String)
+		case failed(message: String)
+
+		var label: String {
+			switch self {
+			case .notRequired: return "Not required for this Runtime"
+			case .authorizing: return "Authorizing…"
+			case let .authorized(path): return "Authorized: \(path)"
+			case let .failed(message): return "Authorization failed: \(message)"
+			}
+		}
+
+		var permitsProjectOperations: Bool {
+			switch self {
+			case .notRequired, .authorized: return true
+			case .authorizing, .failed: return false
+			}
+		}
+	}
+
     @Published var runtimeState: RuntimeConnectionState = .disconnected
     @Published var projectPath: String
     @Published var selectedSessionID: String?
@@ -105,6 +128,7 @@ final class AppModel: ObservableObject {
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
 	@Published var extensionInteractionText = ""
+	@Published private var projectRuntimeAuthorization: ProjectRuntimeAuthorization = .notRequired
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
@@ -188,6 +212,14 @@ final class AppModel: ObservableObject {
             return "Runtime unavailable: \(message)"
         }
     }
+
+	var projectRuntimeAuthorizationLabel: String {
+		projectRuntimeAuthorization.label
+	}
+
+	var canUseProjectRuntime: Bool {
+		projectRuntimeAuthorization.permitsProjectOperations
+	}
 
     var terminationConfirmationMessage: String {
 		if let terminationAbortError {
@@ -302,6 +334,8 @@ final class AppModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         runtimeState = .connecting
+		let capabilityClient = client as? any RuntimeProjectCapabilityClient
+		projectRuntimeAuthorization = capabilityClient == nil ? .notRequired : .authorizing
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -320,6 +354,17 @@ final class AppModel: ObservableObject {
                 } else {
                     self.runtimeEpoch = nil
                 }
+				if let capabilityClient,
+				   let epoch = self.runtimeEpoch {
+					let commandId = UUID().uuidString
+					let receipt = try await capabilityClient.authorizeProject(path: cwd, commandId: commandId, expectedRuntimeEpoch: epoch)
+					try self.requireCompletedReceipt(receipt, kind: "authorize-project", expectedRuntimeEpoch: epoch)
+					guard receipt.result?.authorized == true,
+						  let authorizedPath = receipt.result?.path,
+						  !authorizedPath.isEmpty
+					else { throw RuntimeClientError.serverError(500, "Runtime did not authorize the selected project.") }
+					self.projectRuntimeAuthorization = .authorized(path: authorizedPath)
+				}
                 let sessions = try await client.listSessions(cwd: cwd)
                 self.runtimeState = .connected(health)
                 self.replaceSessions(sessions)
@@ -327,6 +372,9 @@ final class AppModel: ObservableObject {
                 self.ensureTerminalConnection()
 				self.refreshGit()
             } catch {
+				if capabilityClient != nil {
+					self.projectRuntimeAuthorization = .failed(message: error.localizedDescription)
+				}
                 self.runtimeState = .failed(error.localizedDescription)
                 self.errorMessage = error.localizedDescription
                 self.runtimeEpoch = nil
@@ -380,6 +428,10 @@ final class AppModel: ObservableObject {
     func startNewSession() {
         let client = runtimeClient
         let cwd = projectPath
+		guard canUseProjectRuntime else {
+			errorMessage = "Authorize the selected project before creating a thread."
+			return
+		}
         guard let expectedRuntimeEpoch = runtimeEpoch else {
             errorMessage = "Reconnect the Runtime before creating a session."
             return
@@ -443,6 +495,10 @@ final class AppModel: ObservableObject {
         }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
+		guard canUseProjectRuntime else {
+			errorMessage = "Authorize the selected project before sending a prompt."
+			return
+		}
 		guard session.archived != true else {
 			errorMessage = "Restore this archived thread before sending a prompt."
 			return
@@ -995,6 +1051,7 @@ final class AppModel: ObservableObject {
     }
 
     func ensureTerminalConnection() {
+		guard canUseProjectRuntime else { return }
         guard let client = runtimeClient as? any RuntimeTerminalClient else {
             terminalErrorMessage = "This Runtime does not expose a terminal surface."
             return
@@ -1542,7 +1599,7 @@ final class AppModel: ObservableObject {
         do {
             if let bundledRuntime = try BundledRuntime.discover(environment: environment) {
                 return RuntimeConnection(
-                    client: UnixSocketRuntimeClient(socketPath: bundledRuntime.launchPlan.socketPath),
+                    client: UnixSocketRuntimeClient(socketPath: bundledRuntime.launchPlan.socketPath, projectCapabilityToken: bundledRuntime.projectCapabilityToken),
                     supervisor: bundledRuntime.makeSupervisor(),
                     startupError: nil
                 )
@@ -1707,7 +1764,6 @@ struct ContentView: View {
         }
         .task {
             model.refreshRuntime()
-            model.ensureTerminalConnection()
         }
     }
 }
@@ -1772,7 +1828,13 @@ struct SidebarView: View {
                     Button {
                         model.openProject()
                     } label: {
-                        Label(model.projectName, systemImage: "folder")
+						VStack(alignment: .leading, spacing: 2) {
+							Label(model.projectName, systemImage: "folder")
+							Text(model.projectRuntimeAuthorizationLabel)
+								.font(.caption2)
+								.foregroundStyle(.secondary)
+								.lineLimit(1)
+						}
                     }
                     .buttonStyle(.plain)
                 }
@@ -1785,13 +1847,13 @@ struct SidebarView: View {
                 Button(action: model.startNewSession) {
                     Label("New Thread", systemImage: "plus")
                 }
-                .disabled(model.isSending || model.projectPath.isEmpty)
+                .disabled(model.isSending || model.projectPath.isEmpty || !model.canUseProjectRuntime)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button(action: model.importSessionFromFile) {
                     Label("Import Thread", systemImage: "square.and.arrow.down")
                 }
-                .disabled(model.isSending || model.selectedSession == nil || model.selectedSession?.archived == true)
+                .disabled(model.isSending || !model.canUseProjectRuntime || model.selectedSession == nil || model.selectedSession?.archived == true)
             }
         }
     }
@@ -1930,6 +1992,7 @@ struct TranscriptView: View {
                     model.selectedSession == nil
                         || model.selectedSession?.archived == true
                         || model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+						|| !model.canUseProjectRuntime
                         || model.isSending
                 )
             }
@@ -1964,6 +2027,7 @@ struct InspectorView: View {
                 LabeledContent("Project", value: model.projectName)
                 LabeledContent("Path", value: model.projectPath)
                 LabeledContent("Runtime", value: model.runtimeLabel)
+				LabeledContent("Project access", value: model.projectRuntimeAuthorizationLabel)
             }
             Section("Session") {
                 LabeledContent("Count", value: String(model.sessions.count))
@@ -2218,13 +2282,14 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Runtime") {
-                Text("The native shell connects to the existing PI WEB session daemon through its user-owned Unix socket.")
+                Text("The native shell connects to its App-managed Runtime through a private Unix socket.")
                     .foregroundStyle(.secondary)
                 LabeledContent("Status", value: model.runtimeLabel)
                 LabeledContent("Socket", value: model.runtimeClientSocketDescription)
             }
             Section("Project") {
                 LabeledContent("Current", value: model.projectPath)
+				LabeledContent("Runtime access", value: model.projectRuntimeAuthorizationLabel)
                 Button("Choose Project…") { model.openProject() }
             }
         }

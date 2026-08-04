@@ -53,6 +53,8 @@ import {
 	runtimeCommandErrorStatus,
 	runtimeCommandFingerprint,
 } from "./runtimeCommandReceipts.js";
+import { NativeProjectCapabilityService } from "./nativeProjectCapability.js";
+import { registerNativeProjectCapabilityRoutes } from "./nativeProjectCapabilityRoutes.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const nativeRuntimeIdentity = loadNativeRuntimeIdentity(daemonEnvironment);
@@ -73,6 +75,8 @@ await app.register(fastifyWebsocket);
 await runSessionDaemonStartup({
 	logger: app.log,
 	async createRuntime() {
+		const nativeProjectCapabilities =
+			NativeProjectCapabilityService.fromEnvironment(daemonEnvironment);
 		const eventHub = new SessionEventHub();
 		const notificationStore = new SessionNotificationStore();
 		const unreadStore = new SessionUnreadStore({
@@ -152,6 +156,7 @@ await runSessionDaemonStartup({
 			unreadStore,
 			activeAgentProfile,
 			runtimeComponent,
+			nativeProjectCapabilities,
 		};
 	},
 	registerRoutes({
@@ -162,7 +167,13 @@ await runSessionDaemonStartup({
 		runtimeCommandReceipts,
 		terminals,
 		runtimeComponent,
+		nativeProjectCapabilities,
 	}) {
+		registerNativeProjectCapabilityRoutes(
+			app,
+			nativeProjectCapabilities,
+			runtimeCommandReceipts,
+		);
 		registerWorkspaceActivityRoutes(app, workspaceActivity);
 		registerAuthRoutes(app, auth);
 		registerSessionRoutes(app, sessions, eventHub, "", {
@@ -170,7 +181,6 @@ await runSessionDaemonStartup({
 		});
 		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 		registerNativeGitRoutes(app, runtimeCommandReceipts);
-
 		app.get("/health", () => ({
 			ok: true,
 			activeSessions: sessions.activeCount(),

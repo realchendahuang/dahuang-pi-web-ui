@@ -533,6 +533,10 @@ public protocol RuntimeGitClient: Sendable {
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
+public protocol RuntimeProjectCapabilityClient: Sendable {
+    func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+}
+
 /// Product projection of a pending Pi extension dialog. The App does not see
 /// the SDK callback; it renders this data and returns a kind-compatible value.
 public struct RuntimeExtensionInteraction: Codable, Equatable, Identifiable, Sendable {
@@ -623,6 +627,10 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let status: RuntimeGitStatus?
 		public let responded: Bool?
 		public let interaction: RuntimeExtensionInteraction?
+		public let authorized: Bool?
+		/// Canonical real path returned only by the Runtime after it has accepted
+		/// the App-selected project capability. This is never a capability token.
+		public let path: String?
         public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?
         public let cwd: String?

@@ -7,6 +7,7 @@ struct PiAgentContractCheck {
         try checkHealthDecoding()
         try checkRuntimeHelloDecoding()
         try checkRuntimeCommandReceiptDecoding()
+		try checkProjectCapabilityReceiptDecoding()
 		try checkGitContractDecoding()
 		try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
@@ -16,7 +17,10 @@ struct PiAgentContractCheck {
         checkImplicitLaunchIsDisabled()
         try checkExplicitLaunchPlan()
         if let socketPath = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SOCKET"] {
-            let client = UnixSocketRuntimeClient(socketPath: socketPath)
+			let client = UnixSocketRuntimeClient(
+				socketPath: socketPath,
+				projectCapabilityToken: ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"]
+			)
             let health = try await client.health()
             precondition(health.ok)
             let hello = try await client.hello()
@@ -215,6 +219,17 @@ struct PiAgentContractCheck {
 		)
 		precondition(receipt.result?.responded == true)
 		precondition(receipt.result?.interaction?.id == "interaction-1")
+	}
+
+	private static func checkProjectCapabilityReceiptDecoding() throws {
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		let receipt = try decoder.decode(
+			RuntimeCommandReceipt.self,
+			from: Data(#"{"commandId":"project-capability","kind":"authorize-project","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"authorized":true,"path":"/private/tmp/project"}}"#.utf8)
+		)
+		precondition(receipt.result?.authorized == true)
+		precondition(receipt.result?.path == "/private/tmp/project")
 	}
 
     private static func checkProjectAuthorization() throws {

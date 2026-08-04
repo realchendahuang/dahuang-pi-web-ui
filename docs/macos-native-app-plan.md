@@ -752,7 +752,9 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、Git stage/unstage/commit 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、Git push/reset/revert 与 submodule mutation、崩溃重连、sleep/wake、Login Item helper，以及 project bookmark 到 bundled Runtime 的真实 capability hand-off。
+已交付的 non-sandbox project boundary：bundled Runtime 启动时获得仅在 child environment 中传递的 token；原生客户端先执行 epoch-bound `authorize-project` receipt，再读取 project session；Runtime 对其他请求要求 token，并通过 canonical `realpath` root/descendant allow-list 拒绝未授权 cwd、sibling-prefix 和 symlink escape。Swift 显示授权状态，未授权时不创建 thread、prompt 或 terminal。它是同用户的逻辑能力边界，不是 sandbox security scope。
+
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、Git push/reset/revert 与 submodule mutation、崩溃重连、sleep/wake、Login Item helper，以及 Sandbox 下 project bookmark data 到 RuntimeHost/child Runtime 的真实 capability hand-off。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 
