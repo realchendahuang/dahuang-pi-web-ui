@@ -896,7 +896,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。下一步是完成 crash/sleep lifecycle、Keychain broker、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off，以及 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock、Runtime-owned read-only workspace tree/file projection，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。App-owned Runtime 的 socket 断线、sleep/wake 和 restart recovery 已有单次恢复 gate、refresh generation 与打包 smoke 覆盖。下一步是完成 Keychain broker、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off、dependency-closure/SBOM/license 审计和完整的人工 crash/lifecycle matrix；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

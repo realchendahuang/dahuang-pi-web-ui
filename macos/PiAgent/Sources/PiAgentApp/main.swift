@@ -118,12 +118,17 @@ final class AppModel: ObservableObject {
     @Published var sessionPendingFork: RuntimeSession?
     @Published var forkCandidates: [RuntimeForkCandidate] = []
 	@Published var gitStatus: RuntimeGitStatus?
-	@Published var gitSelectedPath: String?
-	@Published var gitUnstagedDiff: RuntimeGitDiff?
-	@Published var gitStagedDiff: RuntimeGitDiff?
-	@Published var isGitLoading = false
-	@Published var isGitMutationInFlight = false
-	@Published var showGitCommitSheet = false
+    @Published var gitSelectedPath: String?
+    @Published var gitUnstagedDiff: RuntimeGitDiff?
+    @Published var gitStagedDiff: RuntimeGitDiff?
+    @Published var isGitLoading = false
+    @Published var isGitMutationInFlight = false
+    @Published var showGitCommitSheet = false
+    @Published var workspaceTree: RuntimeWorkspaceTree?
+    @Published var workspacePath = ""
+    @Published var workspaceFile: RuntimeWorkspaceFile?
+    @Published var isWorkspaceLoading = false
+    @Published var workspaceErrorMessage: String?
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -147,6 +152,7 @@ final class AppModel: ObservableObject {
     private var runtimeRefreshGeneration = RuntimeRefreshGeneration()
     private var runtimeRecovery = RuntimeLifecycleRecovery()
     private var runtimeRecoveryTask: Task<Void, Never>?
+    private var workspaceRequestGeneration = 0
     private var terminationCheckInFlight = false
     private var terminationActiveSessionCount: Int?
     private var terminationAbortInFlight = false
@@ -400,6 +406,7 @@ final class AppModel: ObservableObject {
                 self.stopTerminalConnection()
                 self.ensureTerminalConnection()
                 self.refreshGit()
+                self.refreshWorkspace()
             } catch {
                 guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
                 if capabilityClient != nil {
@@ -435,9 +442,13 @@ final class AppModel: ObservableObject {
         transcriptMessages = []
         statusBySession = [:]
 		gitStatus = nil
-		gitSelectedPath = nil
-		gitUnstagedDiff = nil
-		gitStagedDiff = nil
+        gitSelectedPath = nil
+        gitUnstagedDiff = nil
+        gitStagedDiff = nil
+        workspaceTree = nil
+        workspacePath = ""
+        workspaceFile = nil
+        workspaceErrorMessage = nil
         refreshRuntime()
     }
 
@@ -1102,6 +1113,76 @@ final class AppModel: ObservableObject {
         loadSelectedSession()
     }
 
+    func refreshWorkspace(path: String? = nil) {
+        guard canUseProjectRuntime,
+              let client = runtimeClient as? any RuntimeWorkspaceClient
+        else { return }
+        let cwd = projectPath
+        let requestedPath = path ?? workspacePath
+        workspaceRequestGeneration += 1
+        let generation = workspaceRequestGeneration
+        isWorkspaceLoading = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            do {
+                let tree = try await client.workspaceTree(cwd: cwd, path: requestedPath)
+                guard let self,
+                      self.isCurrentWorkspaceRequest(generation, cwd: cwd)
+                else { return }
+                self.workspaceTree = tree
+                self.workspacePath = tree.path
+                self.workspaceFile = nil
+                self.isWorkspaceLoading = false
+            } catch {
+                guard let self,
+                      self.isCurrentWorkspaceRequest(generation, cwd: cwd)
+                else { return }
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceLoading = false
+            }
+        }
+    }
+
+    func openWorkspaceEntry(_ entry: RuntimeWorkspaceEntry) {
+        if entry.isDirectory {
+            refreshWorkspace(path: entry.path)
+        } else {
+            loadWorkspaceFile(path: entry.path)
+        }
+    }
+
+    func openWorkspaceParent() {
+        let components = workspacePath.split(separator: "/")
+        refreshWorkspace(path: components.dropLast().joined(separator: "/"))
+    }
+
+    private func loadWorkspaceFile(path: String) {
+        guard canUseProjectRuntime,
+              let client = runtimeClient as? any RuntimeWorkspaceClient
+        else { return }
+        let cwd = projectPath
+        workspaceRequestGeneration += 1
+        let generation = workspaceRequestGeneration
+        isWorkspaceLoading = true
+        workspaceErrorMessage = nil
+        Task { [weak self] in
+            do {
+                let file = try await client.workspaceFile(cwd: cwd, path: path)
+                guard let self,
+                      self.isCurrentWorkspaceRequest(generation, cwd: cwd)
+                else { return }
+                self.workspaceFile = file
+                self.isWorkspaceLoading = false
+            } catch {
+                guard let self,
+                      self.isCurrentWorkspaceRequest(generation, cwd: cwd)
+                else { return }
+                self.workspaceErrorMessage = error.localizedDescription
+                self.isWorkspaceLoading = false
+            }
+        }
+    }
+
     func ensureTerminalConnection() {
         guard canUseProjectRuntime else { return }
         guard let client = runtimeClient as? any RuntimeTerminalClient else {
@@ -1437,6 +1518,10 @@ final class AppModel: ObservableObject {
 
     private func isCurrentTerminalConnection(_ cwd: String) -> Bool {
         terminalCWD == cwd && cwd == projectPath
+    }
+
+    private func isCurrentWorkspaceRequest(_ generation: Int, cwd: String) -> Bool {
+        generation == workspaceRequestGeneration && cwd == projectPath
     }
 
     private func isCurrentSessionStream(_ generation: Int, sessionID: String) -> Bool {
@@ -2176,6 +2261,8 @@ struct InspectorView: View {
                 }
             }
             Section("Workspace") {
+                WorkspaceFilesView(model: model)
+                Divider()
 				GitChangesView(model: model)
             }
             Section("Terminal") {
@@ -2219,6 +2306,98 @@ struct InspectorView: View {
         .formStyle(.grouped)
         .navigationTitle("Inspector")
         .task { model.ensureTerminalConnection() }
+    }
+}
+
+struct WorkspaceFilesView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(
+                    model.workspacePath.isEmpty ? "Project files" : model.workspacePath,
+                    systemImage: "folder"
+                )
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                Spacer()
+                if !model.workspacePath.isEmpty {
+                    Button("Back") { model.openWorkspaceParent() }
+                        .buttonStyle(.borderless)
+                }
+                Button("Refresh") { model.refreshWorkspace() }
+                    .buttonStyle(.borderless)
+            }
+
+            if model.isWorkspaceLoading {
+                ProgressView("Loading files…")
+                    .controlSize(.small)
+            } else if let tree = model.workspaceTree {
+                if tree.entries.isEmpty {
+                    Text("This folder is empty")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(tree.entries) { entry in
+                        Button {
+                            model.openWorkspaceEntry(entry)
+                        } label: {
+                            Label(entry.name, systemImage: iconName(for: entry))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                if tree.truncated {
+                    Text("Only the first 1,000 entries are shown.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Files will load when the Runtime connects.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let error = model.workspaceErrorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            if let file = model.workspaceFile {
+                Divider()
+                LabeledContent("File", value: file.path)
+                    .font(.caption)
+                if file.binary {
+                    Label("Binary or image preview is not available yet.", systemImage: "doc.richtext")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView([.horizontal, .vertical]) {
+                        Text(file.content)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 220)
+                    if file.truncated {
+                        Text("Preview is truncated at 512 KB.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .task { model.refreshWorkspace() }
+    }
+
+    private func iconName(for entry: RuntimeWorkspaceEntry) -> String {
+        if entry.isDirectory { return "folder" }
+        if entry.type == "symlink" { return "arrow.triangle.branch" }
+        return "doc"
     }
 }
 

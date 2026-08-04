@@ -9,6 +9,7 @@ struct PiAgentContractCheck {
         try checkRuntimeCommandReceiptDecoding()
         try checkProjectCapabilityReceiptDecoding()
         try checkGitContractDecoding()
+        try checkWorkspaceContractDecoding()
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
@@ -31,6 +32,12 @@ struct PiAgentContractCheck {
                 ?? FileManager.default.currentDirectoryPath
             let sessions = try await client.listSessions(cwd: cwd)
             print("Loaded \(sessions.count) session projections for \(cwd)")
+            let workspace = try await client.workspaceTree(cwd: cwd, path: nil)
+            precondition(!workspace.entries.contains(where: { $0.path.hasPrefix("/") }))
+            let packageManifest = try await client.workspaceFile(cwd: cwd, path: "package.json")
+            precondition(packageManifest.path == "package.json")
+            precondition(!packageManifest.binary)
+            print("Loaded \(workspace.entries.count) workspace entries and package.json through the Native Contract")
             if let sessionID = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SESSION_ID"],
                let session = sessions.first(where: { $0.id == sessionID })
             {
@@ -184,7 +191,7 @@ struct PiAgentContractCheck {
 		precondition(continuedTerminalReceipt.result?.continued == true)
 	}
 
-	private static func checkGitContractDecoding() throws {
+    private static func checkGitContractDecoding() throws {
 		let decoder = JSONDecoder()
 		decoder.dateDecodingStrategy = .iso8601
 		let statusData = Data(
@@ -201,10 +208,30 @@ struct PiAgentContractCheck {
 		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: receiptData)
 		precondition(receipt.result?.committed == true)
 		precondition(receipt.result?.hash == "deadbeef")
-		precondition(receipt.result?.status?.files.isEmpty == true)
-	}
+        precondition(receipt.result?.status?.files.isEmpty == true)
+    }
 
-	private static func checkExtensionInteractionContractDecoding() throws {
+    private static func checkWorkspaceContractDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let tree = try decoder.decode(
+            RuntimeWorkspaceTree.self,
+            from: Data(#"{"path":"Sources","entries":[{"name":"PiAgent.swift","path":"Sources/PiAgent.swift","type":"file","size":128,"modifiedAt":"2026-08-04T00:00:00Z"}],"scannedAt":"2026-08-04T00:00:00Z","truncated":false}"#.utf8)
+        )
+        precondition(tree.path == "Sources")
+        precondition(tree.entries.first?.id == "Sources/PiAgent.swift")
+        precondition(tree.entries.first?.isDirectory == false)
+
+        let file = try decoder.decode(
+            RuntimeWorkspaceFile.self,
+            from: Data(#"{"path":"Sources/PiAgent.swift","language":"swift","encoding":"utf8","size":128,"modifiedAt":"2026-08-04T00:00:00Z","content":"import SwiftUI","truncated":false,"binary":false}"#.utf8)
+        )
+        precondition(file.language == "swift")
+        precondition(file.content == "import SwiftUI")
+        precondition(!file.binary)
+    }
+
+    private static func checkExtensionInteractionContractDecoding() throws {
 		let decoder = JSONDecoder()
 		decoder.dateDecodingStrategy = .iso8601
 		let projection = try decoder.decode(

@@ -23,6 +23,7 @@ import { sessiondSocketPath } from "../sessiond/config.js";
 import { TerminalService } from "./terminals/terminalService.js";
 import { registerTerminalRoutes } from "./terminals/terminalRoutes.js";
 import { registerNativeGitRoutes } from "./git/nativeGitRoutes.js";
+import { registerNativeWorkspaceRoutes } from "./workspaces/nativeWorkspaceRoutes.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
 import { SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
 import {
@@ -181,6 +182,7 @@ await runSessionDaemonStartup({
 		});
 		registerTerminalRoutes(app, terminals, "", { runtimeCommandReceipts });
 		registerNativeGitRoutes(app, runtimeCommandReceipts);
+		registerNativeWorkspaceRoutes(app);
 		app.get("/health", () => ({
 			ok: true,
 			activeSessions: sessions.activeCount(),

@@ -533,6 +533,45 @@ public protocol RuntimeGitClient: Sendable {
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
+/// Runtime-owned, read-only file projection for the explicitly authorized
+/// project. Paths are workspace-relative and must never grant Swift direct
+/// filesystem access outside the Native Contract.
+public struct RuntimeWorkspaceTree: Codable, Equatable, Sendable {
+    public let path: String
+    public let entries: [RuntimeWorkspaceEntry]
+    public let scannedAt: Date
+    public let truncated: Bool
+}
+
+public struct RuntimeWorkspaceEntry: Codable, Equatable, Identifiable, Sendable {
+    public let name: String
+    public let path: String
+    public let type: String
+    public let size: Int
+    public let modifiedAt: Date
+
+    public var id: String { path }
+    public var isDirectory: Bool { type == "directory" }
+}
+
+public struct RuntimeWorkspaceFile: Codable, Equatable, Sendable {
+    public let path: String
+    public let language: String?
+    public let mediaType: String?
+    public let mimeType: String?
+    public let encoding: String
+    public let size: Int
+    public let modifiedAt: Date
+    public let content: String
+    public let truncated: Bool
+    public let binary: Bool
+}
+
+public protocol RuntimeWorkspaceClient: Sendable {
+    func workspaceTree(cwd: String, path: String?) async throws -> RuntimeWorkspaceTree
+    func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile
+}
+
 public protocol RuntimeProjectCapabilityClient: Sendable {
     func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }

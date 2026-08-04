@@ -50,8 +50,12 @@ process.stdout.write(hello.runtimeEpoch);
 ' "$runtime_test_dir/hello.json")"
 unauthorized_status="$(curl --silent --output "$runtime_test_dir/unauthorized.json" --write-out '%{http_code}' --get --data-urlencode "cwd=$repo_root" --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/sessions)"
 test "$unauthorized_status" = "401"
+unauthorized_workspace_status="$(curl --silent --output "$runtime_test_dir/unauthorized-workspace.json" --write-out '%{http_code}' --get --data-urlencode "cwd=$repo_root" --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/workspace/tree)"
+test "$unauthorized_workspace_status" = "401"
 unapproved_status="$(curl --silent --output "$runtime_test_dir/unapproved.json" --write-out '%{http_code}' --get --data-urlencode "cwd=$repo_root" --unix-socket "$runtime_test_dir/sessiond.sock" -H "X-Pi-Agent-Project-Capability: $project_capability_token" http://pi-agent/sessions)"
 test "$unapproved_status" = "403"
+unapproved_workspace_status="$(curl --silent --output "$runtime_test_dir/unapproved-workspace.json" --write-out '%{http_code}' --get --data-urlencode "cwd=$repo_root" --unix-socket "$runtime_test_dir/sessiond.sock" -H "X-Pi-Agent-Project-Capability: $project_capability_token" http://pi-agent/workspace/tree)"
+test "$unapproved_workspace_status" = "403"
 authorize_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 authorize_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ path: process.argv[1], commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$repo_root" "$authorize_command_id" "$runtime_epoch")"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
@@ -63,6 +67,14 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --get --data-urlencode "cwd=$repo_root" \
   http://pi-agent/sessions >"$runtime_test_dir/sessions.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --get --data-urlencode "cwd=$repo_root" \
+  http://pi-agent/workspace/tree >"$runtime_test_dir/workspace-tree.json"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --get --data-urlencode "cwd=$repo_root" --data-urlencode "path=package.json" \
+  http://pi-agent/workspace/file >"$runtime_test_dir/workspace-file.json"
 command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H 'content-type: application/json' \
@@ -76,12 +88,14 @@ test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath, authorizePath, receiptPath, retryPath] = process.argv.slice(1);
+const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, filePath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
 const authorized = JSON.parse(await readFile(authorizePath, "utf8"));
 const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
 const retry = JSON.parse(await readFile(retryPath, "utf8"));
+const tree = JSON.parse(await readFile(treePath, "utf8"));
+const file = JSON.parse(await readFile(filePath, "utf8"));
 if (health.ok !== true) throw new Error("Runtime health was not OK");
 if (hello.kind !== "pi-agent-runtime") throw new Error("Unexpected Runtime hello kind");
 if (hello.protocol?.major !== 1) throw new Error("Unexpected Runtime protocol major");
@@ -91,8 +105,11 @@ if (receipt.kind !== "abort-active-work" || receipt.status !== "completed") thro
 if (receipt.runtimeEpoch !== hello.runtimeEpoch) throw new Error("Runtime abort receipt epoch did not match hello");
 if (receipt.result?.requested !== 0 || receipt.result?.failures?.length !== 0) throw new Error("Idle Runtime abort receipt was unexpected");
 if (retry.commandId !== receipt.commandId || retry.status !== receipt.status) throw new Error("Runtime receipt retry was not idempotent");
+if (tree.path !== "" || !Array.isArray(tree.entries) || !tree.entries.some((entry) => entry.path === "package.json")) throw new Error("Runtime workspace tree did not project package.json");
+if (tree.entries.some((entry) => typeof entry.path !== "string" || entry.path.startsWith("/"))) throw new Error("Runtime workspace tree exposed an absolute child path");
+if (file.path !== "package.json" || file.binary !== false || typeof file.content !== "string") throw new Error("Runtime workspace file projection was invalid");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/workspace-file.json"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \
