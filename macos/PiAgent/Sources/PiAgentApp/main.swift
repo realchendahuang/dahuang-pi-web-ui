@@ -229,6 +229,8 @@ final class AppModel: ObservableObject {
     @Published var legacyAuthMigration: RuntimeLegacyAuthMigration?
     @Published var isLegacyAuthMigrationLoading = false
     @Published var showLegacyAuthMigrationConfirmation = false
+	@Published var isSupportReportExporting = false
+	@Published var supportReportMessage: String?
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -1619,6 +1621,63 @@ final class AppModel: ObservableObject {
             }
         }
     }
+
+	/// Exports an App-owned, redacted diagnostic report only after the user picks
+	/// an output path. Runtime/session authority and project filesystem access do
+	/// not move into Swift as part of this support operation.
+	func exportSupportReport() {
+		guard !isSupportReportExporting else { return }
+		let panel = NSSavePanel()
+		panel.allowedContentTypes = [.json]
+		panel.canCreateDirectories = true
+		panel.nameFieldStringValue = "Pi-Agent-Support-Report.json"
+		panel.message = "The report includes app and Runtime version/status metadata only. It never includes prompts, transcripts, project file contents, credentials, or capability tokens."
+		guard panel.runModal() == .OK, let url = panel.url else { return }
+		isSupportReportExporting = true
+		supportReportMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			let health: RuntimeHealth?
+			let hello: RuntimeHello?
+			var errors: [String] = []
+			do { health = try await self.runtimeClient.health() }
+			catch { health = nil; errors.append("health: \(error.localizedDescription)") }
+			if let helloClient = self.runtimeClient as? any RuntimeHelloClient {
+				do { hello = try await helloClient.hello() }
+				catch { hello = nil; errors.append("hello: \(error.localizedDescription)") }
+			} else {
+				hello = nil
+				errors.append("hello: unavailable from this Runtime client")
+			}
+			let bundle = Bundle.main
+			let report = NativeSupportReport(
+				application: .init(
+					bundleIdentifier: bundle.bundleIdentifier,
+					version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+					build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+					bundlePath: bundle.bundleURL.path
+				),
+				runtime: .init(
+					socket: self.runtimeClientSocketDescription,
+					connectionState: self.runtimeLabel,
+					health: health,
+					hello: hello,
+					diagnosticError: errors.isEmpty ? nil : errors.joined(separator: "; ")
+				),
+				project: .init(path: self.projectPath, authorization: self.projectRuntimeAuthorizationLabel),
+				providers: self.authProviders.map {
+					.init(id: $0.id, authType: $0.authType, configured: $0.status.configured, source: $0.status.source)
+				}
+			)
+			do {
+				try report.encodedJSON().write(to: url, options: .atomic)
+				self.supportReportMessage = "Saved redacted report to \(url.path)"
+			} catch {
+				self.supportReportMessage = "Could not save support report: \(error.localizedDescription)"
+			}
+			self.isSupportReportExporting = false
+		}
+	}
 
     /// Inspection is read-only and its projection contains provider/type only.
     func refreshLegacyAuthMigrationPreview() {
@@ -4168,6 +4227,20 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 LabeledContent("Status", value: model.runtimeLabel)
                 LabeledContent("Socket", value: model.runtimeClientSocketDescription)
+				Button("Export Redacted Support Report…") { model.exportSupportReport() }
+					.disabled(model.isSupportReportExporting)
+				if model.isSupportReportExporting {
+					ProgressView("Collecting Runtime metadata…")
+				} else if let message = model.supportReportMessage {
+					Text(message)
+						.font(.caption)
+						.foregroundStyle(message.hasPrefix("Saved") ? Color.secondary : Color.red)
+						.textSelection(.enabled)
+				}
+				Text("The JSON report is redacted: it excludes prompts, transcripts, workspace content, terminal output, credentials, and capability tokens.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
             }
             Section("Project") {
                 LabeledContent("Current", value: model.projectPath)

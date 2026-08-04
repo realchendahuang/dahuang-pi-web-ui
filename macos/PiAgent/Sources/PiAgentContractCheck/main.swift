@@ -9,6 +9,7 @@ struct PiAgentContractCheck {
         try checkRuntimeCommandReceiptDecoding()
         try checkProjectCapabilityReceiptDecoding()
         try checkGitContractDecoding()
+		try checkSupportReportEncoding()
         try checkWorkspaceContractDecoding()
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
@@ -258,6 +259,37 @@ struct PiAgentContractCheck {
 		precondition(checkpointReceipt.result?.checkpoint?.sessionId == "thread-1")
 		precondition(checkpointReceipt.result?.checkpoint?.unstaged.diff == "diff --git")
     }
+
+	private static func checkSupportReportEncoding() throws {
+		let report = NativeSupportReport(
+			generatedAt: Date(timeIntervalSince1970: 1_722_844_800),
+			application: .init(
+				bundleIdentifier: "com.example.PiAgent",
+				version: "0.202608.0",
+				build: "42",
+				bundlePath: "/Applications/Pi Agent.app"
+			),
+			runtime: .init(
+				socket: "/tmp/pi-agent.sock",
+				connectionState: "Connected",
+				health: nil,
+				hello: nil,
+				diagnosticError: nil
+			),
+			project: .init(path: "/repo", authorization: "Authorized"),
+			providers: [
+				.init(id: "openai", authType: "oauth", configured: true, source: "keychain"),
+				.init(id: "anthropic", authType: "api_key", configured: false, source: nil),
+			]
+		)
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		let decoded = try decoder.decode(NativeSupportReport.self, from: report.encodedJSON())
+		precondition(decoded.schemaVersion == NativeSupportReport.schemaVersion)
+		precondition(decoded.redacted)
+		precondition(decoded.providers.map(\.id) == ["anthropic", "openai"])
+		precondition(decoded.application.bundlePath == "/Applications/Pi Agent.app")
+	}
 
     private static func checkWorkspaceContractDecoding() throws {
         let decoder = JSONDecoder()

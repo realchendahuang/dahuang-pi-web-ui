@@ -781,7 +781,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 3：分发与迁移
 
-交付：可复制的未签名 `.app`、旧 PI WEB 迁移向导、诊断包、卸载/保留数据路径。签名、公证、DMG 和 Sparkle 明确不在当前范围内。
+交付：可复制的未签名 `.app`、旧 PI WEB 迁移向导、诊断包、卸载/保留数据路径。当前已交付原生“Export Redacted Support Report”：用户选定输出位置后，App 导出可分享的 JSON，内容只含 App/Runtime version、health/hello、socket 描述、当前项目授权状态和 provider 是否配置的元数据；不包含 prompt、transcript、workspace 内容、terminal 输出、credential 或 capability token。完整旧数据迁移向导和卸载/保留数据 UX 仍待交付。签名、公证、DMG 和 Sparkle 明确不在当前范围内。
 
 退出门槛：干净用户账户可完成安装、迁移、更新和卸载；无需 npm、手动 chmod 或 plist 操作。
 
