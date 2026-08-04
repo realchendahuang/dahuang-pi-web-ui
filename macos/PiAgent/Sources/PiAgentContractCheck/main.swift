@@ -121,6 +121,13 @@ struct PiAgentContractCheck {
 		let promptReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: promptData)
 		precondition(promptReceipt.result?.accepted == true)
 		precondition(promptReceipt.result?.sessionId == "s1")
+
+		let startData = Data(
+			#"{"commandId":"command-3","kind":"start-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
+		)
+		let startReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: startData)
+		precondition(startReceipt.result?.created == true)
+		precondition(startReceipt.result?.cwd == "/repo")
 	}
 
     private static func checkProjectAuthorization() throws {

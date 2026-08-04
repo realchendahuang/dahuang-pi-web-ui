@@ -51,6 +51,13 @@ interface PromptRequestBody {
 	runtimeEpoch?: unknown;
 }
 
+interface StartSessionRequestBody {
+	cwd?: unknown;
+	runtimeId?: unknown;
+	commandId?: unknown;
+	runtimeEpoch?: unknown;
+}
+
 interface AttachmentsRequestBody {
 	cwd?: unknown;
 	attachments?: unknown;
@@ -100,18 +107,37 @@ export function registerSessionRoutes(
 		},
 	);
 
-	app.post<{ Body: { cwd?: unknown; runtimeId?: unknown } | undefined }>(
+	app.post<{ Body: StartSessionRequestBody | undefined }>(
 		`${prefix}/sessions`,
 		async (request, reply) => {
 			try {
 				const body = requireRecord(request.body);
 				const runtimeId = optionalRuntimeId(body["runtimeId"]);
-				return await sessions.start(
-					normalizeRequestCwd(requireString(body, "cwd")),
-					runtimeId === undefined ? {} : { runtimeId },
-				);
+				const cwd = normalizeRequestCwd(requireString(body, "cwd"));
+				const nativeCommand = nativeStartSessionCommand(cwd, runtimeId, body);
+				if (nativeCommand !== undefined) {
+					const receipts = options.runtimeCommandReceipts;
+					if (receipts === undefined) {
+						throw new Error("Native Runtime command receipts are unavailable");
+					}
+					return await receipts.execute(nativeCommand, async () => {
+						const session = await sessions.start(
+							cwd,
+							runtimeId === undefined ? {} : { runtimeId },
+						);
+						return {
+							created: true,
+							sessionId: session.id,
+							cwd: session.cwd,
+							runtimeId: session.runtimeId,
+						};
+					});
+				}
+				return await sessions.start(cwd, runtimeId === undefined ? {} : { runtimeId });
 			} catch (error) {
-				return reply.code(400).send({ error: errorMessage(error) });
+				return reply
+					.code(runtimeCommandErrorStatus(error) ?? 400)
+					.send({ error: errorMessage(error) });
 			}
 		},
 	);
@@ -843,6 +869,25 @@ function nativePromptCommand(
 			streamingBehavior: body["streamingBehavior"],
 			attachments: body["attachments"],
 		}),
+	};
+}
+
+function nativeStartSessionCommand(
+	cwd: string,
+	runtimeId: AgentRuntimeId | undefined,
+	body: Record<string, unknown>,
+) {
+	const hasCommandId = body["commandId"] !== undefined;
+	const hasRuntimeEpoch = body["runtimeEpoch"] !== undefined;
+	if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+	if (!hasCommandId || !hasRuntimeEpoch) {
+		throw new Error("commandId and runtimeEpoch must be provided together");
+	}
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind: RUNTIME_COMMAND_KINDS.startSession,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({ cwd, runtimeId }),
 	};
 }
 

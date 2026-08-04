@@ -326,12 +326,52 @@ final class AppModel: ObservableObject {
     func startNewSession() {
         let client = runtimeClient
         let cwd = projectPath
+        guard let expectedRuntimeEpoch = runtimeEpoch else {
+            errorMessage = "Reconnect the Runtime before creating a session."
+            return
+        }
+        let commandId = UUID().uuidString
         isSending = true
         errorMessage = nil
         Task { [weak self] in
             guard let self else { return }
             do {
-                let session = try await client.startSession(cwd: cwd, runtimeId: nil)
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.startSession(
+                        cwd: cwd,
+                        runtimeId: nil,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: client,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "start-session",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.created == true,
+                      let createdSessionID = receipt.result?.sessionId
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime session receipt was missing its created session result."
+                    )
+                }
+                let createdCWD = receipt.result?.cwd ?? cwd
+                let sessions = try await client.listSessions(cwd: createdCWD)
+                guard let session = sessions.first(where: { $0.id == createdSessionID }) else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime created the session, but it was not present in the session projection. Reconnect to refresh it."
+                    )
+                }
                 self.sessions.removeAll { $0.id == session.id }
                 self.sessions.insert(session, at: 0)
                 self.selectedSessionID = session.id
@@ -910,7 +950,12 @@ private struct UnavailableRuntimeClient: RuntimeClient {
 
     func health() async throws -> RuntimeHealth { throw RuntimeClientError.connectionFailed(message) }
     func listSessions(cwd _: String) async throws -> [RuntimeSession] { throw RuntimeClientError.connectionFailed(message) }
-    func startSession(cwd _: String, runtimeId _: String?) async throws -> RuntimeSession { throw RuntimeClientError.connectionFailed(message) }
+    func startSession(
+        cwd _: String,
+        runtimeId _: String?,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func messages(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeMessagePage { throw RuntimeClientError.connectionFailed(message) }
     func status(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func prompt(

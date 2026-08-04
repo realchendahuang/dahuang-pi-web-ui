@@ -4,6 +4,7 @@ import type { ActiveSessionAbortResult } from "./sessions/activeSessionAbort.js"
 export const RUNTIME_COMMAND_KINDS = {
 	abortActiveWork: "abort-active-work",
 	prompt: "prompt",
+	startSession: "start-session",
 } as const;
 
 export type RuntimeCommandKind =
@@ -15,9 +16,17 @@ export interface RuntimePromptCommandResult {
 	runtimeId?: string;
 }
 
+export interface RuntimeStartSessionCommandResult {
+	created: true;
+	sessionId: string;
+	cwd: string;
+	runtimeId: string;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
-	| RuntimePromptCommandResult;
+	| RuntimePromptCommandResult
+	| RuntimeStartSessionCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

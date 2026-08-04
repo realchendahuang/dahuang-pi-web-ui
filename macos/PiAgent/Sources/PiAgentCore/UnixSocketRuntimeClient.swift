@@ -30,11 +30,21 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
-    public func startSession(cwd: String, runtimeId: String?) async throws -> RuntimeSession {
+    public func startSession(
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "POST",
             path: "/sessions",
-            body: StartSessionPayload(cwd: cwd, runtimeId: runtimeId)
+            body: StartSessionPayload(
+                cwd: cwd,
+                runtimeId: runtimeId,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
         )
     }
 
@@ -214,16 +224,22 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
 private struct StartSessionPayload: Encodable {
     let cwd: String
     let runtimeId: String?
+    let commandId: String
+    let runtimeEpoch: String
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(cwd, forKey: .cwd)
         try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
     }
 
     private enum CodingKeys: String, CodingKey {
         case cwd
         case runtimeId
+        case commandId
+        case runtimeEpoch
     }
 }
 

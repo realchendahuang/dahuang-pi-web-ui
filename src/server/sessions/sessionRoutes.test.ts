@@ -112,6 +112,67 @@ describe("session routes", () => {
 		}
 	});
 
+	it("executes a native session creation once per command id and returns its epoch-bound receipt", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(
+			routeApp,
+			routeService,
+			new SessionEventHub(),
+			"",
+			{ runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+		);
+
+		const payload = {
+			cwd: "/repo",
+			runtimeId: "pi",
+			commandId: "start-command-1",
+			runtimeEpoch: "epoch-1",
+		};
+		try {
+			const first = await routeApp.inject({
+				method: "POST",
+				url: "/sessions",
+				payload,
+			});
+			const retry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions",
+				payload,
+			});
+
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({
+				commandId: "start-command-1",
+				kind: "start-session",
+				runtimeEpoch: "epoch-1",
+				status: "completed",
+				result: {
+					created: true,
+					sessionId: "started-pi",
+					cwd: resolve("/repo"),
+					runtimeId: "pi",
+				},
+			});
+			expect(retry.json()).toEqual(first.json());
+			expect(routeService.startCalls).toEqual([
+				{ cwd: resolve("/repo"), runtimeId: "pi" },
+			]);
+
+			const conflictingRetry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions",
+				payload: { ...payload, runtimeId: "omp" },
+			});
+			expect(conflictingRetry.statusCode).toBe(409);
+			expect(routeService.startCalls).toHaveLength(1);
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
 	it("returns notification catalog and selected-inbox snapshots with required cwd context", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);

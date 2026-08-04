@@ -428,7 +428,7 @@ Pi Agent.app/Contents/
 - **停止 Runtime 并退出**：先通过 epoch-bound `abort-active-work` receipt 逐一停止实际工作，再停止当前 App 自己启动的 bundled Runtime；绝不触碰显式连接的开发/外部 daemon；
 - **取消**：返回应用。
 
-没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work` 与原生 Prompt 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；Prompt 不会因未知网络结果而自动二次提交。Pi/OMP 的 per-session abort result 已可读；创建 session、归档/删除、terminal、Git 与 approval 的 receipt 仍待实现。
+没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work`、原生 Prompt 与原生 New Thread 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；Prompt 不会因未知网络结果而自动二次提交，New Thread 也不会在结果未知时创建第二个 session。Pi/OMP 的 per-session abort result 已可读；fork/import、归档/删除、terminal、Git 与 approval 的 receipt 仍待实现。
 
 ### 7.3 后台与登录启动
 
@@ -750,9 +750,9 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 2：生命周期与 macOS 集成
 
-已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work` 与原生 Prompt 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt 与 New Thread 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、创建/归档/删除、terminal、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、fork/import、归档/删除、terminal、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

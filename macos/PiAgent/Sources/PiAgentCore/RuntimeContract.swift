@@ -421,7 +421,12 @@ public indirect enum JSONValue: Decodable, Sendable {
 
 public protocol RuntimeClient: RuntimeHealthClient {
     func listSessions(cwd: String) async throws -> [RuntimeSession]
-    func startSession(cwd: String, runtimeId: String?) async throws -> RuntimeSession
+    func startSession(
+        cwd: String,
+        runtimeId: String?,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
     func messages(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeMessagePage
     func status(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
     func prompt(
@@ -459,7 +464,9 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let aborted: [AbortTarget]?
         public let failures: [AbortFailure]?
         public let accepted: Bool?
+        public let created: Bool?
         public let sessionId: String?
+        public let cwd: String?
         public let runtimeId: String?
     }
 

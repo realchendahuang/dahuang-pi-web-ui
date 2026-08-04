@@ -97,7 +97,7 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 | 优先级 | 交付 | 完成证据 |
 | --- | --- | --- |
-| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **Prompt 已交付**：同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。后续按同一合同覆盖剩余 mutation，并补全端到端断线恢复测试。 |
+| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **Prompt 与原生创建 session 已交付**：同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。后续按同一合同覆盖 fork/import、归档/删除、terminal、Git 与 approval，并补全端到端断线恢复测试。 |
 | P0 | 原生 approval/extension-UI bridge | Pi extension 的 select/confirm/input 被投影成 Swift 原生 sheet；取消、timeout、App 重连都有确定语义。 |
 | P0 | project authorization 的 Runtime capability | 不只持久化 bookmark：验证 Runtime 对未授权 cwd 拒绝、授权续期/失效可见；若进入 Sandbox 路线，先做独立跨进程 spike。 |
 | P1 | lifecycle recovery matrix | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。 |
