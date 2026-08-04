@@ -717,6 +717,15 @@ public struct RuntimeGitDiff: Codable, Equatable, Sendable {
     public let truncated: Bool
 }
 
+/// Fresh Runtime-owned policy for the only native push shape: the selected
+/// branch to its existing tracking upstream. Swift cannot select a remote,
+/// refspec, force option, tag, or set-upstream behavior.
+public struct RuntimeGitPushPreview: Codable, Equatable, Sendable {
+    public let status: RuntimeGitStatus
+    public let canPush: Bool
+    public let reason: String?
+}
+
 /// A bounded review snapshot owned by the Runtime. It intentionally carries no
 /// restore operation: viewing a Thread checkpoint must never mutate Git state.
 public struct RuntimeGitCheckpointDiff: Codable, Equatable, Sendable {
@@ -741,6 +750,8 @@ public protocol RuntimeGitClient: Sendable {
     func stageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func unstageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+	func gitPushPreview(cwd: String) async throws -> RuntimeGitPushPreview
+	func pushGit(cwd: String, confirmed: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint]
     func createGitCheckpoint(cwd: String, sessionId: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
@@ -892,6 +903,7 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
 		public let staged: Bool?
 		public let unstaged: Bool?
 		public let committed: Bool?
+		public let pushed: Bool?
 		public let paths: [String]?
 		public let hash: String?
 		public let subject: String?

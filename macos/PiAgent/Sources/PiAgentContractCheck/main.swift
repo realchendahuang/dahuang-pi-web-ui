@@ -206,6 +206,13 @@ struct PiAgentContractCheck {
 		precondition(status.branch == "main")
 		precondition(status.files.first?.path == "Sources/App.swift")
 
+		let pushPreviewData = Data(
+			#"{"status":{"isGitRepo":true,"hash":"push-status","branch":"main","upstream":"origin/main","ahead":2,"behind":0,"files":[],"submodules":[]},"canPush":true}"#.utf8
+		)
+		let pushPreview = try decoder.decode(RuntimeGitPushPreview.self, from: pushPreviewData)
+		precondition(pushPreview.canPush)
+		precondition(pushPreview.status.upstream == "origin/main")
+
 		let receiptData = Data(
 			#"{"commandId":"git-1","kind":"commit-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"committed":true,"hash":"deadbeef","subject":"native Git","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
 		)
@@ -213,6 +220,13 @@ struct PiAgentContractCheck {
 		precondition(receipt.result?.committed == true)
 		precondition(receipt.result?.hash == "deadbeef")
         precondition(receipt.result?.status?.files.isEmpty == true)
+
+		let pushReceiptData = Data(
+			#"{"commandId":"push-1","kind":"push-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"pushed":true,"status":{"isGitRepo":true,"hash":"clean","branch":"main","upstream":"origin/main","ahead":0,"behind":0,"files":[],"submodules":[]}}}"#.utf8
+		)
+		let pushReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: pushReceiptData)
+		precondition(pushReceipt.result?.pushed == true)
+		precondition(pushReceipt.result?.status?.ahead == 0)
 
 		let checkpointData = Data(
 			#"{"commandId":"checkpoint-1","kind":"create-git-checkpoint","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"checkpointed":true,"checkpoint":{"id":"cp-1","sessionId":"thread-1","cwd":"/repo","createdAt":"2026-08-04T00:00:00Z","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]},"unstaged":{"hash":"u","diff":"diff --git","truncated":false},"staged":{"hash":"s","diff":"","truncated":false}}}}"#.utf8

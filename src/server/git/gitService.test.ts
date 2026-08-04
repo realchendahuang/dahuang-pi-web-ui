@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage } from "./gitService.js";
+import { gitCommit, gitDiff, gitPush, gitPushPreview, gitStage, gitStatus, gitUnstage } from "./gitService.js";
 
 // Isolate from any global/system git config and force a deterministic identity;
 // `protocol.file.allow` is required for `submodule add` from a local path.
@@ -223,6 +223,74 @@ describe("Runtime-owned Git mutations", () => {
 		expect(committed.hash).toMatch(/^[0-9a-f]{40}$/);
 		expect(committed.subject).toBe("native Runtime commit");
 		expect(committed.status.files).toEqual([]);
+	});
+});
+
+describe("Runtime-owned Git push", () => {
+	it("previews and pushes only the configured tracking branch", async () => {
+		const base = mkdtempSync(join(tmpdir(), "pi-web-git-push-"));
+		created.push(base);
+		const remote = join(base, "remote.git");
+		const dir = join(base, "worktree");
+		git(base, ["init", "--bare", remote]);
+		git(base, ["init", "-b", "main", dir]);
+		writeFileSync(join(dir, "tracked.txt"), "first\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		git(dir, ["remote", "add", "origin", remote]);
+		git(dir, ["push", "-u", "origin", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "second\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "local commit"]);
+
+		const preview = await gitPushPreview(dir);
+		expect(preview).toMatchObject({ canPush: true, status: { branch: "main", upstream: "origin/main", ahead: 1, behind: 0 } });
+		const status = await gitPush(dir);
+		expect(status.ahead).toBe(0);
+		expect(status.behind).toBe(0);
+		expect(git(remote, ["rev-parse", "refs/heads/main"]).trim()).toBe(git(dir, ["rev-parse", "HEAD"]).trim());
+	});
+
+	it("refuses to push without a tracking upstream", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-push-policy-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "initial\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+
+		const noUpstream = await gitPushPreview(dir);
+		expect(noUpstream).toMatchObject({ canPush: false, reason: "The current branch has no configured tracking upstream." });
+		await expect(gitPush(dir)).rejects.toThrow("The current branch has no configured tracking upstream.");
+	});
+
+	it("refuses to push when the tracking upstream is ahead", async () => {
+		const base = mkdtempSync(join(tmpdir(), "pi-web-git-push-behind-"));
+		created.push(base);
+		const remote = join(base, "remote.git");
+		const dir = join(base, "worktree");
+		const peer = join(base, "peer");
+		git(base, ["init", "--bare", remote]);
+		git(base, ["init", "-b", "main", dir]);
+		writeFileSync(join(dir, "tracked.txt"), "initial\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		git(dir, ["remote", "add", "origin", remote]);
+		git(dir, ["push", "-u", "origin", "main"]);
+		git(base, ["clone", "--branch", "main", remote, peer]);
+		writeFileSync(join(peer, "peer.txt"), "from peer\n");
+		git(peer, ["add", "peer.txt"]);
+		git(peer, ["commit", "-m", "peer commit"]);
+		git(peer, ["push", "origin", "main"]);
+		git(dir, ["fetch", "origin"]);
+
+		const preview = await gitPushPreview(dir);
+		expect(preview).toMatchObject({
+			canPush: false,
+			reason: "The upstream has commits that are not present locally. Pull or rebase before pushing.",
+			status: { ahead: 0, behind: 1 },
+		});
+		await expect(gitPush(dir)).rejects.toThrow("The upstream has commits that are not present locally. Pull or rebase before pushing.");
 	});
 });
 

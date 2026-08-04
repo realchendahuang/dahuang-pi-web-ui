@@ -276,6 +276,27 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func gitPushPreview(cwd: String) async throws -> RuntimeGitPushPreview {
+        try await request(method: "GET", path: "/git/push-preview", query: [("cwd", cwd)])
+    }
+
+    public func pushGit(
+        cwd: String,
+        confirmed: Bool,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: "/git/push",
+            body: GitPushPayload(
+                cwd: cwd,
+                confirmed: confirmed,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint] {
         try await request(
             method: "GET", path: "/git/checkpoints",
@@ -806,6 +827,13 @@ private struct GitPathsPayload: Encodable {
 private struct GitCommitPayload: Encodable {
     let cwd: String
     let message: String
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct GitPushPayload: Encodable {
+    let cwd: String
+    let confirmed: Bool
     let commandId: String
     let runtimeEpoch: String
 }

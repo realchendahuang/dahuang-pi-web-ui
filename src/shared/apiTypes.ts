@@ -836,6 +836,17 @@ export interface GitDiffResponse {
 	truncated: boolean;
 }
 
+/**
+ * A fresh, Runtime-owned decision about whether the current branch can be
+ * safely pushed to its existing tracking upstream. The App never supplies a
+ * remote, branch, refspec, or force option.
+ */
+export interface GitPushPreview {
+	status: GitStatusResponse;
+	canPush: boolean;
+	reason?: string;
+}
+
 /** A bounded, local snapshot for native Thread review. It is not a Git ref. */
 export interface GitCheckpointDiff {
 	hash: string;

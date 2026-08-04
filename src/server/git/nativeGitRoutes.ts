@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import type { GitCheckpoint, GitCheckpointDiff, GitDiffResponse, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitCheckpoint, GitCheckpointDiff, GitDiffResponse, GitPushPreview, GitStatusResponse } from "../../shared/apiTypes.js";
 import {
 	RUNTIME_COMMAND_KINDS,
 	type RuntimeCommandReceipts,
 	type RuntimeGitCheckpointCommandResult,
 	type RuntimeGitMutationCommandResult,
+	type RuntimeGitPushCommandResult,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
 	runtimeCommandErrorStatus,
@@ -15,6 +16,8 @@ import { GitCheckpointStore } from "./gitCheckpointStore.js";
 import {
 	gitCommit,
 	gitDiff,
+	gitPush,
+	gitPushPreview,
 	gitStage,
 	gitStatus,
 	gitUnstage,
@@ -28,6 +31,8 @@ export interface NativeGitRouteService {
 	stage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse>;
 	unstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse>;
 	commit(cwd: string, message: string): Promise<{ hash: string; subject: string; status: GitStatusResponse }>;
+	pushPreview(cwd: string): Promise<GitPushPreview>;
+	push(cwd: string): Promise<GitStatusResponse>;
 	listCheckpoints(cwd: string, sessionId: string): Promise<GitCheckpoint[]>;
 	createCheckpoint(cwd: string, sessionId: string): Promise<GitCheckpoint>;
 }
@@ -39,6 +44,8 @@ const defaultService: NativeGitRouteService = {
 	stage: gitStage,
 	unstage: gitUnstage,
 	commit: gitCommit,
+	pushPreview: gitPushPreview,
+	push: gitPush,
 	listCheckpoints: (cwd, sessionId) => checkpointStore.list(cwd, sessionId),
 	createCheckpoint: async (cwd, sessionId) => {
 		const status = await gitStatus(cwd);
@@ -60,6 +67,7 @@ const defaultService: NativeGitRouteService = {
 interface GitQuery { cwd?: string; path?: string; staged?: string; sessionId?: string }
 interface GitPathsCommand { cwd?: unknown; paths?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 interface GitCommitCommand { cwd?: unknown; message?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
+interface GitPushCommand { cwd?: unknown; confirmed?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 interface GitCheckpointCommand { cwd?: unknown; sessionId?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 
 /**
@@ -117,6 +125,18 @@ export function registerNativeGitRoutes(
 			});
 		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
 	});
+	app.get<{ Querystring: GitQuery }>("/git/push-preview", async (request, reply) => {
+		try { return await service.pushPreview(requireCwd(request.query.cwd)); }
+		catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+	});
+	app.post<{ Body: GitPushCommand | undefined }>("/git/push", async (request, reply) => {
+		try {
+			const command = parsePushCommand(request.body);
+			return await receipts.execute(command.receipt, async (): Promise<RuntimeGitPushCommandResult> => ({
+				pushed: true, status: await service.push(command.cwd),
+			}));
+		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
+	});
 	app.get<{ Querystring: GitQuery }>("/git/checkpoints", async (request, reply) => {
 		try {
 			return await service.listCheckpoints(
@@ -150,6 +170,13 @@ function parseCommitCommand(body: GitCommitCommand | undefined) {
 	return { cwd, message, receipt: nativeReceipt(record, RUNTIME_COMMAND_KINDS.commitGit, { cwd, message }) };
 }
 
+function parsePushCommand(body: GitPushCommand | undefined) {
+	const record = requireRecord(body);
+	const cwd = requireCwd(record["cwd"]);
+	if (record["confirmed"] !== true) throw new Error("Push requires explicit confirmation");
+	return { cwd, receipt: nativeReceipt(record, RUNTIME_COMMAND_KINDS.pushGit, { cwd }) };
+}
+
 function parseCheckpointCommand(body: GitCheckpointCommand | undefined) {
 	const record = requireRecord(body);
 	const cwd = requireCwd(record["cwd"]);
@@ -161,7 +188,7 @@ function parseCheckpointCommand(body: GitCheckpointCommand | undefined) {
 	};
 }
 
-function nativeReceipt(body: Record<string, unknown>, kind: typeof RUNTIME_COMMAND_KINDS.stageGitPaths | typeof RUNTIME_COMMAND_KINDS.unstageGitPaths | typeof RUNTIME_COMMAND_KINDS.commitGit | typeof RUNTIME_COMMAND_KINDS.createGitCheckpoint, payload: unknown) {
+function nativeReceipt(body: Record<string, unknown>, kind: typeof RUNTIME_COMMAND_KINDS.stageGitPaths | typeof RUNTIME_COMMAND_KINDS.unstageGitPaths | typeof RUNTIME_COMMAND_KINDS.commitGit | typeof RUNTIME_COMMAND_KINDS.pushGit | typeof RUNTIME_COMMAND_KINDS.createGitCheckpoint, payload: unknown) {
 	return {
 		commandId: requireRuntimeCommandId(body["commandId"]), kind,
 		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),

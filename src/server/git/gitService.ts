@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitDiffResponse, GitFileState, GitPushPreview, GitStatusFile, GitStatusResponse } from "../../shared/apiTypes.js";
 import { normalizeRelativePath } from "../workspaces/pathSafety.js";
 import { sanitizedGitEnv } from "./gitEnv.js";
 
@@ -162,6 +162,39 @@ export interface GitCommitResult {
   status: GitStatusResponse;
 }
 
+/**
+ * Returns an authoritative, read-only answer for the one push shape currently
+ * supported by the native client: the active local branch to its configured
+ * tracking upstream. This deliberately does not offer a remote, refspec,
+ * force, tag, or set-upstream choice.
+ */
+export async function gitPushPreview(cwd: string): Promise<GitPushPreview> {
+	const status = await gitStatus(cwd);
+	if (!status.isGitRepo) return { status, canPush: false, reason: "This project is not a Git repository." };
+	if (status.branch === undefined) return { status, canPush: false, reason: "Detached HEAD cannot be pushed from the native inspector." };
+	if (status.upstream === undefined) return { status, canPush: false, reason: "The current branch has no configured tracking upstream." };
+	if ((status.behind ?? 0) > 0) return { status, canPush: false, reason: "The upstream has commits that are not present locally. Pull or rebase before pushing." };
+	if ((status.ahead ?? 0) < 1) return { status, canPush: false, reason: "There are no local commits waiting to be pushed." };
+	return { status, canPush: true };
+}
+
+/**
+ * Push only the current local branch to the exact tracking remote/ref. Both
+ * arguments are derived by Git inside the Runtime after a fresh preview;
+ * callers cannot select a remote or smuggle in force/refspec options.
+ */
+export async function gitPush(cwd: string): Promise<GitStatusResponse> {
+	const preview = await gitPushPreview(cwd);
+	if (!preview.canPush) throw new Error(preview.reason ?? "The current branch cannot be pushed.");
+	const target = await trackingPushTarget(cwd, preview.status.branch ?? "");
+	await requireGitSuccess(
+		cwd,
+		["push", "--porcelain", "--", target.remote, `${target.localRef}:${target.upstreamRef}`],
+		"git push failed",
+	);
+	return gitStatus(cwd);
+}
+
 /** Commit the existing index only; callers must stage deliberately first. */
 export async function gitCommit(cwd: string, message: string): Promise<GitCommitResult> {
   const normalized = normalizeCommitMessage(message);
@@ -193,6 +226,27 @@ export function normalizeCommitMessage(message: string): string {
 async function requireGitSuccess(cwd: string, args: string[], fallback: string): Promise<void> {
   const result = await runGit(cwd, args);
   if (result.code !== 0) throw new Error(result.stderr.trim() || fallback);
+}
+
+async function trackingPushTarget(cwd: string, branch: string): Promise<{ remote: string; localRef: string; upstreamRef: string }> {
+	if (branch === "" || branch.includes("\0") || branch.includes("\n")) {
+		throw new Error("The current branch name is not safe to push.");
+	}
+	const localRef = `refs/heads/${branch}`;
+	const result = await runGit(cwd, [
+		"for-each-ref",
+		"--format=%(upstream:remotename)%00%(upstream:remoteref)",
+		localRef,
+	]);
+	if (result.code !== 0) throw new Error(result.stderr.trim() || "Could not resolve the tracking upstream.");
+	const [remote = "", upstreamRef = ""] = result.stdout.trimEnd().split("\0");
+	if (
+		remote === "" || upstreamRef === "" || remote.includes("\n") || remote.includes("\0") ||
+		upstreamRef.includes("\n") || upstreamRef.includes("\0") || !upstreamRef.startsWith("refs/heads/")
+	) {
+		throw new Error("The current branch does not have a pushable tracking upstream.");
+	}
+	return { remote, localRef, upstreamRef };
 }
 
 async function requireRootWorktreePaths(cwd: string, paths: readonly string[]): Promise<void> {

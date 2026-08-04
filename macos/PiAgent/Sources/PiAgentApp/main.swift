@@ -191,12 +191,14 @@ final class AppModel: ObservableObject {
     @Published var sessionPendingFork: RuntimeSession?
     @Published var forkCandidates: [RuntimeForkCandidate] = []
 	@Published var gitStatus: RuntimeGitStatus?
+	@Published var gitPushPreview: RuntimeGitPushPreview?
     @Published var gitSelectedPath: String?
     @Published var gitUnstagedDiff: RuntimeGitDiff?
     @Published var gitStagedDiff: RuntimeGitDiff?
     @Published var isGitLoading = false
     @Published var isGitMutationInFlight = false
     @Published var showGitCommitSheet = false
+	@Published var showGitPushConfirmation = false
     @Published var gitCheckpoints: [RuntimeGitCheckpoint] = []
     @Published var isGitCheckpointLoading = false
     @Published var workspaceTree: RuntimeWorkspaceTree?
@@ -543,10 +545,11 @@ final class AppModel: ObservableObject {
         transcriptMessages = []
         statusBySession = [:]
 		gitStatus = nil
+		gitPushPreview = nil
         gitSelectedPath = nil
         gitUnstagedDiff = nil
         gitStagedDiff = nil
-        gitCheckpoints = []
+		gitCheckpoints = []
         workspaceTree = nil
         workspacePath = ""
         workspaceFile = nil
@@ -1136,6 +1139,7 @@ final class AppModel: ObservableObject {
 	func refreshGit() {
 		guard let client = runtimeClient as? any RuntimeGitClient else {
 			gitStatus = nil
+			gitPushPreview = nil
 			return
 		}
 		let cwd = projectPath
@@ -1146,6 +1150,7 @@ final class AppModel: ObservableObject {
 				let status = try await client.gitStatus(cwd: cwd)
 				guard self.projectPath == cwd else { return }
 				self.gitStatus = status
+				self.refreshGitPushPreview()
 				self.isGitLoading = false
 				if let selected = self.gitSelectedPath,
 				   !status.files.contains(where: { $0.path == selected }) {
@@ -1157,6 +1162,25 @@ final class AppModel: ObservableObject {
 				guard self.projectPath == cwd else { return }
 				self.isGitLoading = false
 				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func refreshGitPushPreview() {
+		guard let client = runtimeClient as? any RuntimeGitClient else {
+			gitPushPreview = nil
+			return
+		}
+		let cwd = projectPath
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let preview = try await client.gitPushPreview(cwd: cwd)
+				guard self.projectPath == cwd else { return }
+				self.gitPushPreview = preview
+			} catch {
+				guard self.projectPath == cwd else { return }
+				self.gitPushPreview = nil
 			}
 		}
 	}
@@ -1252,6 +1276,33 @@ final class AppModel: ObservableObject {
 		showGitCommitSheet = true
 	}
 
+	func requestGitPush() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  !isGitMutationInFlight
+		else { errorMessage = "Reconnect the Runtime before pushing changes."; return }
+		let cwd = projectPath
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let preview = try await client.gitPushPreview(cwd: cwd)
+				guard self.projectPath == cwd else { return }
+				self.gitPushPreview = preview
+				guard preview.canPush else {
+					self.errorMessage = preview.reason ?? "The current branch cannot be pushed."
+					return
+				}
+				self.showGitPushConfirmation = true
+			} catch {
+				guard self.projectPath == cwd else { return }
+				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func cancelGitPush() {
+		showGitPushConfirmation = false
+	}
+
 	func cancelGitCommit() {
 		showGitCommitSheet = false
 		gitCommitMessage = ""
@@ -1285,6 +1336,52 @@ final class AppModel: ObservableObject {
 			} catch {
 				self.errorMessage = error.localizedDescription
 				self.isGitMutationInFlight = false
+			}
+		}
+	}
+
+	func pushGit() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let expectedRuntimeEpoch = runtimeEpoch,
+			  let preview = gitPushPreview,
+			  preview.canPush,
+			  !isGitMutationInFlight
+		else { errorMessage = "Refresh the Git push preview before pushing changes."; return }
+		let cwd = projectPath
+		let commandId = UUID().uuidString
+		isGitMutationInFlight = true
+		showGitPushConfirmation = false
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do {
+					receipt = try await client.pushGit(
+						cwd: cwd,
+						confirmed: true,
+						commandId: commandId,
+						expectedRuntimeEpoch: expectedRuntimeEpoch
+					)
+				} catch {
+					receipt = try await self.commandReceiptAfterUnknownTransport(
+						client: self.runtimeClient,
+						commandId: commandId,
+						originalError: error
+					)
+				}
+				try self.requireCompletedReceipt(receipt, kind: "push-git", expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard receipt.result?.pushed == true, let status = receipt.result?.status else {
+					throw RuntimeClientError.serverError(500, "Runtime push receipt was missing its Git status projection.")
+				}
+				guard self.projectPath == cwd else { return }
+				self.gitStatus = status
+				self.isGitMutationInFlight = false
+				self.refreshGitPushPreview()
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
+				self.refreshGitPushPreview()
 			}
 		}
 	}
@@ -2620,6 +2717,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.showGitCommitSheet) {
 			GitCommitSheet(model: model)
 		}
+		.sheet(isPresented: $model.showGitPushConfirmation) {
+			GitPushConfirmationSheet(model: model)
+		}
         .sheet(item: Binding(
             get: { model.workspaceFilePendingMove },
             set: { if $0 == nil { model.cancelWorkspaceFileMove() } }
@@ -3282,6 +3382,14 @@ struct GitChangesView: View {
 				}
 				Button("Commit Staged Changes…") { model.requestGitCommit() }
 					.disabled(model.isGitMutationInFlight || !status.files.contains(where: { $0.index != "unmodified" && $0.index != "untracked" }))
+				if let preview = model.gitPushPreview, preview.canPush {
+					Button("Push \(preview.status.ahead ?? 0) Commit\(preview.status.ahead == 1 ? "" : "s")…") { model.requestGitPush() }
+						.disabled(model.isGitMutationInFlight)
+				} else if let reason = model.gitPushPreview?.reason {
+					Text(reason)
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
 				GitCheckpointsView(model: model)
 			}
 		} else if model.gitStatus?.isGitRepo == false {
@@ -3456,6 +3564,34 @@ struct GitCommitSheet: View {
 				Button("Commit") { model.commitGit() }
 					.buttonStyle(.borderedProminent)
 					.disabled(model.gitCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+			}
+		}
+		.padding(24)
+		.frame(width: 520)
+	}
+}
+
+struct GitPushConfirmationSheet: View {
+	@ObservedObject var model: AppModel
+
+	var body: some View {
+		let preview = model.gitPushPreview
+		VStack(alignment: .leading, spacing: 16) {
+			Text("Push Commits")
+				.font(.title2.weight(.semibold))
+			if let preview {
+				Text("Push \(preview.status.ahead ?? 0) local commit\(preview.status.ahead == 1 ? "" : "s") from \(preview.status.branch ?? "the current branch") to \(preview.status.upstream ?? "its configured upstream").")
+					.foregroundStyle(.secondary)
+			}
+			Text("Pi Agent will push only the current branch to its configured tracking upstream. It cannot force-push, set an upstream, choose another remote or branch, push tags, or alter your working tree.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+			HStack {
+				Spacer()
+				Button("Cancel") { model.cancelGitPush() }
+				Button("Push") { model.pushGit() }
+					.buttonStyle(.borderedProminent)
+					.disabled(preview?.canPush != true || model.isGitMutationInFlight)
 			}
 		}
 		.padding(24)

@@ -19,6 +19,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	stageGitPaths: "stage-git-paths",
 	unstageGitPaths: "unstage-git-paths",
 	commitGit: "commit-git",
+	pushGit: "push-git",
 	createGitCheckpoint: "create-git-checkpoint",
 	respondExtensionInteraction: "respond-extension-interaction",
 	authorizeProject: "authorize-project",
@@ -103,6 +104,12 @@ export interface RuntimeGitCheckpointCommandResult {
 	checkpoint: GitCheckpoint;
 }
 
+/** The Runtime derives the tracking upstream itself; Swift supplies no Git arguments. */
+export interface RuntimeGitPushCommandResult {
+	pushed: true;
+	status: GitStatusResponse;
+}
+
 export interface RuntimeExtensionInteractionResponseCommandResult {
 	responded: true;
 	interaction: ExtensionInteraction;
@@ -153,6 +160,7 @@ export type RuntimeCommandResult =
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult
 	| RuntimeGitMutationCommandResult
+	| RuntimeGitPushCommandResult
 	| RuntimeGitCheckpointCommandResult
 	| RuntimeExtensionInteractionResponseCommandResult
 	| RuntimeAuthorizeProjectCommandResult
