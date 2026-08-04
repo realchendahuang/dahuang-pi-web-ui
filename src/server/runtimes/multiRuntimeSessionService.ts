@@ -33,6 +33,7 @@ import type { NormalizedSessionCleanupRequest } from "../sessions/sessionCleanup
 import type {
 	SessionForkCandidate,
 	SessionForkResult,
+	SessionImportResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -297,6 +298,13 @@ export class MultiRuntimeSessionService implements SessionRouteService {
 
 	fork(ref: SessionRouteLookup, entryId: string): Promise<SessionForkResult> {
 		return this.serviceForLookup(ref).fork(ref, entryId);
+	}
+
+	importSession(
+		ref: SessionRouteLookup,
+		inputPath: string,
+	): Promise<SessionImportResult> {
+		return this.serviceForLookup(ref).importSession(ref, inputPath);
 	}
 
 	navigateTree(

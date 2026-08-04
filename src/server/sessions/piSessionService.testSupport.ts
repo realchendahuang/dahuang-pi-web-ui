@@ -139,7 +139,8 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
   const bindExtensionCalls: unknown[] = [];
   const listeners: ((event: unknown) => void)[] = [];
   let extensionUiContext = testExtensionUiContext;
-  const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls };
+  const importCalls: { inputPath: string; cwdOverride: string | undefined }[] = [];
+  const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, imports: importCalls, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls };
   const session: TestSession = {
     sessionId,
     sessionFile: `/tmp/${sessionId}.jsonl`,
@@ -214,9 +215,13 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
   const runtime: PiSessionRuntime = {
     cwd: session.sessionManager.getCwd(),
     session,
-    setRebindSession: () => undefined,
-    fork: () => Promise.resolve({ cancelled: false }),
-    dispose: () => {
+		setRebindSession: () => undefined,
+		fork: () => Promise.resolve({ cancelled: false }),
+		importFromJsonl: (inputPath: string, cwdOverride?: string) => {
+			importCalls.push({ inputPath, cwdOverride });
+			return Promise.resolve({ cancelled: false });
+		},
+		dispose: () => {
       calls.dispose += 1;
       return Promise.resolve();
     },

@@ -20,6 +20,7 @@ import {
 	type RuntimeCommandReceipts,
 	type RuntimeDeleteArchivedSessionCommandResult,
 	type RuntimeForkSessionCommandResult,
+	type RuntimeImportSessionCommandResult,
 	type RuntimeRestoreSessionCommandResult,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
@@ -66,6 +67,14 @@ interface ForkSessionRequestBody {
 	cwd?: unknown;
 	runtimeId?: unknown;
 	entryId?: unknown;
+	commandId?: unknown;
+	runtimeEpoch?: unknown;
+}
+
+interface ImportSessionRequestBody {
+	cwd?: unknown;
+	runtimeId?: unknown;
+	inputPath?: unknown;
 	commandId?: unknown;
 	runtimeEpoch?: unknown;
 }
@@ -726,6 +735,40 @@ export function registerSessionRoutes(
 		}
 	});
 
+	app.post<{
+		Params: { sessionId: string };
+		Body: ImportSessionRequestBody | undefined;
+	}>(`${prefix}/sessions/:sessionId/import`, async (request, reply) => {
+		try {
+			const body = requireRecord(request.body);
+			const ref = sessionLookupFromBody(request.params.sessionId, body);
+			const inputPath = requireString(body, "inputPath");
+			const nativeCommand = nativeImportSessionCommand(
+				request.params.sessionId,
+				ref,
+				inputPath,
+				body,
+			);
+			if (nativeCommand === undefined) {
+				throw new Error("Import requires commandId and runtimeEpoch");
+			}
+			const receipts = options.runtimeCommandReceipts;
+			if (receipts === undefined)
+				throw new Error("Native Runtime command receipts are unavailable");
+			return await receipts.execute(nativeCommand, async () => {
+				const imported = await sessions.importSession(ref, inputPath);
+				return {
+					imported: true,
+					session: imported.session,
+				} satisfies RuntimeImportSessionCommandResult;
+			});
+		} catch (error) {
+			return reply
+				.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
+				.send({ error: errorMessage(error) });
+		}
+	});
+
 	app.post<{ Params: { sessionId: string }; Body: unknown }>(
 		`${prefix}/sessions/:sessionId/tree/navigate`,
 		async (request, reply) => {
@@ -1048,6 +1091,33 @@ function nativeForkSessionCommand(
 			cwd,
 			runtimeId,
 			entryId,
+		}),
+	};
+}
+
+function nativeImportSessionCommand(
+	sessionId: string,
+	ref: SessionRouteLookup,
+	inputPath: string,
+	body: Record<string, unknown>,
+) {
+	const hasCommandId = body["commandId"] !== undefined;
+	const hasRuntimeEpoch = body["runtimeEpoch"] !== undefined;
+	if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+	if (!hasCommandId || !hasRuntimeEpoch) {
+		throw new Error("commandId and runtimeEpoch must be provided together");
+	}
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind: RUNTIME_COMMAND_KINDS.importSession,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({
+			sessionId,
+			cwd,
+			runtimeId,
+			inputPath,
 		}),
 	};
 }

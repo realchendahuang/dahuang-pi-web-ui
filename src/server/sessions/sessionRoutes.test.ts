@@ -966,6 +966,67 @@ describe("session routes", () => {
 		}
 	});
 
+	it("executes a native session import once per command id", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(
+			routeApp,
+			routeService,
+			new SessionEventHub(),
+			"",
+			{ runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+		);
+		const cwd = resolve("/repo");
+		const payload = {
+			cwd,
+			runtimeId: "pi",
+			inputPath: "/Users/example/Desktop/imported.jsonl",
+			commandId: "import-command-1",
+			runtimeEpoch: "epoch-1",
+		};
+		try {
+			const first = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/import",
+				payload,
+			});
+			const retry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/import",
+				payload,
+			});
+
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({
+				kind: "import-session",
+				runtimeEpoch: "epoch-1",
+				status: "completed",
+				result: {
+					imported: true,
+					session: { id: "imported-session", cwd, runtimeId: "pi" },
+				},
+			});
+			expect(retry.json()).toEqual(first.json());
+			expect(routeService.importCalls).toEqual([
+				{
+					lookup: { id: "session-1", cwd, runtimeId: "pi" },
+					inputPath: "/Users/example/Desktop/imported.jsonl",
+				},
+			]);
+
+			const conflictingRetry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/import",
+				payload: { ...payload, inputPath: "/Users/example/Desktop/other.jsonl" },
+			});
+			expect(conflictingRetry.statusCode).toBe(409);
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
 	it("keeps legacy archive, restore, and delete routes compatible", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);
@@ -1403,6 +1464,7 @@ class CapturingRouteSessionService implements SessionRouteService {
 	readonly reloadCalls: SessionRouteLookup[] = [];
 	readonly forkCandidateCalls: SessionRouteLookup[] = [];
 	readonly forkCalls: { lookup: SessionRouteLookup; entryId: string }[] = [];
+	readonly importCalls: { lookup: SessionRouteLookup; inputPath: string }[] = [];
 	readonly clearQueueCalls: SessionRouteLookup[] = [];
 	readonly dismissWarningCalls: {
 		lookup: SessionRouteLookup;
@@ -1520,6 +1582,23 @@ class CapturingRouteSessionService implements SessionRouteService {
 				firstMessage: "newest user message",
 			},
 			promptDraft: "newest user message",
+		});
+	}
+
+	importSession(lookup: SessionRouteLookup, inputPath: string) {
+		this.importCalls.push({ lookup, inputPath });
+		return Promise.resolve({
+			session: {
+				id: "imported-session",
+				path: "/sessions/imported-session.jsonl",
+				cwd: typeof lookup === "string" ? "/repo" : lookup.cwd,
+				runtimeId: typeof lookup === "string" ? AGENT_RUNTIME_IDS.pi : (lookup.runtimeId ?? AGENT_RUNTIME_IDS.pi),
+				persisted: true,
+				created: "2026-08-04T00:00:00.000Z",
+				modified: "2026-08-04T00:00:00.000Z",
+				messageCount: 2,
+				firstMessage: "imported user message",
+			},
 		});
 	}
 

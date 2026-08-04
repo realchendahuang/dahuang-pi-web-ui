@@ -50,6 +50,11 @@ export interface SessionForkResult {
 	promptDraft?: string;
 }
 
+/** Product projection returned after importing a Pi session JSONL file. */
+export interface SessionImportResult {
+	session: ClientSession;
+}
+
 /**
  * Route-facing session contract for PI WEB's HTTP/WebSocket API.
  *
@@ -152,6 +157,10 @@ export interface SessionRouteService {
 	): Promise<ClientCommandResult>;
 	forkCandidates(ref: SessionRouteLookup): Promise<SessionForkCandidate[]>;
 	fork(ref: SessionRouteLookup, entryId: string): Promise<SessionForkResult>;
+	importSession(
+		ref: SessionRouteLookup,
+		inputPath: string,
+	): Promise<SessionImportResult>;
 	navigateTree(
 		ref: SessionRouteLookup,
 		request: ClientSessionTreeNavigateRequest,

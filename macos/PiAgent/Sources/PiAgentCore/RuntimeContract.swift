@@ -481,6 +481,14 @@ public protocol RuntimeClient: RuntimeHealthClient {
         commandId: String,
         expectedRuntimeEpoch: String
     ) async throws -> RuntimeCommandReceipt
+    func importSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        inputPath: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
     func abortActiveWork(commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
 }
@@ -514,6 +522,7 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let restored: Bool?
         public let deleted: Bool?
         public let forked: Bool?
+        public let imported: Bool?
         public let session: RuntimeSession?
         public let promptDraft: String?
         public let continued: Bool?

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import type { SessionTreeNavigateRequest, SessionTreeSummaryChoice } from "../../shared/apiTypes.js";
 import { PiSessionService, type PiAgentSession, type PiSessionManager, type PiSessionServiceDependencies } from "./piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModel, testModelRuntime, type TestSession } from "./piSessionService.testSupport.js";
@@ -224,7 +227,7 @@ describe("PiSessionService session-tree behavior", () => {
     await service.dispose();
   });
 
-  it("blocks tree navigation while clone replaces and rebinds the runtime", async () => {
+	it("blocks tree navigation while clone replaces and rebinds the runtime", async () => {
     const replacement = deferred<{ cancelled: boolean; selectedText?: string }>();
     const rebound = deferred<undefined>();
     const navigateTree = vi.fn<NavigateTree>(() => Promise.resolve({ cancelled: false }));
@@ -390,6 +393,69 @@ describe("PiSessionService session-tree behavior", () => {
       && event.activity.detail === "summary provider failed")).toBe(true);
     expect(hub.sessionEvents.filter(({ event }) => event.type === "status.update").length).toBeGreaterThanOrEqual(4);
 
-    await service.dispose();
-  });
+		await service.dispose();
+	});
+
+	it("imports through Pi runtime replacement, rebinds the active identity, and returns the imported projection", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-web-import-"));
+		const inputPath = join(directory, "imported.jsonl");
+		await writeFile(inputPath, "{\"type\":\"session\"}\n", "utf8");
+		try {
+			const importedSessionId = "imported-session";
+			const importedFake = fakeRuntime(importedSessionId, {
+				sessionManager: fakeSessionManager("/workspace", {
+					getSessionId: () => importedSessionId,
+					getLeafId: () => "imported-leaf",
+				}),
+			});
+			const { service, fake } = treeHarness(
+				{},
+				{},
+				{
+					sessionManager: sessionGateway([
+						sessionRecord(SESSION_ID),
+						sessionRecord(importedSessionId),
+					]),
+				},
+			);
+			let rebindSession: ((session: PiAgentSession) => Promise<void>) | undefined;
+			fake.runtime.setRebindSession = (callback) => { rebindSession = callback; };
+			const importFromJsonl = vi.fn(async (path: string, cwdOverride?: string) => {
+				expect(path).toBe(inputPath);
+				expect(cwdOverride).toBe("/workspace");
+				if (!Reflect.set(fake.runtime, "session", importedFake.session))
+					throw new Error("Could not replace fake runtime session");
+				await rebindSession?.(importedFake.session);
+				return { cancelled: false };
+			});
+			fake.runtime.importFromJsonl = importFromJsonl;
+
+			await expect(service.importSession(sessionRef(SESSION_ID), inputPath)).resolves.toMatchObject({
+				session: { id: importedSessionId, cwd: "/workspace", runtimeId: "pi" },
+			});
+			expect(importFromJsonl).toHaveBeenCalledOnce();
+			expect(service.activeCount()).toBe(1);
+			await expect(service.status(sessionRef(importedSessionId))).resolves.toMatchObject({
+				sessionId: importedSessionId,
+			});
+			await service.dispose();
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects non-file, non-JSONL, and relative native import paths before Pi replacement", async () => {
+		const { service, fake } = treeHarness();
+		await expect(service.importSession(sessionRef(SESSION_ID), "relative.jsonl")).rejects.toThrow(
+			"Session import path must be absolute",
+		);
+		await expect(service.importSession(sessionRef(SESSION_ID), "/tmp/not-a-session.txt")).rejects.toThrow(
+			"Session import file must use the .jsonl extension",
+		);
+		await expect(service.importSession(sessionRef(SESSION_ID), "/tmp/missing-session.jsonl")).rejects.toThrow(
+			"Session import file was not found",
+		);
+		expect(fake.calls.imports).toEqual([]);
+		await service.dispose();
+	});
 });

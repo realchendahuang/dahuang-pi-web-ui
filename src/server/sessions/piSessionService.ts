@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { extname, isAbsolute, join, resolve } from "node:path";
 import { open, readFile, writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
@@ -98,6 +98,7 @@ import type {
 import type {
 	SessionForkCandidate,
 	SessionForkResult,
+	SessionImportResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -541,6 +542,10 @@ export interface PiSessionRuntime {
 		entryId: string,
 		options?: { position?: "before" | "at" },
 	): Promise<{ cancelled: boolean; selectedText?: string }>;
+	importFromJsonl(
+		inputPath: string,
+		cwdOverride?: string,
+	): Promise<{ cancelled: boolean }>;
 	dispose(): Promise<void>;
 }
 
@@ -2540,6 +2545,34 @@ export class PiSessionService implements SessionRouteService {
 				? {}
 				: { promptDraft: result.promptDraft }),
 		};
+	}
+
+	async importSession(
+		ref: PiSessionLookup,
+		inputPath: string,
+	): Promise<SessionImportResult> {
+		await this.assertWritable(ref);
+		const active = await this.getActive(ref);
+		const session = active.runtime.session;
+		const resolvedInputPath = requireImportableSessionPath(inputPath);
+		const imported = await this.runTreeExclusiveOperation(
+			[{ sessionId: session.sessionId, session, runtime: active.runtime }],
+			"Stop current session activity before importing a session",
+			async () =>
+				await active.runtime.importFromJsonl(
+					resolvedInputPath,
+					session.sessionManager.getCwd(),
+				),
+		);
+		if (imported.cancelled) throw new Error("Pi cancelled the session import");
+		const importedSessionId = active.runtime.session.sessionId;
+		const importedCwd = active.runtime.session.sessionManager.getCwd();
+		const projection = (await this.list(importedCwd)).find(
+			(candidate) => candidate.id === importedSessionId,
+		);
+		if (projection === undefined)
+			throw new Error("Imported session was not present in the session projection");
+		return { session: projection };
 	}
 
 	async navigateTree(
@@ -4707,6 +4740,33 @@ function uniqueStrings(values: readonly string[]): string[] {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Native Import is intentionally a narrow path-based contract while the App is
+ * unsandboxed: Swift obtains the user's selection and the co-owned Runtime
+ * verifies it is a regular JSONL file before handing it to Pi. Do not reuse
+ * this boundary as proof that a security-scoped bookmark crosses processes.
+ */
+function requireImportableSessionPath(inputPath: string): string {
+	const candidate = inputPath.trim();
+	if (candidate === "") throw new Error("Session import path is required");
+	if (candidate.length > 32 * 1024)
+		throw new Error("Session import path is too long");
+	if (!isAbsolute(candidate))
+		throw new Error("Session import path must be absolute");
+	const resolved = resolve(candidate);
+	if (extname(resolved).toLowerCase() !== ".jsonl")
+		throw new Error("Session import file must use the .jsonl extension");
+	let details: ReturnType<typeof statSync>;
+	try {
+		details = statSync(resolved);
+	} catch {
+		throw new Error("Session import file was not found");
+	}
+	if (!details.isFile())
+		throw new Error("Session import path must reference a regular file");
+	return resolved;
 }
 
 function modelToClientModel(

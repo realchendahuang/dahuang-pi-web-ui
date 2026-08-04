@@ -156,6 +156,13 @@ struct PiAgentContractCheck {
 		precondition(forkReceipt.result?.session?.id == "forked")
 		precondition(forkReceipt.result?.promptDraft == "fork point")
 
+		let importData = Data(
+			#"{"commandId":"command-import","kind":"import-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"imported":true,"session":{"id":"imported","cwd":"/repo","runtimeId":"pi","path":"/sessions/imported.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":2,"firstMessage":"imported message"}}}"#.utf8
+		)
+		let importReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: importData)
+		precondition(importReceipt.result?.imported == true)
+		precondition(importReceipt.result?.session?.id == "imported")
+
 		let terminalData = Data(
 			#"{"commandId":"command-7","kind":"create-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
 		)

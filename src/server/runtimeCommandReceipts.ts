@@ -11,6 +11,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	restoreSession: "restore-session",
 	deleteArchivedSession: "delete-archived-session",
 	forkSession: "fork-session",
+	importSession: "import-session",
 	createTerminal: "create-terminal",
 	continueTerminal: "continue-terminal",
 } as const;
@@ -58,6 +59,11 @@ export interface RuntimeForkSessionCommandResult {
 	promptDraft?: string;
 }
 
+export interface RuntimeImportSessionCommandResult {
+	imported: true;
+	session: ClientSession;
+}
+
 export interface RuntimeCreateTerminalCommandResult {
 	created: true;
 	terminal: TerminalInfo;
@@ -76,6 +82,7 @@ export type RuntimeCommandResult =
 	| RuntimeRestoreSessionCommandResult
 	| RuntimeDeleteArchivedSessionCommandResult
 	| RuntimeForkSessionCommandResult
+	| RuntimeImportSessionCommandResult
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult;
 

@@ -428,7 +428,7 @@ Pi Agent.app/Contents/
 - **停止 Runtime 并退出**：先通过 epoch-bound `abort-active-work` receipt 逐一停止实际工作，再停止当前 App 自己启动的 bundled Runtime；绝不触碰显式连接的开发/外部 daemon；
 - **取消**：返回应用。
 
-没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work`、原生 Prompt、New Thread、archive、restore、archived delete、Fork Thread、terminal create 与 terminal continue 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；不会因未知网络结果而自动执行第二次 mutation。Pi/OMP 的 per-session abort result 已可读；import、Git 与 approval 的 receipt 仍待实现。
+没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create 与 terminal continue 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；不会因未知网络结果而自动执行第二次 mutation。Pi/OMP 的 per-session abort result 已可读；Git 与 approval 的 receipt 仍待实现。
 
 ### 7.3 后台与登录启动
 
@@ -744,15 +744,15 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 1：原生单机 MVP
 
-交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、活动/Archived 分组、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。会话可在原生侧边栏 Fork、归档、恢复；Fork 先展示 Runtime 投影的 user-message 候选项，再让 Pi SDK 执行真实 session replacement。永久删除只对 Archived 会话开放且要求二次确认。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
+交付（当前已落地的子集）：项目目录、Project → Thread 会话列表、活动/Archived 分组、聊天、Prompt、Pi Runtime、事件驱动 transcript、SwiftTerm terminal、基础设置和诊断。会话可在原生侧边栏 Import、Fork、归档、恢复；Import 使用 macOS 文件选择器选择 JSONL，再让 Pi SDK 复制并切换到 imported session，Fork 则先展示 Runtime 投影的 user-message 候选项，再让 Pi SDK 执行真实 session replacement。永久删除只对 Archived 会话开放且要求二次确认。文件、Git diff、OMP、多窗口和完整 workspace projection 仍待实现。Runtime 继续使用现有 socket HTTP/WS transport，Swift feature 只依赖 `RuntimeClient` 及其事件/terminal capability 协议。
 
 退出门槛：在不打开浏览器的情况下完成日常单机工作，并由 App 自己管理 Runtime 生命周期；当前切片已证明现有会话可读取、Prompt 可提交且事件/terminal 可重连，bundled Runtime 已达到本机门槛，完整 workspace 仍未达到该门槛。
 
 ### Phase 2：生命周期与 macOS 集成
 
-已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、archive、restore、archived delete、Fork Thread、terminal create 与 terminal continue 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create 与 terminal continue 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、import、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
+待交付：多窗口、菜单栏后台模式、通知、Keychain broker、Git、approval 等 mutation receipt、崩溃重连、sleep/wake、Login Item helper。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

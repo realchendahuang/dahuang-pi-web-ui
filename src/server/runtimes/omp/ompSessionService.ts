@@ -39,6 +39,7 @@ import {
 import type {
 	SessionForkCandidate,
 	SessionForkResult,
+	SessionImportResult,
 	SessionRouteLookup,
 	SessionRouteRef,
 	SessionRouteService,
@@ -411,6 +412,12 @@ export class OmpSessionService implements SessionRouteService {
 	fork(): Promise<SessionForkResult> {
 		return Promise.reject(
 			new Error("Native thread forking is currently available only for the Pi runtime"),
+		);
+	}
+
+	importSession(): Promise<SessionImportResult> {
+		return Promise.reject(
+			new Error("Native session import is currently available only for the Pi runtime"),
 		);
 	}
 

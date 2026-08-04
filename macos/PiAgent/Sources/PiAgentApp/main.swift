@@ -622,6 +622,87 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func importSessionFromFile() {
+        guard let session = selectedSession else {
+            errorMessage = "Select an active thread before importing a session."
+            return
+        }
+        guard session.archived != true else {
+            errorMessage = "Restore this archived thread before importing a session."
+            return
+        }
+        guard !isSending else { return }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.data]
+        panel.prompt = "Import Thread"
+        panel.message = "Choose a Pi session JSONL file. Pi Agent imports a copy into this project's session storage."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        performSessionImport(session, inputPath: url.path)
+    }
+
+    private func performSessionImport(_ session: RuntimeSession, inputPath: String) {
+        guard let expectedRuntimeEpoch = runtimeEpoch else {
+            errorMessage = "Reconnect the Runtime before importing a session."
+            return
+        }
+        let client = runtimeClient
+        let commandId = UUID().uuidString
+        isSending = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.importSession(
+                        sessionId: session.id,
+                        cwd: session.cwd,
+                        runtimeId: session.runtimeId,
+                        inputPath: inputPath,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: client,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "import-session",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.imported == true,
+                      let imported = receipt.result?.session
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime import receipt was missing its imported session result."
+                    )
+                }
+                let refreshed = try await client.listSessions(cwd: imported.cwd)
+                guard refreshed.contains(where: { $0.id == imported.id }) else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime imported the thread, but it was not present in the session projection. Reconnect to refresh it."
+                    )
+                }
+                self.replaceSessions(refreshed)
+                self.isSending = false
+                self.selectSession(imported.id)
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isSending = false
+            }
+        }
+    }
+
     func confirmPermanentDelete() {
         guard let session = sessionPendingPermanentDeletion else { return }
         sessionPendingPermanentDeletion = nil
@@ -1317,6 +1398,14 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         commandId _: String,
         expectedRuntimeEpoch _: String
     ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func importSession(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        inputPath _: String,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func abortActiveWork(
         commandId _: String,
         expectedRuntimeEpoch _: String
@@ -1447,6 +1536,12 @@ struct SidebarView: View {
                     Label("New Thread", systemImage: "plus")
                 }
                 .disabled(model.isSending || model.projectPath.isEmpty)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: model.importSessionFromFile) {
+                    Label("Import Thread", systemImage: "square.and.arrow.down")
+                }
+                .disabled(model.isSending || model.selectedSession == nil || model.selectedSession?.archived == true)
             }
         }
     }

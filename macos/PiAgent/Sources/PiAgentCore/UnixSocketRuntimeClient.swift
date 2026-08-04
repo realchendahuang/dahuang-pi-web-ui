@@ -194,6 +194,27 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func importSession(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        inputPath: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/import",
+            body: ImportSessionPayload(
+                cwd: cwd,
+                runtimeId: runtimeId,
+                inputPath: inputPath,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "GET",
@@ -390,6 +411,31 @@ private struct ForkSessionPayload: Encodable {
         case cwd
         case runtimeId
         case entryId
+        case commandId
+        case runtimeEpoch
+    }
+}
+
+private struct ImportSessionPayload: Encodable {
+    let cwd: String
+    let runtimeId: String?
+    let inputPath: String
+    let commandId: String
+    let runtimeEpoch: String
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(inputPath, forKey: .inputPath)
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case cwd
+        case runtimeId
+        case inputPath
         case commandId
         case runtimeEpoch
     }
