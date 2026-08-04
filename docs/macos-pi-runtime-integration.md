@@ -76,6 +76,24 @@ Pi Agent.app
 
 这也与 T3 Code 的可借鉴边界一致：它让 server runtime 统一拥有 agent session、workspace、VCS、terminal 与 filesystem，桌面/网页/移动端只消费一个类型化、订阅式合同；客户端不直接执行这些副作用。Pi Agent 借鉴这个所有权模型和“连接 supervisor 在 View 之外”的原则，但不引入其 Electron UI、Effect 技术栈或整套 event sourcing。[T3 Code architecture](https://github.com/pingdotgg/t3code/blob/main/docs/internals/overview.md)
 
+### 1.1.1 2026-08-04：本仓库源码与上游 SDK 的交叉核验
+
+本结论不是只根据产品架构图得出；它已与当前仓库以及锁定的 Pi SDK
+`@earendil-works/pi-coding-agent@0.81.1` 的实际边界逐项核对：
+
+| 已核验事实 | 代码证据 | 对架构决策的影响 |
+| --- | --- | --- |
+| Pi 的 SDK 明确把自定义 desktop UI 列为嵌入场景；`AgentSession` 提供流式订阅，而 `AgentSessionRuntime` 负责新建、切换、fork、clone 与导入后的 session replacement。 | [`Pi SDK`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)；锁定版本见 [`macos/PiAgentRuntime/package.json`](../macos/PiAgentRuntime/package.json)。 | Runtime 应直接使用 SDK；Swift 不应为每个 Thread 重新包装一个 CLI subprocess。 |
+| 上游要求 session replacement 后重新订阅事件、重新绑定 extensions。 | [`Pi SDK session runtime`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md#agentsessionruntime)。 | 这类生命周期语义必须收敛在 Node adapter，而不是泄漏为 Swift 对上游对象的知识。 |
+| 本仓库已经把 `createAgentSessionServices`、`createAgentSessionFromServices`、`createAgentSessionRuntime` 和 SDK `SessionManager` 的实例检查集中在一个小 adapter。 | [`src/server/sessions/piSdkRuntimeAdapter.ts`](../src/server/sessions/piSdkRuntimeAdapter.ts)。 | 保持并加强这一 adapter 是低风险路线；升级 Pi 时只需审计、测试这一边界和 Native Contract。 |
+| bundled launcher 在 manifest、Node 版本与架构校验完成后，才载入编译出的 `sessiond`。 | [`macos/PiAgentRuntime/runtime-launcher.mjs`](../macos/PiAgentRuntime/runtime-launcher.mjs)。 | “完整嵌入”已经有正确的交付雏形：普通用户无需外部 Node、npm 或开发期 daemon。 |
+| 当前 Runtime 已能承载私有 Unix socket、HTTP command、WebSocket events、Runtime epoch 与 receipt；Swift 已仅通过该 Contract 调用。 | [`src/server/sessiond.ts`](../src/server/sessiond.ts) 与 [`macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift`](../macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift)。 | 继续收紧既有 Contract 与恢复语义，比改成第二套 Swift-to-RPC 协议更有价值。 |
+
+因此，后续实现的“更深融合”有一个可验证的定义：新增 Pi 能力先以
+`PiSdkRuntimeAdapter → Runtime product service → Native Contract → Swift feature`
+穿过四层；不得让 Swift import Pi 类型、不得从 Swift 直接启动 `pi --mode rpc`，也不得让 UI 直接拥有 Git、文件或 PTY。
+这既保留 Pi SDK 的官方 session/extension 语义，也保留 macOS 客户端可重建、Runtime 可恢复的故障隔离。
+
 ### 1.2 因此必须坚持的 integration rules
 
 1. **SDK 只在 Runtime adapter 内。** Swift DTO 只承载 Pi Agent 自己的 `SessionProjection`、`CommandReceipt`、`RuntimeEvent`、terminal bytes/resize 等产品语义；不能泄漏 `AgentSession`、SDK event 或 provider 私有类型。

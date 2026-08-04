@@ -129,7 +129,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 | 项目/能力 | 许可证 | 状态 | 用途与边界 |
 | --- | --- | --- | --- |
 | [SwiftUI / AppKit / Security / ServiceManagement / OSLog](https://developer.apple.com/documentation/) | Apple SDK | 采用 | 窗口、菜单、Keychain、Login Item、日志、权限等平台边界；优先于同功能包装库 |
-| [Sparkle 2](https://github.com/sparkle-project/Sparkle) | 宽松许可证，含第三方 notices | 采用 | 应用内更新；业务层仍负责 active-session gate、checkpoint、Runtime/helper 协调和回滚验证 |
+| [Sparkle 2](https://github.com/sparkle-project/Sparkle) | 宽松许可证，含第三方 notices | 当前不采用 | 当前明确不做签名、公证、DMG 或自动更新；未来若恢复签名分发，再以 active-session gate、checkpoint、Runtime/helper 协调和回滚验证为前提重新 spike |
 | [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | 采用 | 只保存 App 自己的 bookmark metadata、window state、UI cache 和 migration journal；不与 Runtime 并发写同一数据库 |
 | [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) | MIT | **已采用（1.11.2）** | AppKit `TerminalView` 和 VT emulation；只接 Runtime 的 byte stream，不接管 PTY process；1.11.2 固定版本避免当前 CommandLineTools 缺少 `metal` 时的 shader 构建阻塞 |
 | [Ghostty / libghostty](https://github.com/ghostty-org/ghostty) | MIT | Phase 0 对照 | 高性能 terminal engine/Metal 参考；`libghostty-vt` 可嵌入但 API 仍变化，只有 SwiftTerm 不达标时才评估 pin commit + C bridge |
@@ -175,7 +175,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 - **工程生成**：XcodeGen 需要在真实 app、helper、UITests、SPM、entitlements 和 signing 上验证。若生成结果不稳定，就提交标准 `.xcodeproj`。
 - **日志**：App 侧默认 OSLog，Runtime 保持结构化日志并共享 correlation ID。只有多 package backend 注入确有收益时再加 swift-log。
 - **登录启动**：直接使用 ServiceManagement 的现代 API；不引入 LaunchAtLogin wrapper 作为核心边界。
-- **更新**：直接依赖 Sparkle 2，但 Sparkle delegate 之前必须经过 Runtime 活动会话 gate；App、helper 和 bundled Runtime 是一个不可拆分的发布单元。
+- **更新**：当前不引入 Sparkle 或任何自动更新机制。未来若进入已签名分发，再以 Sparkle 2 为候选；届时 Sparkle delegate 必须经过 Runtime 活动会话 gate，且 App、helper 与 bundled Runtime 必须作为一个不可拆分的发布单元更新。
 
 ### 2.9 许可证与供应链规则
 
@@ -203,7 +203,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 | Keychain | Security framework vs KeychainAccess | 多 Provider/account、更新、删除、access group、错误映射和 redaction | fake + real Keychain integration tests，诊断无 secret |
 | Persistence | GRDB | migration、WAL、backup、observation 是否满足 App-owned state | schema/migration tests，证明不与 Runtime 共写 |
 | Project | XcodeGen vs checked-in xcodeproj | helper、UITests、SPM、capabilities、签名是否可重复 | clean clone 一条命令生成/构建，diff 稳定 |
-| Update | Sparkle 2 | active session、helper/runtime version、rollback、appcast 安全 | 签名旧版到新版升级演练和失败回滚 |
+| Update（未来签名分发后） | Sparkle 2 | active session、helper/runtime version、rollback、appcast 安全 | 签名旧版到新版升级演练和失败回滚；当前不执行 |
 
 每个 spike 最终产出 ADR：选择、拒绝项、许可证、版本 pin、性能数据、辅助功能结果、回滚路径。没有证据时保留“候选”，不能因为 GitHub star 数或截图好看就宣布采用。
 
@@ -225,7 +225,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 因此采用明确的分层：
 
 ```text
-原生产品层：SwiftUI / AppKit / Keychain / Notifications / Sparkle
+原生产品层：SwiftUI / AppKit / Keychain / Notifications（未来签名分发时再评估 Sparkle）
                           ↓ typed IPC
 Agent Runtime：TypeScript / Node / Pi SDK / OMP RPC / node-pty
                           ↓
@@ -660,13 +660,16 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 
 ## 14. 更新和本地分发
 
-### 14.1 Release artifact
+### 14.1 当前本地交付物与未来 release artifact
+
+当前交付物是经过 `verify-app.sh` 验证的未签名 `.app`，其中包含 App、Runtime 和协议 manifest；
+不把 npm registry 作为普通用户安装入口。
+
+未来若恢复签名分发，才评估以下 artifact：
 
 - Apple Silicon DMG；
 - Intel DMG（只在真实 Intel runner 或机器上验证后发布）；
-- 可选 zip 供 Sparkle 更新；
-- 每个 artifact 包含 App、Runtime 和协议 manifest；
-- 不把 npm registry 作为普通用户安装入口。
+- 可选 zip 供 Sparkle 更新。
 
 ### 14.2 Release pipeline
 
@@ -681,7 +684,7 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 
 当前范围没有签名、公证、DMG、Gatekeeper 或 Sparkle 凭据；如果未来重新引入这些能力，必须另开 ADR，而不能把未签名流程误报为可公开分发流程。
 
-### 14.3 自动更新行为
+### 14.3 未来自动更新行为（当前不实现）
 
 - 检测更新不打断任务；
 - 下载完成后，如果存在活动会话，默认“任务完成后提醒”；
@@ -819,7 +822,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 6. Runtime keep-alive 和 App 终止状态机；
 7. Keychain 与现有 Pi/OMP credential 的桥接边界；
 8. bookmarks 和 Runtime 路径授权传递；
-9. Sparkle 更新、helper 更新和 active-session gate；
+9. 未来签名分发时的 Sparkle 更新、helper 更新和 active-session gate；
 10. Textual、swift-markdown 与 transcript 增量渲染边界；
 11. XcodeGen 或 checked-in Xcode project；
 12. legacy Web UI、CLI 和 browser plugin 的支持周期。
@@ -855,6 +858,6 @@ ADR 必须记录选择、拒绝方案、证据、回滚路径和需要复核的�
 4. Swift 显示项目、会话和流式 transcript；
 5. 以 SwiftTerm 为首选加入原生 terminal prototype，并保留 `TerminalSurface` 替换边界；
 6. 实现 App 关闭窗口后重连同一 Runtime；
-7. 生成签名的 Apple Silicon `.app` 并在干净账户 smoke test。
+7. 生成未签名的 Apple Silicon `.app` 并在干净账户 smoke test。
 
-这个切片不做完整设置、不做远程、不做插件 UI、不改旧数据格式。它验证整个方案最危险的五条链路：App 打包、Runtime 签名、IPC、流式会话和 native terminal。通过后再扩展功能；未通过时能以最低成本更换 IPC 或 terminal 技术选择。
+这个切片不做完整设置、不做远程、不做插件 UI、不改旧数据格式。它验证整个方案最危险的五条链路：App 打包、Runtime 完整性、IPC、流式会话和 native terminal。通过后再扩展功能；未通过时能以最低成本更换 IPC 或 terminal 技术选择。
