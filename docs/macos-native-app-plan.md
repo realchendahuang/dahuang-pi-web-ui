@@ -616,6 +616,8 @@ Pi 自己的 profile 和 session 文件仍由 Pi/OMP 兼容目录拥有，不能
 - 导出诊断默认只输出 configured/unavailable 状态；
 - 兼容旧 auth 文件时先验证 Provider 支持边界，不能假定所有 Pi auth 都可直接迁入 Keychain。
 
+当前已实现的 `auth.json` 迁移使用 Runtime-owned Keychain `CredentialStore`：原生 UI 只能预览 provider ID、认证类型和冲突状态；明确确认后逐项写入并 readback，`PI_WEB_DATA_DIR/native-auth-migrations.json` 以 `0600` 原子记录不含 secret 的 migration journal。若任一 provider 已在 Keychain 中存在，则拒绝整个迁移而不覆盖。成功后旧文件保持不变；rollback 只删除 journal 确认由本次迁移创建的 Keychain 项。写入和 rollback 都采用 runtime epoch、`commandId` 和 receipt；socket 结果未知时只查询 receipt。真实 provider account 的 E2E、旧文件退休和无法确认 Keychain item 归属的 crash recovery 仍不在当前交付范围。
+
 ## 11. 文件系统权限
 
 Pi Agent 需要真实访问项目、Git worktree、终端 cwd 和附件。第一版采用 Developer ID 分发，仍应按最小授权设计：
@@ -757,7 +759,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 已交付的 non-sandbox project boundary：bundled Runtime 启动时获得仅在 child environment 中传递的 token；原生客户端先执行 epoch-bound `authorize-project` receipt，再读取 project session；Runtime 对其他请求要求 token，并通过 canonical `realpath` root/descendant allow-list 拒绝未授权 cwd、sibling-prefix 和 symlink escape。Swift 显示授权状态，未授权时不创建 thread、prompt 或 terminal。它是同用户的逻辑能力边界，不是 sandbox security scope。
 
-待交付：多窗口、菜单栏后台模式、通知、Git push/reset/revert 与 submodule mutation、Login Item helper，以及 Sandbox 下 project bookmark data 到 RuntimeHost/child Runtime 的真实 capability hand-off。App-owned Runtime 的 session/terminal socket 断线恢复、App crash 后 Runtime supervisor 重连与 sleep/wake 的一次性权威重同步现已交付；外部 daemon 仍只保留自身连接/重连语义，不会由 App 启动或停止。Bundled Runtime 已通过其最小 `Security.framework` helper 注入 Pi SDK 的 `CredentialStore`：每个 provider credential 仅以 Keychain generic-password item 保存，metadata enumeration 不返回 secret，且 Runtime 不把 key 暴露给 SwiftUI/Native Contract。Provider status、OAuth/API-key native flow 与自动 polling 已交付；旧 `auth.json` 的显式预览/迁移、迁移 journal/rollback 与真实 provider E2E 仍未交付，不得误报为全量迁移完成。
+待交付：多窗口、菜单栏后台模式、通知、Git push/reset/revert 与 submodule mutation、Login Item helper，以及 Sandbox 下 project bookmark data 到 RuntimeHost/child Runtime 的真实 capability hand-off。App-owned Runtime 的 session/terminal socket 断线恢复、App crash 后 Runtime supervisor 重连与 sleep/wake 的一次性权威重同步现已交付；外部 daemon 仍只保留自身连接/重连语义，不会由 App 启动或停止。Bundled Runtime 已通过其最小 `Security.framework` helper 注入 Pi SDK 的 `CredentialStore`：每个 provider credential 仅以 Keychain generic-password item 保存，metadata enumeration 不返回 secret，且 Runtime 不把 key 暴露给 SwiftUI/Native Contract。Provider status、OAuth/API-key native flow 与自动 polling 已交付；旧 `auth.json` 已支持 redacted preview、用户确认后的逐项 Keychain 写入/readback、`0600` migration journal 与只删除本次创建 Keychain 项的 rollback，source file 不会删除。真实 provider E2E、旧 auth 文件退休和 crash 后来源无法确定条目的自动清理仍未交付，不得误报为全量迁移完成。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

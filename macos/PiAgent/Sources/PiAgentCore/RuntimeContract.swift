@@ -119,6 +119,41 @@ public struct RuntimeAuthProviders: Codable, Equatable, Sendable {
     public let providers: [RuntimeAuthProvider]
 }
 
+/// A redacted projection of credentials found in Pi's legacy auth.json. The
+/// Runtime never serializes token or API-key values across the native contract.
+public struct RuntimeLegacyAuthCredential: Codable, Equatable, Identifiable, Sendable {
+    public let providerId: String
+    public let type: String
+    public let status: String
+    public var id: String { providerId }
+}
+
+public struct RuntimeLegacyAuthMigrationPreview: Codable, Equatable, Sendable {
+    public let available: Bool
+    public let source: String
+    public let sourceExists: Bool
+    public let eligible: Bool
+    public let credentials: [RuntimeLegacyAuthCredential]
+    public let issue: String?
+}
+
+public struct RuntimeLegacyAuthMigration: Codable, Equatable, Identifiable, Sendable {
+    public struct Credential: Codable, Equatable, Identifiable, Sendable {
+        public let providerId: String
+        public let type: String
+        public let created: Bool
+        public var id: String { providerId }
+    }
+    public let id: String
+    public let source: String
+    public let createdAt: Date
+    public let completedAt: Date?
+    public let state: String
+    public let credentials: [Credential]
+    public let rollbackEligible: Bool
+    public let error: String?
+}
+
 public struct RuntimeAuthChoice: Codable, Equatable, Identifiable, Sendable {
     public let value: String
     public let label: String
@@ -181,6 +216,9 @@ public protocol RuntimeAuthClient: Sendable {
     func authFlow(id: String) async throws -> RuntimeAuthFlow
     func respondAuthFlow(id: String, requestId: String, value: String) async throws -> RuntimeAuthFlow
     func cancelAuthFlow(id: String) async throws -> RuntimeAuthFlow
+    func legacyAuthMigrationPreview() async throws -> RuntimeLegacyAuthMigrationPreview
+    func migrateLegacyAuth(providerIds: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func rollbackLegacyAuthMigration(id: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
 /// Stable, UI-facing projection of one session returned by sessiond.
@@ -865,7 +903,10 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let authorized: Bool?
 		public let written: Bool?
 		public let deletedFile: Bool?
-		public let moved: Bool?
+        public let moved: Bool?
+		public let migrated: Bool?
+		public let rolledBack: Bool?
+		public let migration: RuntimeLegacyAuthMigration?
 		public let existed: Bool?
 		public let fromPath: String?
 		public let toPath: String?

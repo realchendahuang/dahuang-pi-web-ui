@@ -4,6 +4,11 @@ import type { AuthInteraction } from "@earendil-works/pi-ai";
 import type { CredentialStore } from "@earendil-works/pi-ai";
 import type { AuthProvidersResponse, AuthType, OAuthFlowState } from "../../shared/apiTypes.js";
 import { getLoginProviderOptions, getLogoutProviderOptions } from "./authProviderOptions.js";
+import {
+  LegacyAuthMigrationService,
+  type LegacyAuthMigrationPreview,
+  type LegacyAuthMigrationRecord,
+} from "./legacyAuthMigration.js";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
 
 export interface AuthChange {
@@ -18,6 +23,7 @@ export interface AuthServiceDependencies {
   authFlows?: OAuthLoginFlowService;
   logger?: AuthServiceLogger;
   credentials?: CredentialStore;
+  legacyAuthMigration?: LegacyAuthMigrationService;
 }
 
 /** Minimal structured-logging seam for non-fatal auth propagation failures. */
@@ -49,12 +55,19 @@ export class AuthService {
   readonly runtime: ModelRuntime;
   private readonly authFlows: OAuthLoginFlowService;
   private readonly logger: AuthServiceLogger;
+  private readonly legacyAuthMigration: LegacyAuthMigrationService | undefined;
   private readonly listeners = new Set<AuthChangeListener>();
 
-  private constructor(runtime: ModelRuntime, authFlows: OAuthLoginFlowService, logger: AuthServiceLogger) {
+  private constructor(
+    runtime: ModelRuntime,
+    authFlows: OAuthLoginFlowService,
+    logger: AuthServiceLogger,
+    legacyAuthMigration?: LegacyAuthMigrationService,
+  ) {
     this.runtime = runtime;
     this.authFlows = authFlows;
     this.logger = logger;
+    this.legacyAuthMigration = legacyAuthMigration;
   }
 
   static async create(deps: AuthServiceDependencies = {}): Promise<AuthService> {
@@ -63,7 +76,10 @@ export class AuthService {
       : await createModelRuntimeForAgentDir(deps.agentDir, undefined, deps.credentials));
     const logger = deps.logger ?? noopLogger;
     const authFlows = deps.authFlows ?? new OAuthLoginFlowService({ logger });
-    return new AuthService(runtime, authFlows, logger);
+    const legacyAuthMigration = deps.legacyAuthMigration ?? (deps.credentials !== undefined && deps.agentDir !== undefined
+      ? new LegacyAuthMigrationService(deps.credentials, join(deps.agentDir, "auth.json"))
+      : undefined);
+    return new AuthService(runtime, authFlows, logger, legacyAuthMigration);
   }
 
   subscribe(listener: AuthChangeListener): () => void {
@@ -147,6 +163,28 @@ export class AuthService {
     return this.authFlows.cancel(flowId);
   }
 
+  async legacyAuthMigrationPreview(): Promise<LegacyAuthMigrationPreview> {
+    return await this.requireLegacyAuthMigration().preview();
+  }
+
+  async migrateLegacyAuth(expectedProviderIds: readonly string[]): Promise<LegacyAuthMigrationRecord> {
+    const migration = await this.requireLegacyAuthMigration().migrate(expectedProviderIds);
+    await this.runtime.reloadConfig();
+    await this.emit({}, { operation: "login", providerId: "legacy-auth-json" });
+    return migration;
+  }
+
+  async rollbackLegacyAuthMigration(id: string): Promise<LegacyAuthMigrationRecord> {
+    const migration = await this.requireLegacyAuthMigration().rollback(id);
+    await this.runtime.reloadConfig();
+    await this.emit({}, { operation: "logout", providerId: "legacy-auth-json" });
+    return migration;
+  }
+
+  legacyAuthMigrationStatus(id: string): Promise<LegacyAuthMigrationRecord | undefined> {
+    return this.requireLegacyAuthMigration().get(id);
+  }
+
   private async emit(change: AuthChange, context: AuthChangeContext): Promise<void> {
     const results = await Promise.allSettled([...this.listeners].map(async (listener) => listener(change)));
     for (const result of results) {
@@ -181,5 +219,12 @@ export class AuthService {
     const provider = getLoginProviderOptions(this.runtime, "oauth").find((option) => option.id === providerId);
     if (provider === undefined) throw new Error(`OAuth provider not found: ${providerId}`);
     return provider;
+  }
+
+  private requireLegacyAuthMigration(): LegacyAuthMigrationService {
+    if (this.legacyAuthMigration === undefined) {
+      throw new Error("Legacy auth migration is available only in the bundled macOS Runtime");
+    }
+    return this.legacyAuthMigration;
   }
 }

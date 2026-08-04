@@ -25,6 +25,8 @@ export const RUNTIME_COMMAND_KINDS = {
 	writeWorkspaceFile: "write-workspace-file",
 	deleteWorkspaceFile: "delete-workspace-file",
 	moveWorkspaceFile: "move-workspace-file",
+	migrateLegacyAuth: "migrate-legacy-auth",
+	rollbackLegacyAuthMigration: "rollback-legacy-auth-migration",
 } as const;
 
 export type RuntimeCommandKind =
@@ -133,6 +135,12 @@ export interface RuntimeMoveWorkspaceFileCommandResult {
 	modifiedAt: string;
 }
 
+export interface RuntimeLegacyAuthMigrationCommandResult {
+	migrated?: true;
+	rolledBack?: true;
+	migration: import("./sessions/legacyAuthMigration.js").LegacyAuthMigrationRecord;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
@@ -150,7 +158,8 @@ export type RuntimeCommandResult =
 	| RuntimeAuthorizeProjectCommandResult
 	| RuntimeWriteWorkspaceFileCommandResult
 	| RuntimeDeleteWorkspaceFileCommandResult
-	| RuntimeMoveWorkspaceFileCommandResult;
+	| RuntimeMoveWorkspaceFileCommandResult
+	| RuntimeLegacyAuthMigrationCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

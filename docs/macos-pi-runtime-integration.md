@@ -1,6 +1,6 @@
 # macOS 原生客户端与 Pi Runtime 融合：研究与架构决策
 
-> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验、Unix-socket smoke 与 Runtime-owned workspace 文本创建/编辑/移动/删除、受限图片预览、原生消息图片附件、Thread Git checkpoint/review 已完成；后台/登录生命周期、Keychain 迁移和远程能力仍在实施。**
+> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验、Unix-socket smoke、Runtime-owned workspace 文本创建/编辑/移动/删除、受限图片预览、原生消息图片附件、Thread Git checkpoint/review，以及 legacy `auth.json` 的 Keychain 受控迁移已完成；后台/登录生命周期和远程能力仍在实施。**
 >
 > 范围覆写：当前用户明确要求不做代码签名、公证、Gatekeeper/DMG/Sparkle 发布。本文保留相关研究作为未来参考，但所有当前验收以 exact dependency lock、manifest/hash、Node 版本/架构和真实 Runtime smoke 为准。
 >
@@ -737,18 +737,19 @@ Pi 的 JavaScript extension、skill、prompt 和 context discovery 可以保留�
 
 ### 10.3 Keychain 与 credential bridge
 
-目标状态是 secret 存入 Keychain，由受限 broker 提供给 Runtime；Swift feature store 和普通 Native Contract 不持有明文 API key。当前尚未实现 credential broker，不能因此误报 Pi 现有 auth 文件已迁移。
+bundled Runtime 已将 Pi SDK 的 `CredentialStore` 接到一个受限的 `Security.framework` helper。secret 只在 Runtime 与 helper 的 stdin/stdout 边界出现；Swift feature store、Native Contract、JSON 日志和 command receipt 都不持有明文 API key、access token 或 refresh token。Keychain 列表只返回 provider ID 与 credential type。
 
-迁移必须渐进：
+legacy `auth.json` 的初始迁移实现是**保守的 copy-with-readback**，不是文件删除或 merge：
 
-1. 枚举 Pi、OMP 和 provider 当前实际 credential source；
-2. 建立 provider-by-provider 支持矩阵；
-3. 新 credential 默认写 Keychain；
-4. Runtime 通过窄接口请求指定 provider 的短期 credential；
-5. 验证成功后再提示迁移旧文件；
-6. 不在没有回滚和 readback 的情况下批量删除 `auth.json` 或环境变量配置。
+1. Native Settings 仅请求只读预览，显示 provider ID、`oauth`/`api_key` 类型和冲突状态，绝不显示 credential 内容；
+2. Runtime 以 Pi SDK 当前的 `auth.json` schema 验证文件，限制文件/单 credential 的大小以及 provider ID 形状；
+3. 如果 Keychain 已有同一 provider，则整个迁移拒绝，绝不覆盖、合并或备份旧 Keychain secret；
+4. 用户二次确认后，Runtime 逐项写入 Keychain 并逐项 readback 验证类型；
+5. Runtime 在 `PI_WEB_DATA_DIR/native-auth-migrations.json` 写入 `0600` 原子 journal；journal 只有 migration ID、时间、provider/type、是否由本迁移创建和状态，不含 secret；
+6. 成功后旧 `auth.json` 保留不动；“退休/移入废纸篓”不是这一切片的能力；
+7. 已验证成功的 migration 可从原生 UI 发起 rollback，rollback 只删除 journal 已确认由这次迁移创建的 Keychain 项，旧文件始终保留。
 
-credential broker 必须限制调用方签名、provider id、操作类型和返回用途，并审计成功/失败元数据；审计中不能出现 token。
+迁移写入和 rollback 都是 runtime-epoch-bound `commandId` mutation。socket 调用结果未知时 App 只查询相同 receipt，绝不新建第二次写入。若某次写入之后发生 Runtime 级崩溃、无法证明某个 Keychain item 的归属，journal 会保留 `rollback-required`，而不是冒险删除不确定来源的 credential。真实 provider 的 OAuth/API-key E2E 仍需在用户的账号上手动验证；本地测试仅证明 storage、redaction、冲突与 rollback 语义。
 
 ### 10.4 项目目录与 bookmarks
 
@@ -914,7 +915,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock、Runtime-owned workspace tree/file projection，以及文本文件的新建、编辑保存、移动/重命名、二次确认删除、受支持图片格式的受限预览、原生消息图片附件和 Thread Git checkpoint/review。Composer 只允许 Pi 原生 inline image 支持的 PNG/JPEG/GIF/WebP：最多 16 个，每张上限 4.5 MB；Swift 对用户选择的文件临时读取并 base64 传给 Runtime，Runtime 在 receipt 建立前以同一上限再次验证。SDK 产出的持久化 image content 通过 session contract 返回，Swift 只用 `NSImage` 渲染该 socket payload，既不读取 workspace 图片 URL，也不增加浏览/文件权限。checkpoint 在 Runtime 的 `PI_WEB_DATA_DIR` 以 `0600` 原子文件存放，包含当前 Git status 与各自最多 256 KiB 的 staged/unstaged diff，并将任意裁剪显式标为 `truncated`；它只支持回看，不创建 Git ref，也没有 restore/revert route。图片预览沿用 Runtime 的 canonical path、MIME 与 10 MB 大小限制，然后以 bounded base64 payload 交给 Swift/AppKit；原生 UI 不取得文件 URL 或额外的 checkout 读取权限。所有 mutation 都使用 runtime epoch、`commandId`、payload fingerprint 与可查询 receipt，bundled smoke 在自建临时授权项目中验证写入、receipt retry、读取、移动、删除、checkpoint list 与 native attachment rejection。App-bundled Keychain `CredentialStore`，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit、checkpoint 和 Pi extension dialog response 的 command receipt 也已交付。Provider status、OAuth/API-key Native Contract、原生登录 sheet 与自动 flow polling 已交付；真实 provider E2E 与旧 `auth.json` 的显式预览/迁移 journal/rollback 仍未完成。App-owned Runtime 的 socket 断线、sleep/wake 和 restart recovery 已有单次恢复 gate、refresh generation 与打包 smoke 覆盖。Keychain helper 仅允许 Pi Agent 固定 service 和 provider-id account，secret 经 stdin/stdout 在 Runtime 与 `Security.framework` helper 间传递，不写入 SwiftUI state、JSON log 或 command-line argument；list 仅投影 provider/type。下一步是完成旧 `auth.json` 的迁移、Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off、dependency-closure/SBOM/license 审计和完整的人工 crash/lifecycle matrix；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、App-token + canonical-path Runtime project boundary、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock、Runtime-owned workspace tree/file projection，以及文本文件的新建、编辑保存、移动/重命名、二次确认删除、受支持图片格式的受限预览、原生消息图片附件和 Thread Git checkpoint/review。Composer 只允许 Pi 原生 inline image 支持的 PNG/JPEG/GIF/WebP：最多 16 个，每张上限 4.5 MB；Swift 对用户选择的文件临时读取并 base64 传给 Runtime，Runtime 在 receipt 建立前以同一上限再次验证。SDK 产出的持久化 image content 通过 session contract 返回，Swift 只用 `NSImage` 渲染该 socket payload，既不读取 workspace 图片 URL，也不增加浏览/文件权限。checkpoint 在 Runtime 的 `PI_WEB_DATA_DIR` 以 `0600` 原子文件存放，包含当前 Git status 与各自最多 256 KiB 的 staged/unstaged diff，并将任意裁剪显式标为 `truncated`；它只支持回看，不创建 Git ref，也没有 restore/revert route。图片预览沿用 Runtime 的 canonical path、MIME 与 10 MB 大小限制，然后以 bounded base64 payload 交给 Swift/AppKit；原生 UI 不取得文件 URL 或额外的 checkout 读取权限。所有 mutation 都使用 runtime epoch、`commandId`、payload fingerprint 与可查询 receipt，bundled smoke 在自建临时授权项目中验证写入、receipt retry、读取、移动、删除、checkpoint list 与 native attachment rejection。App-bundled Keychain `CredentialStore`，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit、checkpoint、legacy auth migration/rollback 和 Pi extension dialog response 的 command receipt 也已交付。Provider status、OAuth/API-key Native Contract、原生登录 sheet 与自动 flow polling 已交付；legacy `auth.json` 现在支持 redacted preview、显式迁移、`0600` journal、readback 和仅删除本次创建项的 rollback，且不删除 source file。真实 provider E2E 仍未完成。App-owned Runtime 的 socket 断线、sleep/wake 和 restart recovery 已有单次恢复 gate、refresh generation 与打包 smoke 覆盖。Keychain helper 仅允许 Pi Agent 固定 service 和 provider-id account，secret 经 stdin/stdout 在 Runtime 与 `Security.framework` helper 间传递，不写入 SwiftUI state、JSON log 或 command-line argument；list 仅投影 provider/type。下一步是 Sandbox 下 bookmark data 到 child Runtime 的真实 capability hand-off、dependency-closure/SBOM/license 审计和完整的人工 crash/lifecycle matrix；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

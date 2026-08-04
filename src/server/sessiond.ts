@@ -183,7 +183,7 @@ await runSessionDaemonStartup({
 			runtimeCommandReceipts,
 		);
 		registerWorkspaceActivityRoutes(app, workspaceActivity);
-		registerAuthRoutes(app, auth);
+		registerAuthRoutes(app, auth, "", runtimeCommandReceipts);
 		registerSessionRoutes(app, sessions, eventHub, "", {
 			runtimeCommandReceipts,
 		});

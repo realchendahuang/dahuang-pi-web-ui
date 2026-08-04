@@ -178,6 +178,10 @@ final class AppModel: ObservableObject {
     @Published var authErrorMessage: String?
     @Published var activeAuthFlow: RuntimeAuthFlow?
     @Published var authInput = ""
+    @Published var legacyAuthMigrationPreview: RuntimeLegacyAuthMigrationPreview?
+    @Published var legacyAuthMigration: RuntimeLegacyAuthMigration?
+    @Published var isLegacyAuthMigrationLoading = false
+    @Published var showLegacyAuthMigrationConfirmation = false
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -1326,10 +1330,106 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.authProviders = response.providers
                 self.isAuthLoading = false
+                self.refreshLegacyAuthMigrationPreview()
             } catch {
                 guard let self else { return }
                 self.authErrorMessage = error.localizedDescription
                 self.isAuthLoading = false
+            }
+        }
+    }
+
+    /// Inspection is read-only and its projection contains provider/type only.
+    func refreshLegacyAuthMigrationPreview() {
+        guard let client = runtimeClient as? any RuntimeAuthClient, runtimeEpoch != nil else { return }
+        isLegacyAuthMigrationLoading = true
+        Task { [weak self] in
+            do {
+                let preview = try await client.legacyAuthMigrationPreview()
+                guard let self else { return }
+                self.legacyAuthMigrationPreview = preview
+                self.isLegacyAuthMigrationLoading = false
+            } catch {
+                guard let self else { return }
+                // Older/non-bundled Runtimes do not expose this optional capability.
+                self.legacyAuthMigrationPreview = nil
+                self.isLegacyAuthMigrationLoading = false
+            }
+        }
+    }
+
+    func requestLegacyAuthMigration() {
+        guard legacyAuthMigrationPreview?.eligible == true else { return }
+        showLegacyAuthMigrationConfirmation = true
+    }
+
+    func migrateLegacyAuth() {
+        guard let client = runtimeClient as? any RuntimeAuthClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              let preview = legacyAuthMigrationPreview,
+              preview.eligible,
+              !isLegacyAuthMigrationLoading
+        else { return }
+        let commandId = UUID().uuidString
+        isLegacyAuthMigrationLoading = true
+        authErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.migrateLegacyAuth(
+                        providerIds: preview.credentials.map(\.providerId),
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error)
+                }
+                try self.requireCompletedReceipt(receipt, kind: "migrate-legacy-auth", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.migrated == true, let migration = receipt.result?.migration else {
+                    throw RuntimeClientError.serverError(500, "Runtime migration receipt was missing its completed result.")
+                }
+                self.legacyAuthMigration = migration
+                self.isLegacyAuthMigrationLoading = false
+                self.refreshAuthProviders()
+            } catch {
+                self.authErrorMessage = error.localizedDescription
+                self.isLegacyAuthMigrationLoading = false
+                self.refreshLegacyAuthMigrationPreview()
+            }
+        }
+    }
+
+    func rollbackLegacyAuthMigration() {
+        guard let client = runtimeClient as? any RuntimeAuthClient,
+              let expectedRuntimeEpoch = runtimeEpoch,
+              let migration = legacyAuthMigration,
+              migration.rollbackEligible,
+              !isLegacyAuthMigrationLoading
+        else { return }
+        let commandId = UUID().uuidString
+        isLegacyAuthMigrationLoading = true
+        authErrorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.rollbackLegacyAuthMigration(id: migration.id, commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch)
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error)
+                }
+                try self.requireCompletedReceipt(receipt, kind: "rollback-legacy-auth-migration", expectedRuntimeEpoch: expectedRuntimeEpoch)
+                guard receipt.result?.rolledBack == true, let updated = receipt.result?.migration else {
+                    throw RuntimeClientError.serverError(500, "Runtime rollback receipt was missing its completed result.")
+                }
+                self.legacyAuthMigration = updated
+                self.isLegacyAuthMigrationLoading = false
+                self.refreshAuthProviders()
+            } catch {
+                self.authErrorMessage = error.localizedDescription
+                self.isLegacyAuthMigrationLoading = false
             }
         }
     }
@@ -3400,9 +3500,57 @@ struct SettingsView: View {
                 Button("Refresh Provider Status") { model.refreshAuthProviders() }
                     .disabled(model.isAuthLoading || !model.canUseProjectRuntime)
             }
+            Section("Legacy credentials") {
+                Text("Pi Agent can copy compatible credentials from the existing auth.json into this Mac's Keychain. Values are never shown here, and the source file remains unchanged.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.isLegacyAuthMigrationLoading {
+                    ProgressView("Checking legacy credentials…")
+                } else if let preview = model.legacyAuthMigrationPreview {
+                    if preview.credentials.isEmpty {
+                        Text(preview.issue ?? "No legacy credentials found.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(preview.credentials) { credential in
+                            LabeledContent(credential.providerId, value: credential.type == "oauth" ? "OAuth" : "API key")
+                            if credential.status != "ready" {
+                                Text("Already in Keychain — migration will not overwrite it.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if let issue = preview.issue {
+                            Text(issue).font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                    Button("Migrate to Keychain…") { model.requestLegacyAuthMigration() }
+                        .disabled(!preview.eligible)
+                } else {
+                    Text("This Runtime has not reported a legacy credential migration capability.")
+                        .foregroundStyle(.secondary)
+                }
+                if let migration = model.legacyAuthMigration {
+                    LabeledContent("Last migration", value: migration.state)
+                    if migration.rollbackEligible {
+                        Button("Roll Back Last Migration", role: .destructive) { model.rollbackLegacyAuthMigration() }
+                    }
+                }
+                Button("Review Legacy Credentials") { model.refreshLegacyAuthMigrationPreview() }
+                    .disabled(model.isLegacyAuthMigrationLoading || !model.canUseProjectRuntime)
+            }
         }
         .padding()
         .frame(width: 520)
+        .confirmationDialog(
+            "Migrate legacy credentials to Keychain?",
+            isPresented: $model.showLegacyAuthMigrationConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Migrate to Keychain") { model.migrateLegacyAuth() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only the listed providers will be copied. Existing Keychain credentials will not be overwritten, and the old auth.json will remain unchanged.")
+        }
     }
 }
 
