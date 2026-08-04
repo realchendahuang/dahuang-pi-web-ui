@@ -95,6 +95,34 @@ public protocol RuntimeHealthClient: Sendable {
     func health() async throws -> RuntimeHealth
 }
 
+/// Provider credential metadata only. The Runtime never exposes a credential
+/// value to the native product contract.
+public struct RuntimeAuthProviderStatus: Codable, Equatable, Sendable {
+    public let configured: Bool
+    public let source: String?
+    public let label: String?
+}
+
+public struct RuntimeAuthProvider: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let authType: String
+    public let status: RuntimeAuthProviderStatus
+    public let loginFlow: String?
+
+    /// A provider can offer both OAuth and API-key login, so the upstream
+    /// provider id alone is not a stable SwiftUI collection identity.
+    public var displayID: String { "\(id):\(authType)" }
+}
+
+public struct RuntimeAuthProviders: Codable, Equatable, Sendable {
+    public let providers: [RuntimeAuthProvider]
+}
+
+public protocol RuntimeAuthClient: Sendable {
+    func authProviders() async throws -> RuntimeAuthProviders
+}
+
 /// Stable, UI-facing projection of one session returned by sessiond.
 ///
 /// This deliberately mirrors only the fields the native shell needs. The

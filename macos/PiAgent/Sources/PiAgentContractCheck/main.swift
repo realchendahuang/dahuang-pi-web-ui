@@ -38,6 +38,10 @@ struct PiAgentContractCheck {
             precondition(packageManifest.path == "package.json")
             precondition(!packageManifest.binary)
             print("Loaded \(workspace.entries.count) workspace entries and package.json through the Native Contract")
+            let providers = try await client.authProviders()
+            precondition(!providers.providers.isEmpty)
+            precondition(providers.providers.allSatisfy { !$0.id.isEmpty && !$0.name.isEmpty })
+            print("Loaded \(providers.providers.count) provider credential projections through the Native Contract")
             if let sessionID = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SESSION_ID"],
                let session = sessions.first(where: { $0.id == sessionID })
             {
@@ -244,6 +248,14 @@ struct PiAgentContractCheck {
         )
         precondition(deleteReceipt.result?.deletedFile == true)
         precondition(deleteReceipt.result?.existed == true)
+
+        let providers = try decoder.decode(
+            RuntimeAuthProviders.self,
+            from: Data(#"{"providers":[{"id":"openai","name":"OpenAI","authType":"api_key","status":{"configured":true,"source":"stored"},"loginFlow":"interactive"}]}"#.utf8)
+        )
+        precondition(providers.providers.count == 1)
+        precondition(providers.providers[0].status.configured)
+        precondition(providers.providers[0].status.source == "stored")
     }
 
     private static func checkExtensionInteractionContractDecoding() throws {

@@ -152,6 +152,9 @@ final class AppModel: ObservableObject {
     @Published var workspaceMoveDestination = ""
     @Published var showWorkspaceNewFileSheet = false
     @Published var workspaceNewFilePath = ""
+    @Published var authProviders: [RuntimeAuthProvider] = []
+    @Published var isAuthLoading = false
+    @Published var authErrorMessage: String?
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -430,6 +433,7 @@ final class AppModel: ObservableObject {
                 self.ensureTerminalConnection()
                 self.refreshGit()
                 self.refreshWorkspace()
+                self.refreshAuthProviders()
             } catch {
                 guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
                 if capabilityClient != nil {
@@ -478,6 +482,8 @@ final class AppModel: ObservableObject {
         showWorkspaceNewFileSheet = false
         workspaceNewFilePath = ""
         workspaceErrorMessage = nil
+        authProviders = []
+        authErrorMessage = nil
         refreshRuntime()
     }
 
@@ -1169,6 +1175,26 @@ final class AppModel: ObservableObject {
                 else { return }
                 self.workspaceErrorMessage = error.localizedDescription
                 self.isWorkspaceLoading = false
+            }
+        }
+    }
+
+    func refreshAuthProviders() {
+        guard canUseProjectRuntime,
+              let client = runtimeClient as? any RuntimeAuthClient
+        else { return }
+        isAuthLoading = true
+        authErrorMessage = nil
+        Task { [weak self] in
+            do {
+                let response = try await client.authProviders()
+                guard let self else { return }
+                self.authProviders = response.providers
+                self.isAuthLoading = false
+            } catch {
+                guard let self else { return }
+                self.authErrorMessage = error.localizedDescription
+                self.isAuthLoading = false
             }
         }
     }
@@ -2946,10 +2972,39 @@ struct SettingsView: View {
 				LabeledContent("Runtime access", value: model.projectRuntimeAuthorizationLabel)
                 Button("Choose Project…") { model.openProject() }
             }
+            Section("Providers") {
+                if model.isAuthLoading {
+                    ProgressView("Loading provider status…")
+                } else if model.authProviders.isEmpty {
+                    Text("No interactive provider configuration is available from this Runtime.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.authProviders, id: \.displayID) { provider in
+                        LabeledContent(provider.name) {
+                            Text(providerStatusLabel(provider))
+                                .foregroundStyle(provider.status.configured ? .green : .secondary)
+                        }
+                    }
+                }
+                if let error = model.authErrorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Button("Refresh Provider Status") { model.refreshAuthProviders() }
+                    .disabled(model.isAuthLoading || !model.canUseProjectRuntime)
+            }
         }
         .padding()
         .frame(width: 520)
     }
+}
+
+private func providerStatusLabel(_ provider: RuntimeAuthProvider) -> String {
+    guard provider.status.configured else { return "Not configured" }
+    if let label = provider.status.label, !label.isEmpty { return label }
+    if let source = provider.status.source, !source.isEmpty { return "Configured via \(source)" }
+    return "Configured"
 }
 
 private extension AppModel {

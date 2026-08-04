@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
 	public let projectCapabilityToken: String?
 
@@ -278,6 +278,10 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         var values = [("cwd", cwd)]
         if let path, !path.isEmpty { values.append(("path", path)) }
         return try await request(method: "GET", path: "/workspace/tree", query: values)
+    }
+
+    public func authProviders() async throws -> RuntimeAuthProviders {
+        try await request(method: "GET", path: "/auth/providers", query: [("mode", "login")])
     }
 
     public func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile {
