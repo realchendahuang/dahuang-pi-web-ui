@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "PiAgentCore", targets: ["PiAgentCore"]),
         .executable(name: "PiAgent", targets: ["PiAgentApp"]),
+        .executable(name: "PiAgentKeychainHelper", targets: ["PiAgentKeychainHelper"]),
     ],
     dependencies: [
         // SwiftTerm provides the native VT parser and AppKit surface. PTY
@@ -34,6 +35,10 @@ let package = Package(
             name: "PiAgentContractCheck",
             dependencies: ["PiAgentCore"],
             path: "Sources/PiAgentContractCheck"
+        ),
+        .executableTarget(
+            name: "PiAgentKeychainHelper",
+            path: "Sources/PiAgentKeychainHelper"
         ),
     ]
 )

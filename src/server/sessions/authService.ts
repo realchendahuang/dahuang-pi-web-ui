@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { AuthInteraction } from "@earendil-works/pi-ai";
+import type { CredentialStore } from "@earendil-works/pi-ai";
 import type { AuthProvidersResponse, AuthType, OAuthFlowState } from "../../shared/apiTypes.js";
 import { getLoginProviderOptions, getLogoutProviderOptions } from "./authProviderOptions.js";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
@@ -16,6 +17,7 @@ export interface AuthServiceDependencies {
   runtime?: ModelRuntime;
   authFlows?: OAuthLoginFlowService;
   logger?: AuthServiceLogger;
+  credentials?: CredentialStore;
 }
 
 /** Minimal structured-logging seam for non-fatal auth propagation failures. */
@@ -31,9 +33,13 @@ interface AuthChangeContext {
 
 const noopLogger: AuthServiceLogger = { error() { /* no-op */ } };
 
-export function createModelRuntimeForAgentDir(agentDir: string, allowModelNetwork?: boolean): Promise<ModelRuntime> {
+export function createModelRuntimeForAgentDir(
+  agentDir: string,
+  allowModelNetwork?: boolean,
+  credentials?: CredentialStore,
+): Promise<ModelRuntime> {
   return ModelRuntime.create({
-    authPath: join(agentDir, "auth.json"),
+    ...(credentials === undefined ? { authPath: join(agentDir, "auth.json") } : { credentials }),
     modelsPath: join(agentDir, "models.json"),
     ...(allowModelNetwork === undefined ? {} : { allowModelNetwork }),
   });
@@ -52,7 +58,9 @@ export class AuthService {
   }
 
   static async create(deps: AuthServiceDependencies = {}): Promise<AuthService> {
-    const runtime = deps.runtime ?? (deps.agentDir === undefined ? await ModelRuntime.create({}) : await createModelRuntimeForAgentDir(deps.agentDir));
+    const runtime = deps.runtime ?? (deps.agentDir === undefined
+      ? await ModelRuntime.create(deps.credentials === undefined ? {} : { credentials: deps.credentials })
+      : await createModelRuntimeForAgentDir(deps.agentDir, undefined, deps.credentials));
     const logger = deps.logger ?? noopLogger;
     const authFlows = deps.authFlows ?? new OAuthLoginFlowService({ logger });
     return new AuthService(runtime, authFlows, logger);

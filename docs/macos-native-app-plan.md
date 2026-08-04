@@ -1,6 +1,6 @@
 # Pi Agent for macOS：彻底原生化方案
 
-> 状态：Phase 0、Phase 1 与 bundled Runtime 的本机实现已落地；当前可构建、校验并启动未签名的原生 `.app`，生命周期、完整 workspace、Keychain 迁移和远程能力继续实施。
+> 状态：Phase 0、Phase 1 与 bundled Runtime 的本机实现已落地；当前可构建、校验并启动未签名的原生 `.app`，生命周期、只读 workspace 与 App-bundled Keychain credential store 已实现，完整 workspace、旧 auth 迁移和远程能力继续实施。
 >
 > 当前范围覆盖：用户明确要求**不做代码签名、公证或 Gatekeeper 发布**。本地完整性依赖固定 Node、exact npm lock、runtime manifest、SHA-256、架构检查和真实 socket smoke；签名相关工作不构成本阶段门槛。
 >
@@ -754,7 +754,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 已交付的 non-sandbox project boundary：bundled Runtime 启动时获得仅在 child environment 中传递的 token；原生客户端先执行 epoch-bound `authorize-project` receipt，再读取 project session；Runtime 对其他请求要求 token，并通过 canonical `realpath` root/descendant allow-list 拒绝未授权 cwd、sibling-prefix 和 symlink escape。Swift 显示授权状态，未授权时不创建 thread、prompt 或 terminal。它是同用户的逻辑能力边界，不是 sandbox security scope。
 
-待交付：多窗口、菜单栏后台模式、通知、Keychain broker、Git push/reset/revert 与 submodule mutation、Login Item helper，以及 Sandbox 下 project bookmark data 到 RuntimeHost/child Runtime 的真实 capability hand-off。App-owned Runtime 的 session/terminal socket 断线恢复、App crash 后 Runtime supervisor 重连与 sleep/wake 的一次性权威重同步现已交付；外部 daemon 仍只保留自身连接/重连语义，不会由 App 启动或停止。
+待交付：多窗口、菜单栏后台模式、通知、Git push/reset/revert 与 submodule mutation、Login Item helper，以及 Sandbox 下 project bookmark data 到 RuntimeHost/child Runtime 的真实 capability hand-off。App-owned Runtime 的 session/terminal socket 断线恢复、App crash 后 Runtime supervisor 重连与 sleep/wake 的一次性权威重同步现已交付；外部 daemon 仍只保留自身连接/重连语义，不会由 App 启动或停止。Bundled Runtime 已通过其最小 `Security.framework` helper 注入 Pi SDK 的 `CredentialStore`：每个 provider credential 仅以 Keychain generic-password item 保存，metadata enumeration 不返回 secret，且 Runtime 不把 key 暴露给 SwiftUI/Native Contract。旧 `auth.json` 的显式预览/迁移、复杂 OAuth 流与用户可见 provider management UI 仍未交付，不得误报为全量迁移完成。
 
 退出门槛：活动任务不会因关窗口、App UI 崩溃、睡眠/唤醒而无提示终止；所有后台状态都有可见入口。
 

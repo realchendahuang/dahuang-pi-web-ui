@@ -111,11 +111,34 @@ public struct BundledRuntime: Sendable {
 
         let nodeURL = try runtimeURL(root: runtimeRoot, relativePath: manifest.node.executablePath)
         let launcherURL = try runtimeURL(root: runtimeRoot, relativePath: "runtime-launcher.mjs")
+        let keychainHelperURL = bundle.bundleURL
+            .appendingPathComponent("Contents/Helpers/PiAgentKeychainHelper")
+        let helperManifestURL = resourcesURL.appendingPathComponent("native-helpers-manifest.json")
         guard fileManager.isExecutableFile(atPath: nodeURL.path) else {
             throw BundledRuntimeError.invalidManifest("Bundled Node executable is missing or not executable: \(nodeURL.path)")
         }
         guard fileManager.fileExists(atPath: launcherURL.path) else {
             throw BundledRuntimeError.invalidManifest("Bundled Runtime launcher is missing: \(launcherURL.path)")
+        }
+        guard fileManager.isExecutableFile(atPath: keychainHelperURL.path) else {
+            throw BundledRuntimeError.invalidManifest("Pi Agent Keychain helper is missing or not executable: \(keychainHelperURL.path)")
+        }
+        let helperManifest: NativeHelpersManifest
+        do {
+            helperManifest = try JSONDecoder().decode(
+                NativeHelpersManifest.self,
+                from: Data(contentsOf: helperManifestURL)
+            )
+        } catch {
+            throw BundledRuntimeError.invalidManifest("Could not decode \(helperManifestURL.path): \(error.localizedDescription)")
+        }
+        guard helperManifest.schemaVersion == 1,
+              helperManifest.keychainHelper.path == "Contents/Helpers/PiAgentKeychainHelper"
+        else {
+            throw BundledRuntimeError.invalidManifest("Pi Agent Keychain helper manifest is invalid")
+        }
+        guard sha256(try Data(contentsOf: keychainHelperURL)) == helperManifest.keychainHelper.sha256 else {
+            throw BundledRuntimeError.integrityFailure("Pi Agent Keychain helper hash changed")
         }
 
         let applicationSupport = fileManager.homeDirectoryForCurrentUser
@@ -127,6 +150,7 @@ public struct BundledRuntime: Sendable {
         runtimeEnvironment["PI_WEB_SESSIOND_SOCKET"] = socketPath
         runtimeEnvironment["PI_AGENT_RUNTIME_MANIFEST"] = manifestURL.path
         runtimeEnvironment["PI_AGENT_RUNTIME_EPOCH"] = UUID().uuidString
+		runtimeEnvironment["PI_AGENT_KEYCHAIN_HELPER"] = keychainHelperURL.path
 		let projectCapabilityToken = UUID().uuidString
 		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken
 
@@ -200,6 +224,16 @@ private struct BundledRuntimeManifest: Decodable, Sendable {
         case piSdkVersion
         case files
     }
+}
+
+private struct NativeHelpersManifest: Decodable, Sendable {
+    struct Helper: Decodable, Sendable {
+        let path: String
+        let sha256: String
+    }
+
+    let schemaVersion: Int
+    let keychainHelper: Helper
 }
 
 private struct RuntimeBundleVerification: @unchecked Sendable {

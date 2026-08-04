@@ -56,6 +56,7 @@ import {
 } from "./runtimeCommandReceipts.js";
 import { NativeProjectCapabilityService } from "./nativeProjectCapability.js";
 import { registerNativeProjectCapabilityRoutes } from "./nativeProjectCapabilityRoutes.js";
+import { createMacOSKeychainCredentialStore } from "./sessions/macosKeychainCredentialStore.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const nativeRuntimeIdentity = loadNativeRuntimeIdentity(daemonEnvironment);
@@ -91,9 +92,15 @@ await runSessionDaemonStartup({
 		});
 		await unreadStore.load();
 		const workspaceActivity = new WorkspaceActivityService(eventHub);
+		const keychainCredentials = await createMacOSKeychainCredentialStore(
+			daemonEnvironment,
+		);
 		const auth = await AuthService.create({
 			agentDir: activeAgentProfile.dir,
 			logger: app.log,
+			...(keychainCredentials === undefined
+				? {}
+				: { credentials: keychainCredentials }),
 		});
 		// Capture providers registered by global extensions while the runtime is
 		// still mutable, then freeze every later extension-provider mutation before
