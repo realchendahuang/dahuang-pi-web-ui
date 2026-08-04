@@ -619,7 +619,7 @@ Pi 自己的 profile 和 session 文件仍由 Pi/OMP 兼容目录拥有，不能
 6. 保留旧目录，不自动删除；
 7. 新 App 成功启动并完成 smoke test 后才提供“移到废纸篓”按钮。
 
-迁移必须可重复、可中断、可恢复。发现目标已有数据时不做隐式 merge；提供“使用现有 Pi Agent 数据”“重新预览迁移”或“导出冲突报告”。
+迁移必须可重复、可中断、可恢复。发现目标已有数据时不做隐式 merge；提供“使用现有 Pi Agent 数据”“重新预览迁移”或“导出冲突报告”。bundled Native Runtime 的 legacy archived-session migration 已按此原则执行：复制、逐项验证并原子发布 destination index 后，明确保留 source index 与 archive 文件，状态投影为 `legacyState: "preserved"`；旧 Web/CLI compatibility path 仍可选择其原有清理行为。任何 future “Move legacy data to Trash”都必须是独立、用户确认的操作，不能隐藏在启动期迁移中。
 
 ### 10.3 Keychain
 

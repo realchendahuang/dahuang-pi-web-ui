@@ -302,6 +302,26 @@ describe("legacy session archive migration execution", () => {
     ]));
   });
 
+  it("retains verified legacy archive state for bundled native migration rollback", async () => {
+    const fixture = await createLegacyArchiveFixture({ createDestinationArchive: true });
+
+    await expect(migrateLegacySessionArchive({
+      ...fixture.options,
+      preserveLegacyState: true,
+    })).resolves.toEqual({
+      status: "migrated",
+      archiveFileCount: 1,
+      cleanup: "complete",
+      legacyState: "preserved",
+    });
+
+    await expect(readFile(fixture.destinationFilePath, "utf8")).resolves.toBe("legacy session\n");
+    expect(await exists(fixture.destinationIndexPath)).toBe(true);
+    await expect(readFile(fixture.legacyIndexPath, "utf8")).resolves.toBe(fixture.sourceIndexContents);
+    await expect(readFile(fixture.legacyFilePath, "utf8")).resolves.toBe("legacy session\n");
+    expect(await exists(fixture.legacyArchiveDir)).toBe(true);
+  });
+
   it("retries safely when an interrupted staging-only attempt left an unowned sibling tree", async () => {
     const fixture = await createLegacyArchiveFixture();
     const abandonedFile = join(

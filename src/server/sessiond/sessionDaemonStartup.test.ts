@@ -92,6 +92,28 @@ describe("session daemon archive migration startup", () => {
     );
   });
 
+  it("reports when native migration deliberately preserves its legacy source", async () => {
+    const logger = createLogger();
+
+    await runSessionDaemonStartup({
+      logger,
+      migrateArchive: () => Promise.resolve<LegacySessionArchiveMigrationResult>({
+        status: "migrated",
+        archiveFileCount: 2,
+        cleanup: "complete",
+        legacyState: "preserved",
+      }),
+      createRuntime: () => ({ ready: true }),
+      registerRoutes: () => undefined,
+      listen: () => Promise.resolve(),
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { archiveFileCount: 2, legacyState: "preserved" },
+      "migrated legacy session archive while retaining the source for native migration rollback",
+    );
+  });
+
   it("warns and continues normal startup when eligibility inspection is inconclusive", async () => {
     const logger = createLogger();
     const inspectionError = Object.assign(new Error("permission denied"), { code: "EACCES" });

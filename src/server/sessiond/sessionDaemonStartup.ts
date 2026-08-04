@@ -88,6 +88,14 @@ function reportMigrationResult(
     return;
   }
 
+  if (result.legacyState === "preserved") {
+    logger.info(
+      { archiveFileCount: result.archiveFileCount, legacyState: result.legacyState },
+      "migrated legacy session archive while retaining the source for native migration rollback",
+    );
+    return;
+  }
+
   logger.info(
     { archiveFileCount: result.archiveFileCount },
     "migrated legacy session archive to the configured PI_WEB_DATA_DIR",

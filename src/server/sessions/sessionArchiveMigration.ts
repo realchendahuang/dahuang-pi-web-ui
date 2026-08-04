@@ -59,12 +59,15 @@ export type LegacySessionArchiveMigrationResult =
     status: "migrated";
     archiveFileCount: number;
     cleanup: "complete";
+    /** Native App migration deliberately retains the legacy source for rollback. */
+    legacyState?: "preserved";
   }
   | {
     status: "migrated";
     archiveFileCount: number;
     cleanup: "incomplete";
     cleanupErrors: unknown[];
+    legacyState?: "preserved";
   };
 
 export interface SessionArchiveMigrationReadHandle {
@@ -92,6 +95,8 @@ export interface LegacySessionArchiveMigrationOptions {
   cwd?: string;
   homeDir?: string;
   platform?: NodeJS.Platform;
+  /** Preserve the source archive after verified copy instead of deleting it. */
+  preserveLegacyState?: boolean;
   createAttemptId?: () => string;
   fileSystem?: Partial<SessionArchiveMigrationFileSystem>;
 }
@@ -253,11 +258,26 @@ export async function migrateLegacySessionArchive(
   } catch (error: unknown) {
     cleanupErrors.push(error);
   }
-  cleanupErrors.push(...await removeCommittedLegacyState(plan, fileSystem));
+  const preserveLegacyState = options.preserveLegacyState
+    ?? (options.env ?? process.env)["PI_AGENT_PRESERVE_LEGACY_SESSION_ARCHIVE"] === "1";
+  if (!preserveLegacyState) {
+    cleanupErrors.push(...await removeCommittedLegacyState(plan, fileSystem));
+  }
 
   return cleanupErrors.length === 0
-    ? { status: "migrated", archiveFileCount: plan.files.length, cleanup: "complete" }
-    : { status: "migrated", archiveFileCount: plan.files.length, cleanup: "incomplete", cleanupErrors };
+    ? {
+      status: "migrated",
+      archiveFileCount: plan.files.length,
+      cleanup: "complete",
+      ...(preserveLegacyState ? { legacyState: "preserved" as const } : {}),
+    }
+    : {
+      status: "migrated",
+      archiveFileCount: plan.files.length,
+      cleanup: "incomplete",
+      cleanupErrors,
+      ...(preserveLegacyState ? { legacyState: "preserved" as const } : {}),
+    };
 }
 
 async function buildMigrationPreflight(

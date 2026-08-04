@@ -168,6 +168,7 @@ public struct BundledRuntime: Sendable {
         runtimeEnvironment["PI_WEB_SESSIOND_SOCKET"] = socketPath
         runtimeEnvironment["PI_AGENT_RUNTIME_MANIFEST"] = manifestURL.path
         runtimeEnvironment["PI_AGENT_RUNTIME_EPOCH"] = UUID().uuidString
+		runtimeEnvironment["PI_AGENT_PRESERVE_LEGACY_SESSION_ARCHIVE"] = "1"
 		runtimeEnvironment["PI_AGENT_KEYCHAIN_HELPER"] = keychainHelperURL.path
 		let projectCapabilityToken = UUID().uuidString
 		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken
