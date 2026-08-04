@@ -4,7 +4,7 @@
 >
 > 范围覆写：当前用户明确要求不做代码签名、公证、Gatekeeper/DMG/Sparkle 发布。本文保留相关研究作为未来参考，但所有当前验收以 exact dependency lock、manifest/hash、Node 版本/架构和真实 Runtime smoke 为准。
 >
-> 调研快照：**2026-08-04**。Pi SDK、Node、Bun 与 macOS API 仍会演进；进入每个发布阶段前必须重新核对锁定版本和平台行为。
+> 调研快照：**2026-08-05**。本轮已将锁定的 `@earendil-works/pi-*@0.81.1`、Pi 上游 SDK/RPC/extension 文档，以及 Apple 的 XPC、ServiceManagement 文档与当前实现交叉复核。Pi SDK、Node、Bun 与 macOS API 仍会演进；进入每个发布阶段前必须重新核对锁定版本和平台行为。
 >
 > 关联总方案：[macOS 原生应用方案](./macos-native-app-plan.md)
 
@@ -45,7 +45,7 @@ Pi Agent.app
 
 当前实现已经提供：`macos/PiAgentRuntime/package-lock.json` 的 exact production closure、`build-runtime.mjs` 生成的 `runtime-manifest.json`、启动前的 SHA-256/Node 版本/架构自检、`/runtime/hello` 协议握手、Swift `RuntimeSupervisor` 的按需启动/重连、Application Support 专属 socket、项目 security-scoped bookmark，以及 `verify-app.sh` 驱动的 bundle/Runtime/Swift socket smoke。
 
-## 1.1 2026-08-04：上游资料复核后的明确决策
+## 1.1 2026-08-05：上游资料复核后的明确决策
 
 这次复核回答用户最直接的问题：**应该让 Pi Agent 更深地融入 macOS App，但不应该把 Pi 的 Node SDK 强行塞入 Swift GUI 进程。**
 
@@ -67,32 +67,46 @@ Pi Agent.app
 
 同一份上游资料还给出了取舍边界：Pi RPC 是为其他进程/其他语言控制 headless agent 提供的 LF-JSONL 协议；其文档对 Node/TypeScript 集成明确建议直接使用 `AgentSession`，而非再启动一个 subprocess。RPC 因而保留为未来第三方 harness、隔离 driver、诊断工具或受限 compatibility mode，而不是本 App 的主数据模型。RPC 的 extension UI 子协议也只覆盖 select/confirm/input/editor 等有限交互，并对若干 TUI 能力降级；若以它作为 Swift 的产品主协议，仍需在外层补完多 session、PTY、插件、审批和持久化的编排层。[Pi RPC](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md)
 
-| 选择 | 是否采用 | 原因 |
-| --- | --- | --- |
-| Swift 直接链接/嵌入 Node 与 Pi SDK | 否 | GUI crash domain 会与 extension、provider、native addon、dynamic resource loader 和 PTY 绑定；没有官方 Swift SDK，维护的是 ABI bridge，不是产品能力。 |
-| Swift 为每个 session 启动 `pi --mode rpc` | 仅兼容 driver | 适合非 Node host 或单 agent 隔离，无法复用现有 Runtime 的 multi-session、terminal、OMP 与恢复语义；还需实现 RPC extension-UI 转发。 |
-| Swift 原生壳 + 随包长期 Node Runtime + 直接 Pi SDK adapter | **主方案** | Pi SDK 是官方支持的嵌入路径；现有 session daemon 是这一 Runtime 的事实所有者，可保住 event streaming、PTY、插件与既有测试。 |
-| 保留用户全局 Node / `pi-web-sessiond` | 仅开发兼容 | 对普通用户不可重复：Node、Pi 包、native addon 与配置会漂移，App 也无法给出可验证的版本/完整性边界。 |
+| 选择                                                       | 是否采用      | 原因                                                                                                                                                  |
+| ---------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Swift 直接链接/嵌入 Node 与 Pi SDK                         | 否            | GUI crash domain 会与 extension、provider、native addon、dynamic resource loader 和 PTY 绑定；没有官方 Swift SDK，维护的是 ABI bridge，不是产品能力。 |
+| Swift 为每个 session 启动 `pi --mode rpc`                  | 仅兼容 driver | 适合非 Node host 或单 agent 隔离，无法复用现有 Runtime 的 multi-session、terminal、OMP 与恢复语义；还需实现 RPC extension-UI 转发。                   |
+| Swift 原生壳 + 随包长期 Node Runtime + 直接 Pi SDK adapter | **主方案**    | Pi SDK 是官方支持的嵌入路径；现有 session daemon 是这一 Runtime 的事实所有者，可保住 event streaming、PTY、插件与既有测试。                           |
+| 保留用户全局 Node / `pi-web-sessiond`                      | 仅开发兼容    | 对普通用户不可重复：Node、Pi 包、native addon 与配置会漂移，App 也无法给出可验证的版本/完整性边界。                                                   |
 
 这也与 T3 Code 的可借鉴边界一致：它让 server runtime 统一拥有 agent session、workspace、VCS、terminal 与 filesystem，桌面/网页/移动端只消费一个类型化、订阅式合同；客户端不直接执行这些副作用。Pi Agent 借鉴这个所有权模型和“连接 supervisor 在 View 之外”的原则，但不引入其 Electron UI、Effect 技术栈或整套 event sourcing。[T3 Code architecture](https://github.com/pingdotgg/t3code/blob/main/docs/internals/overview.md)
 
-### 1.1.1 2026-08-04：本仓库源码与上游 SDK 的交叉核验
+### 1.1.1 2026-08-05：本仓库源码与上游 SDK 的交叉核验
 
 本结论不是只根据产品架构图得出；它已与当前仓库以及锁定的 Pi SDK
 `@earendil-works/pi-coding-agent@0.81.1` 的实际边界逐项核对：
 
-| 已核验事实 | 代码证据 | 对架构决策的影响 |
-| --- | --- | --- |
-| Pi 的 SDK 明确把自定义 desktop UI 列为嵌入场景；`AgentSession` 提供流式订阅，而 `AgentSessionRuntime` 负责新建、切换、fork、clone 与导入后的 session replacement。 | [`Pi SDK`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)；锁定版本见 [`macos/PiAgentRuntime/package.json`](../macos/PiAgentRuntime/package.json)。 | Runtime 应直接使用 SDK；Swift 不应为每个 Thread 重新包装一个 CLI subprocess。 |
-| 上游要求 session replacement 后重新订阅事件、重新绑定 extensions。 | [`Pi SDK session runtime`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md#agentsessionruntime)。 | 这类生命周期语义必须收敛在 Node adapter，而不是泄漏为 Swift 对上游对象的知识。 |
-| 本仓库已经把 `createAgentSessionServices`、`createAgentSessionFromServices`、`createAgentSessionRuntime` 和 SDK `SessionManager` 的实例检查集中在一个小 adapter。 | [`src/server/sessions/piSdkRuntimeAdapter.ts`](../src/server/sessions/piSdkRuntimeAdapter.ts)。 | 保持并加强这一 adapter 是低风险路线；升级 Pi 时只需审计、测试这一边界和 Native Contract。 |
-| bundled launcher 在 manifest、Node 版本与架构校验完成后，才载入编译出的 `sessiond`。 | [`macos/PiAgentRuntime/runtime-launcher.mjs`](../macos/PiAgentRuntime/runtime-launcher.mjs)。 | “完整嵌入”已经有正确的交付雏形：普通用户无需外部 Node、npm 或开发期 daemon。 |
-| 当前 Runtime 已能承载私有 Unix socket、HTTP command、WebSocket events、Runtime epoch 与 receipt；Swift 已仅通过该 Contract 调用。 | [`src/server/sessiond.ts`](../src/server/sessiond.ts) 与 [`macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift`](../macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift)。 | 继续收紧既有 Contract 与恢复语义，比改成第二套 Swift-to-RPC 协议更有价值。 |
+| 已核验事实                                                                                                                                                         | 代码证据                                                                                                                                                                                           | 对架构决策的影响                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Pi 的 SDK 明确把自定义 desktop UI 列为嵌入场景；`AgentSession` 提供流式订阅，而 `AgentSessionRuntime` 负责新建、切换、fork、clone 与导入后的 session replacement。 | [`Pi SDK`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)；锁定版本见 [`macos/PiAgentRuntime/package.json`](../macos/PiAgentRuntime/package.json)。             | Runtime 应直接使用 SDK；Swift 不应为每个 Thread 重新包装一个 CLI subprocess。             |
+| 上游要求 session replacement 后重新订阅事件、重新绑定 extensions。                                                                                                 | [`Pi SDK session runtime`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md#agentsessionruntime)。                                                                 | 这类生命周期语义必须收敛在 Node adapter，而不是泄漏为 Swift 对上游对象的知识。            |
+| 本仓库已经把 `createAgentSessionServices`、`createAgentSessionFromServices`、`createAgentSessionRuntime` 和 SDK `SessionManager` 的实例检查集中在一个小 adapter。  | [`src/server/sessions/piSdkRuntimeAdapter.ts`](../src/server/sessions/piSdkRuntimeAdapter.ts)。                                                                                                    | 保持并加强这一 adapter 是低风险路线；升级 Pi 时只需审计、测试这一边界和 Native Contract。 |
+| bundled launcher 在 manifest、Node 版本与架构校验完成后，才载入编译出的 `sessiond`。                                                                               | [`macos/PiAgentRuntime/runtime-launcher.mjs`](../macos/PiAgentRuntime/runtime-launcher.mjs)。                                                                                                      | “完整嵌入”已经有正确的交付雏形：普通用户无需外部 Node、npm 或开发期 daemon。              |
+| 当前 Runtime 已能承载私有 Unix socket、HTTP command、WebSocket events、Runtime epoch 与 receipt；Swift 已仅通过该 Contract 调用。                                  | [`src/server/sessiond.ts`](../src/server/sessiond.ts) 与 [`macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift`](../macos/PiAgent/Sources/PiAgentCore/UnixSocketRuntimeClient.swift)。 | 继续收紧既有 Contract 与恢复语义，比改成第二套 Swift-to-RPC 协议更有价值。                |
 
 因此，后续实现的“更深融合”有一个可验证的定义：新增 Pi 能力先以
 `PiSdkRuntimeAdapter → Runtime product service → Native Contract → Swift feature`
 穿过四层；不得让 Swift import Pi 类型、不得从 Swift 直接启动 `pi --mode rpc`，也不得让 UI 直接拥有 Git、文件或 PTY。
 这既保留 Pi SDK 的官方 session/extension 语义，也保留 macOS 客户端可重建、Runtime 可恢复的故障隔离。
+
+### 1.1.2 本轮复核新增的边界结论
+
+这不是只看架构介绍得出的偏好，而是把上游 API 的选择条件与当前产品职责逐项对齐后的结论：
+
+| 一手资料与当前事实                                                                                                                                                                                                                                                 | 对 Pi Agent 的含义                                                                                                    | 固化的做法                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 当前根项目实际安装的 `@earendil-works/pi-agent-core`、`pi-ai` 和 `pi-coding-agent` 均为 `0.81.1`；App Runtime 的独立 `package.json`/lock 将这三个包精确锁到同一版本。                                                                                              | 开发依赖的 `^0.81.1` 不能成为发布边界；但「SDK 进 Node Runtime」不是概念方案，已经是可锁定、可审计的产品依赖闭包。    | Runtime 继续以独立 exact lock、manifest/hash 和 `/runtime/hello` 发布；Swift 只协商 Native Contract 版本与 Runtime manifest 版本。                                |
+| Pi SDK 将 custom web/desktop/mobile UI 列为使用场景，并明确说需要 session replacement/cwd-bound service 重建时应使用 `AgentSessionRuntime`；内置 interactive、print、RPC mode 都使用这一层。                                                                       | 本产品有 new/resume/fork/import、多 project cwd、extension rebind 和重连，不是一个一次性 prompt 的 CLI wrapper。      | `PiSdkRuntimeAdapter` 继续成为唯一的 SDK lifecycle 边界；每次 runtime replacement 在 Node 内重建订阅与 extension bridge，再向 Swift 投影稳定事件。                |
+| Pi RPC 是 stdio 上严格 LF 分帧的 JSONL 协议；上游同时说明 Node/TypeScript host 应直接使用 `AgentSession`，跨语言或隔离进程才优先 RPC。RPC 的 extension dialog 子协议虽能承载部分 sheet 交互，却不替产品提供多 session、workspace、Git、PTY、receipt 或恢复所有权。 | Swift 直接启动 `pi --mode rpc` 不会删掉 Runtime，只会迫使我们再写一个 orchestrator，并把 Swift 绑到一条次级上游协议。 | RPC 只保留为 future driver/harness/诊断或需要强隔离的 adapter；不得作为原生 App 的主控制面。                                                                      |
+| Apple 将 XPC 定义为 App 与受控 helper 之间的跨进程服务；它改善生命周期和权限隔离，但不会执行 Node module loader、Pi extension discovery 或 `node-pty` 的产品编排。                                                                                                 | XPC 不是“让 Pi 变成 Swift SDK”的替代品；现在改 transport 会增加一层 bridge，却不减少 Node Runtime。                   | 未签名、非 Sandbox 的当前 App 保持 private Unix socket HTTP/WebSocket；未来签名/Sandbox 以独立 RuntimeHost/XPC spike 验证 bookmark capability hand-off 后再决定。 |
+| macOS 13+ 的 `SMAppService` 管理 Login Item、LaunchAgent/Daemon；注册受用户批准控制，Login Item 会立即启动并可在崩溃后被系统重启。                                                                                                                                 | 这适合用户显式选择的后台可用性，不适合把开发期常驻 daemon 偷换成每位用户的默认行为。                                  | 首发保持 App-managed Runtime；仅在完成 crash/idle/退出矩阵后，以可见开关和 `SMAppService` 增加 Login Item，而不暴露手工 `launchctl`/systemd 配置。                |
+
+因此，本项目的“完全嵌入”验收仍然是 **一个 `Pi Agent.app` 即可运行且不依赖全局 Node、npm、Pi CLI 或开发 daemon**；它刻意不是单进程、也不是把所有上游协议和副作用搬进 SwiftUI。这个定义同时保留原生体验、Pi SDK 的官方生命周期能力，以及 UI/Runtime 相互独立的崩溃恢复空间。
 
 ### 1.2 因此必须坚持的 integration rules
 
@@ -116,14 +130,14 @@ Pi Agent.app
 `Pi Agent.app`。Pi 官方文档也给出了明确边界：同一 Node 进程且需要直接 agent state、工具和扩展定制时，
 优先 SDK；跨语言或需要独立进程隔离时，才使用 stdin/stdout RPC。[Pi SDK: run modes and RPC choice](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)
 
-| 方案 | 对当前技术栈的评价 | 决策 |
-| --- | --- | --- |
-| Swift 直接调用 Pi（假设存在 App SDK，或自己嵌 libnode） | 没有上游 Swift API；会把 Node loader、动态 extension、provider、`node-pty` 与 GUI 绑成同一 crash/升级域。 | 不做。 |
-| Swift 每个 thread 启动 `pi --mode rpc` | 是官方的跨语言路径，但 Swift 仍要重建多 session、持久化、PTY、Git、extension dialog 和断线幂等；会重复已有 Runtime 所有权。 | 仅保留作兼容 driver、调试或受隔离的 provider adapter。 |
-| Swift 原生 App + bundle 内长期 Node Runtime，Runtime 直接使用 Pi SDK | 复用本项目已存在的 Pi SDK、Fastify/WebSocket、`node-pty`、OMP 和 sessiond 测试资产；同时保持原生 UI。 | **当前主线。** |
-| 上述结构再用 XPC 替换 Unix socket | XPC 能提供 macOS 生命周期/权限隔离，但并不会让 Swift 获得 Pi SDK，也不消除 Node Runtime；需要针对 Node child、bookmark 和 streaming 做完整重构与实测。 | 作为 Sandbox/签名后的独立 spike，不阻塞当前 Native Contract。 |
+| 方案                                                                 | 对当前技术栈的评价                                                                                                                                     | 决策                                                          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Swift 直接调用 Pi（假设存在 App SDK，或自己嵌 libnode）              | 没有上游 Swift API；会把 Node loader、动态 extension、provider、`node-pty` 与 GUI 绑成同一 crash/升级域。                                              | 不做。                                                        |
+| Swift 每个 thread 启动 `pi --mode rpc`                               | 是官方的跨语言路径，但 Swift 仍要重建多 session、持久化、PTY、Git、extension dialog 和断线幂等；会重复已有 Runtime 所有权。                            | 仅保留作兼容 driver、调试或受隔离的 provider adapter。        |
+| Swift 原生 App + bundle 内长期 Node Runtime，Runtime 直接使用 Pi SDK | 复用本项目已存在的 Pi SDK、Fastify/WebSocket、`node-pty`、OMP 和 sessiond 测试资产；同时保持原生 UI。                                                  | **当前主线。**                                                |
+| 上述结构再用 XPC 替换 Unix socket                                    | XPC 能提供 macOS 生命周期/权限隔离，但并不会让 Swift 获得 Pi SDK，也不消除 Node Runtime；需要针对 Node child、bookmark 和 streaming 做完整重构与实测。 | 作为 Sandbox/签名后的独立 spike，不阻塞当前 Native Contract。 |
 
-「完全嵌入」的验收应是 *没有外部 Node、npm、Pi CLI 或开发 sessiond 是运行前提*，而不是「只有一个
+「完全嵌入」的验收应是 _没有外部 Node、npm、Pi CLI 或开发 sessiond 是运行前提_，而不是「只有一个
 进程」。把不稳定的 extension、provider SDK 与 native addon 放在长期 Node Runtime，反而能让 Swift UI
 崩溃后重新连接同一个 session owner。这个故障域分离也与 XPC 的设计目标一致：Apple 将 XPC 定位为把
 稳定性或权限边界隔开的 helper 通道，而不是强迫所有产品逻辑进主进程。[Apple: XPC overview](https://developer.apple.com/documentation/xpc)
@@ -172,14 +186,14 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 ### 1.4 下一阶段的可验证交付，而非继续加一层壳
 
-| 优先级 | 交付 | 完成证据 |
-| --- | --- | --- |
-| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **已交付**：Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue、Git stage/unstage/commit，以及 Pi extension dialog response。相同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。剩余工作是跨 Runtime restart 的持久 command ledger 与端到端断线矩阵。 |
-| P0 | 原生 approval/extension-UI bridge | **已交付**：Pi `select`、`confirm`、`input` 与 `editor` 被投影为 Swift 原生 sheet；取消、SDK timeout/Abort、session replacement、Runtime shutdown 和 App 重连都有确定语义。 |
-| P0 | project authorization 的 Runtime capability | **当前 non-sandbox logical capability 已交付**：project bookmark 仍由 Swift 持有；bundled Runtime 只接受 App launch token，并用 `realpath` 的 root/descendant allow-list 拒绝 raw/relative、缺失、sibling-prefix 和 symlink-escape cwd。Swift 显示 Authorizing/Authorized/failed 状态，未授权时不创建 thread/prompt/terminal。Sandbox 下 bookmark data → XPC RuntimeHost → Node 的真实 capability hand-off 仍是独立 P1 spike。 |
-| P1 | lifecycle recovery matrix | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。 |
-| P1 | dependency closure、SBOM 与冷启动测量 | 基于实际 staging tree 的资源清单、license/SBOM、arm64/x64 smoke、hash 时延和 Runtime 首次 ready 时间。 |
-| P2 | provider/harness driver 扩展 | 先以 `SessionRuntimeDriver` capability contract 接入，再决定 Pi RPC 或其他 CLI driver；不让 provider 特性穿透 Swift UI。 |
+| 优先级 | 交付                                                                                             | 完成证据                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0     | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **已交付**：Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue、Git stage/unstage/commit，以及 Pi extension dialog response。相同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。剩余工作是跨 Runtime restart 的持久 command ledger 与端到端断线矩阵。                                        |
+| P0     | 原生 approval/extension-UI bridge                                                                | **已交付**：Pi `select`、`confirm`、`input` 与 `editor` 被投影为 Swift 原生 sheet；取消、SDK timeout/Abort、session replacement、Runtime shutdown 和 App 重连都有确定语义。                                                                                                                                                                                                                                                    |
+| P0     | project authorization 的 Runtime capability                                                      | **当前 non-sandbox logical capability 已交付**：project bookmark 仍由 Swift 持有；bundled Runtime 只接受 App launch token，并用 `realpath` 的 root/descendant allow-list 拒绝 raw/relative、缺失、sibling-prefix 和 symlink-escape cwd。Swift 显示 Authorizing/Authorized/failed 状态，未授权时不创建 thread/prompt/terminal。Sandbox 下 bookmark data → XPC RuntimeHost → Node 的真实 capability hand-off 仍是独立 P1 spike。 |
+| P1     | lifecycle recovery matrix                                                                        | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。                                                                                                                                                                                                                                                                                                  |
+| P1     | dependency closure、SBOM 与冷启动测量                                                            | 基于实际 staging tree 的资源清单、license/SBOM、arm64/x64 smoke、hash 时延和 Runtime 首次 ready 时间。                                                                                                                                                                                                                                                                                                                         |
+| P2     | provider/harness driver 扩展                                                                     | 先以 `SessionRuntimeDriver` capability contract 接入，再决定 Pi RPC 或其他 CLI driver；不让 provider 特性穿透 Swift UI。                                                                                                                                                                                                                                                                                                       |
 
 ## 2. 本次研究要回答的问题
 
@@ -271,13 +285,13 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 本机已安装依赖至少包含以下非普通 JavaScript 资源：
 
-| 依赖面 | 当前发现 | 发布影响 |
-| --- | --- | --- |
-| `node-pty` | Darwin `pty.node` 与 `spawn-helper`，分别有 arm64/x64 prebuild | 必须按架构验证、从内向外签名，并做真实 PTY smoke |
-| Pi TUI native | `darwin-modifiers.node` | 即使 UI 不使用 TUI，也要确认生产裁剪后是否仍可达 |
-| Clipboard | Darwin universal、arm64、x64 `.node` | 只打包实际目标所需变体，验证 Hardened Runtime |
-| Photon | `photon_rs_bg.wasm` | Runtime manifest 必须覆盖 WASM 与加载路径 |
-| Extensions/assets | 动态发现的 skills、prompts、themes、extensions | 不能假设普通单文件 bundler 能静态发现完整依赖图 |
+| 依赖面            | 当前发现                                                       | 发布影响                                         |
+| ----------------- | -------------------------------------------------------------- | ------------------------------------------------ |
+| `node-pty`        | Darwin `pty.node` 与 `spawn-helper`，分别有 arm64/x64 prebuild | 必须按架构验证、从内向外签名，并做真实 PTY smoke |
+| Pi TUI native     | `darwin-modifiers.node`                                        | 即使 UI 不使用 TUI，也要确认生产裁剪后是否仍可达 |
+| Clipboard         | Darwin universal、arm64、x64 `.node`                           | 只打包实际目标所需变体，验证 Hardened Runtime    |
+| Photon            | `photon_rs_bg.wasm`                                            | Runtime manifest 必须覆盖 WASM 与加载路径        |
+| Extensions/assets | 动态发现的 skills、prompts、themes、extensions                 | 不能假设普通单文件 bundler 能静态发现完整依赖图  |
 
 这份 inventory 只是当前 node_modules 的证据，不是最终 SBOM。发布流水线必须从 production staging tree 重新生成并校验。
 
@@ -300,14 +314,14 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 ## 5. 方案比较
 
-| 方案 | 优点 | 主要问题 | 决策 |
-| --- | --- | --- | --- |
-| Swift 进程内嵌 Pi SDK/libnode | 表面上只有一个进程，调用链短 | 没有官方 Swift SDK；需要把 Node module loader、filesystem、dynamic extensions、native addon、PTY 和 Provider SDK 一起塞进 GUI；崩溃域、签名和升级耦合 | **拒绝** |
-| Swift 直接启动 `pi --mode rpc` | 官方跨语言 JSONL；进程隔离；适合单 Agent harness | Swift 必须重做多 session orchestration、auth、terminal、OMP、插件和持久化；通常演化成每 session 一进程或额外调度器 | **仅作兼容/诊断 driver** |
-| App 自带长期 Node Runtime，Runtime 内直接使用 SDK | 复用当前代码和测试；完整多 session、事件、PTY、插件和定制 tools；SDK 类型安全 | 需要做好 helper 生命周期、依赖裁剪、签名、公证和升级 | **主方案** |
-| 依赖用户全局 `pi-web-sessiond` / npm 安装 | 开发迭代简单，现状改动少 | 普通用户环境不确定；版本漂移；安装、权限和故障不可控 | **仅开发兼容** |
-| Bun `--compile` 单文件 Runtime | artifact 简洁；支持嵌入 assets 和 N-API addon | Node 兼容、signals、PTY、dynamic extension、provider SDK 和 native addon 需要长期验证 | **后续 spike** |
-| Node SEA | 官方 Node，可减少外部文件 | 仍是 active development；module loading、dynamic import 和 native addon 需要特殊处理 | **首发暂缓** |
+| 方案                                              | 优点                                                                          | 主要问题                                                                                                                                              | 决策                     |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Swift 进程内嵌 Pi SDK/libnode                     | 表面上只有一个进程，调用链短                                                  | 没有官方 Swift SDK；需要把 Node module loader、filesystem、dynamic extensions、native addon、PTY 和 Provider SDK 一起塞进 GUI；崩溃域、签名和升级耦合 | **拒绝**                 |
+| Swift 直接启动 `pi --mode rpc`                    | 官方跨语言 JSONL；进程隔离；适合单 Agent harness                              | Swift 必须重做多 session orchestration、auth、terminal、OMP、插件和持久化；通常演化成每 session 一进程或额外调度器                                    | **仅作兼容/诊断 driver** |
+| App 自带长期 Node Runtime，Runtime 内直接使用 SDK | 复用当前代码和测试；完整多 session、事件、PTY、插件和定制 tools；SDK 类型安全 | 需要做好 helper 生命周期、依赖裁剪、签名、公证和升级                                                                                                  | **主方案**               |
+| 依赖用户全局 `pi-web-sessiond` / npm 安装         | 开发迭代简单，现状改动少                                                      | 普通用户环境不确定；版本漂移；安装、权限和故障不可控                                                                                                  | **仅开发兼容**           |
+| Bun `--compile` 单文件 Runtime                    | artifact 简洁；支持嵌入 assets 和 N-API addon                                 | Node 兼容、signals、PTY、dynamic extension、provider SDK 和 native addon 需要长期验证                                                                 | **后续 spike**           |
+| Node SEA                                          | 官方 Node，可减少外部文件                                                     | 仍是 active development；module loading、dynamic import 和 native addon 需要特殊处理                                                                  | **首发暂缓**             |
 
 ### 5.1 为什么不把 Pi SDK 直接嵌入 Swift
 
@@ -354,17 +368,17 @@ RPC 的正确位置是 `SessionRuntimeDriver` 的一种实现：当第三方 Age
 
 ### 6.1 唯一事实所有者
 
-| 事实/能力 | 所有者 | 其他进程能做什么 |
-| --- | --- | --- |
-| Agent session、队列、stream、fork、abort | Agent Runtime | Swift 只提交 command、显示 projection |
-| Pi SDK 对象与 subscription | `PiSdkRuntimeAdapter` | orchestration 不暴露 SDK 类型 |
-| PTY process、cwd、环境与 byte stream | `TerminalService` / Runtime | SwiftTerm 只渲染和发送 input/resize |
-| 项目、workspace、Runtime 配置 | Agent Runtime | Swift 展示、编辑经过校验的 contract |
-| Runtime 进程启动与版本协调 | `RuntimeSupervisor` / `RuntimeHost` | Runtime 不反向拥有 App 窗口 |
-| 窗口、分栏、选中项、原生菜单 | Swift App | Runtime 不持久化纯 UI 状态 |
-| session UI cache | Swift App，可重建 | 不能成为 session 事实源 |
-| secret | Keychain，受限 credential bridge | 不进入 UI store、普通日志或 command payload |
-| 项目目录授权 | Swift security-scoped bookmark / 授权层 | Runtime 只获得已授权路径能力 |
+| 事实/能力                                | 所有者                                  | 其他进程能做什么                            |
+| ---------------------------------------- | --------------------------------------- | ------------------------------------------- |
+| Agent session、队列、stream、fork、abort | Agent Runtime                           | Swift 只提交 command、显示 projection       |
+| Pi SDK 对象与 subscription               | `PiSdkRuntimeAdapter`                   | orchestration 不暴露 SDK 类型               |
+| PTY process、cwd、环境与 byte stream     | `TerminalService` / Runtime             | SwiftTerm 只渲染和发送 input/resize         |
+| 项目、workspace、Runtime 配置            | Agent Runtime                           | Swift 展示、编辑经过校验的 contract         |
+| Runtime 进程启动与版本协调               | `RuntimeSupervisor` / `RuntimeHost`     | Runtime 不反向拥有 App 窗口                 |
+| 窗口、分栏、选中项、原生菜单             | Swift App                               | Runtime 不持久化纯 UI 状态                  |
+| session UI cache                         | Swift App，可重建                       | 不能成为 session 事实源                     |
+| secret                                   | Keychain，受限 credential bridge        | 不进入 UI store、普通日志或 command payload |
+| 项目目录授权                             | Swift security-scoped bookmark / 授权层 | Runtime 只获得已授权路径能力                |
 
 ### 6.2 引入 `SessionRuntimeDriver`
 
@@ -765,12 +779,12 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 
 每个 release 明确记录：
 
-| 版本轴 | 用途 |
-| --- | --- |
-| App version | 用户看到的产品版本 |
-| Runtime version | Agent Runtime 实现与数据迁移版本 |
+| 版本轴                  | 用途                                |
+| ----------------------- | ----------------------------------- |
+| App version             | 用户看到的产品版本                  |
+| Runtime version         | Agent Runtime 实现与数据迁移版本    |
 | Native Contract version | Swift 与 Runtime wire compatibility |
-| Pi SDK exact version | 上游 SDK adapter compatibility |
+| Pi SDK exact version    | 上游 SDK adapter compatibility      |
 
 不能使用 App version 推断 protocol compatibility，也不能让 npm semver range 在用户机器上动态选 Pi SDK。
 
@@ -924,7 +938,9 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - [Pi SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)
 - [Pi `AgentSessionRuntime` 示例](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/sdk/13-session-runtime.ts)
 - [Pi RPC mode](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md)
+- [Pi extensions 与 RPC UI 交互](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
 - [Apple `SMAppService`](https://developer.apple.com/documentation/servicemanagement/smappservice)
+- [Apple `SMAppService.register()`](<https://developer.apple.com/documentation/servicemanagement/smappservice/register()>)
 - [Apple XPC](https://developer.apple.com/documentation/xpc)
 - [Apple：管理持续运行的 macOS 后台进程](https://developer.apple.com/documentation/appkit/managing-ongoing-background-processes-in-your-mac)
 - [Apple：访问 macOS App Sandbox 外文件](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox)

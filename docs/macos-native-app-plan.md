@@ -6,7 +6,7 @@
 >
 > 目标：把 PI WEB 改造成真正的 macOS 原生桌面应用 **Pi Agent**。产品主界面、窗口、菜单、设置、通知、权限、更新与安装全部使用 macOS 原生能力；不使用 Electron、Tauri 或 WebView 作为产品界面。现有 TypeScript/Node 会话核心作为 App 内嵌运行时保留，逐步从浏览器控制面中解耦。
 >
-> 开源与产品调研快照：**2026-08-03**。外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
+> 开源与产品调研快照：**2026-08-05**。本轮已用 Pi 上游 SDK/RPC/extension 文档和 Apple XPC、ServiceManagement 文档复核 Runtime 集成边界；外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
 
 当前已经可验证的实现位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health/hello contract、Unix-socket client、项目目录选择与 security-scoped bookmark、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable。`scripts/macos/build-app.sh` 会组装 App 内的固定 Node、production dependency closure、launcher 与 SHA-256 manifest；`verify-app.sh` 会完整校验 bundle、启动内部 Runtime，并以 Swift client 做 socket smoke。2026-08-04 的实际 staging build 已裁掉浏览器 UI 专用 Runtime 根依赖，manifest 从 47,474 项降至 41,351 项，仍通过 Runtime/Swift smoke；完整数据与尚未完成的 SBOM/license 边界见 [Pi Runtime 融合决策](./macos-pi-runtime-integration.md)。Prompt 不再通过固定间隔轮询等待完成。它仍不是 DMG/自动更新产品，也不改变现有 Web UI 或 sessiond 的事实所有权。
 
@@ -24,7 +24,7 @@
 - 初期继续保留 `pi-web` CLI 和 Web UI 作为迁移、自动化与诊断兼容层，但不再是产品默认入口。
 - 当前本地版本不使用 Developer ID、Hardened Runtime、Notarization、Sparkle 或 Mac App Store sandbox；它通过未签名 `.app`、manifest/hash 与本机 smoke 交付和验证。
 
-这不是“给网页套一个窗口”。完成后的用户路径应是：下载 DMG、拖入 Applications、打开 Pi Agent、选择项目、创建会话。用户不需要安装 npm 包、理解端口、配置 LaunchAgent、修复 `node-pty` 权限或手动编辑全局 JSON 才能开始工作。
+这不是“给网页套一个窗口”。当前用户路径应是：复制经过验证的未签名 `Pi Agent.app` 到 `Applications`、打开 Pi Agent、选择项目、创建会话。用户不需要安装 npm 包、理解端口、配置 LaunchAgent、修复 `node-pty` 权限或手动编辑全局 JSON 才能开始工作。DMG、签名和 Gatekeeper 分发只在用户重新授权后另行设计。
 
 Pi Runtime 的嵌入位置已经形成单独的研究与架构决策：[macOS 原生客户端与 Pi Runtime 融合](./macos-pi-runtime-integration.md)。最终选择不是让 Swift 直接链接 Pi SDK，也不是让 Swift 为每个 session 直接控制 `pi --mode rpc`，而是：**App 内随包携带长期 Node Runtime，Runtime 内通过窄 adapter 直接使用 Pi SDK，Swift 只消费版本化 Native Contract；Pi RPC 保留为 Runtime 内的兼容或隔离 driver。**
 
@@ -39,7 +39,7 @@ Pi Runtime 的嵌入位置已经形成单独的研究与架构决策：[macOS �
 - **原生优先**：能由 SwiftUI、AppKit、Security、ServiceManagement、OSLog、Quick Look 等系统能力稳定完成的边界，不额外引入跨平台壳。
 - **Runtime 事实唯一**：会话、终端、Git、文件和 Provider 进程仍由 Agent Runtime 拥有；Swift 客户端只维护可重建的投影。
 - **依赖必须可替换**：Terminal、Markdown、SQLite、Keychain 和更新能力都通过项目自己的协议隔离，业务 feature 不直接依赖第三方类型。
-- **先 spike 后锁定**：候选依赖只有通过真实长会话、IME、VoiceOver、签名 App、崩溃重连和升级测试后，才从“候选”升级为“采用”。
+- **先 spike 后锁定**：候选依赖只有通过真实长会话、IME、VoiceOver、打包 `.app`、崩溃重连和升级测试后，才从“候选”升级为“采用”。签名分发另有独立验收门槛，当前不作为采用前提。
 
 ### 2.2 Codex 桌面端：产品结构基准
 
@@ -71,15 +71,15 @@ Codex 桌面端不是本方案的源码来源。本方案只参考官方文档�
 
 这些思想应映射到现有 PI WEB，而不是重写成 T3：
 
-| T3 模式 | Pi Agent 的落地方式 |
-| --- | --- |
-| Server owns execution | 保持现有 session daemon / Agent Runtime 的长期所有权 |
-| Typed RPC + subscription | 扩展 Native IPC contract，View 只依赖 `RuntimeClient` |
+| T3 模式                          | Pi Agent 的落地方式                                                                           |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| Server owns execution            | 保持现有 session daemon / Agent Runtime 的长期所有权                                          |
+| Typed RPC + subscription         | 扩展 Native IPC contract，View 只依赖 `RuntimeClient`                                         |
 | Shared non-visual client runtime | Swift 中建立 RuntimeClient、connection supervisor 和 feature stores；不在 View 中重试或拼协议 |
-| Idempotent command receipts | Prompt、stop、approval、Git mutation 使用 idempotency key 和可查询结果 |
-| Provider drivers | 用统一 capability/adapter 屏蔽 Pi、OMP 和未来 harness 差异 |
-| Turn checkpoints | 在不破坏当前 Git 语义的前提下增加 turn diff/checkpoint；先做 opt-in spike |
-| Thread-isolated branch | 提供“当前 checkout / 新 worktree / 现有 worktree”选项，不默认强迫每个 Thread 新建分支 |
+| Idempotent command receipts      | Prompt、stop、approval、Git mutation 使用 idempotency key 和可查询结果                        |
+| Provider drivers                 | 用统一 capability/adapter 屏蔽 Pi、OMP 和未来 harness 差异                                    |
+| Turn checkpoints                 | 在不破坏当前 Git 语义的前提下增加 turn diff/checkpoint；先做 opt-in spike                     |
+| Thread-isolated branch           | 提供“当前 checkout / 新 worktree / 现有 worktree”选项，不默认强迫每个 Thread 新建分支         |
 
 不把 T3 的完整 event sourcing、Effect 技术栈或远程云服务照搬进来。现有 Runtime 已有稳定会话模型；只有 command receipt、顺序、projection 或 checkpoint 能解决已验证的问题时，才逐步引入对应模式。
 
@@ -126,27 +126,27 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 
 状态含义：**采用**表示进入实现时计划直接依赖；**Phase 0 候选**表示必须 spike 后才能锁定；**借鉴**表示阅读设计或源码但不链接进产品；**不采用**表示当前方案明确排除。
 
-| 项目/能力 | 许可证 | 状态 | 用途与边界 |
-| --- | --- | --- | --- |
-| [SwiftUI / AppKit / Security / ServiceManagement / OSLog](https://developer.apple.com/documentation/) | Apple SDK | 采用 | 窗口、菜单、Keychain、Login Item、日志、权限等平台边界；优先于同功能包装库 |
-| [Sparkle 2](https://github.com/sparkle-project/Sparkle) | 宽松许可证，含第三方 notices | 当前不采用 | 当前明确不做签名、公证、DMG 或自动更新；未来若恢复签名分发，再以 active-session gate、checkpoint、Runtime/helper 协调和回滚验证为前提重新 spike |
-| [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | 采用 | 只保存 App 自己的 bookmark metadata、window state、UI cache 和 migration journal；不与 Runtime 并发写同一数据库 |
-| [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) | MIT | **已采用（1.11.2）** | AppKit `TerminalView` 和 VT emulation；只接 Runtime 的 byte stream，不接管 PTY process；1.11.2 固定版本避免当前 CommandLineTools 缺少 `metal` 时的 shader 构建阻塞 |
-| [Ghostty / libghostty](https://github.com/ghostty-org/ghostty) | MIT | Phase 0 对照 | 高性能 terminal engine/Metal 参考；`libghostty-vt` 可嵌入但 API 仍变化，只有 SwiftTerm 不达标时才评估 pin commit + C bridge |
-| [Textual](https://github.com/gonzalezreal/textual) | MIT | Phase 0 首选 | 原生 selection、code block、table、accessibility-friendly rich text；用长 transcript 和流式更新验证后再采用 |
-| [swift-markdown](https://github.com/swiftlang/swift-markdown) | Apache-2.0 | Phase 0 候选 | 需要可控 GFM AST 时作为解析层；renderer 仍由本项目或 Textual 提供 |
-| [MarkdownUI](https://github.com/gonzalezreal/swift-markdown-ui) | MIT | 不新引入 | 当前已进入 maintenance mode；只作为历史参考，不作为新 App 的长期基座 |
-| [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) | MIT | Phase 0 候选 | 若多 account、access group 和错误处理显著简化，可在自有 `SecretStore` 协议后采用；少量操作优先直接包装 Security framework |
-| [XcodeGen](https://github.com/yonaskolb/XcodeGen) | MIT | Phase 0 候选 | 减少 `pbxproj` 冲突；必须验证 app/helper/tests/capabilities/signing，不为生成器牺牲 Xcode 可维护性 |
-| [swift-log](https://github.com/apple/swift-log) | Apache-2.0 | 按需 | 跨 Swift package 需要统一 facade 时采用；单 App 日志优先 OSLog，不为抽象而抽象 |
-| [swift-argument-parser](https://github.com/apple/swift-argument-parser) | Apache-2.0 | 按需 | 仅在新增 Swift diagnostics/helper CLI 时使用；不影响 App GUI |
-| [swift-collections](https://github.com/apple/swift-collections) | Apache-2.0 | 按需 | transcript/terminal 确实需要 Deque 或有界 buffer 时使用；标准库足够时不引入 |
-| [CodeEdit](https://github.com/CodeEditApp/CodeEdit) | MIT | 借鉴 | 研究原生 split view、preferences、terminal hosting、Git/workspace 和 UI tests；项目仍标注未推荐生产使用，不整仓依赖 |
-| [syncthing-macos](https://github.com/syncthing/syncthing-macos) | MIT | 借鉴 | 研究原生 App 管理 bundled daemon、登录启动、状态菜单和 Sparkle 的真实生命周期 |
-| [T3 Code](https://github.com/pingdotgg/t3code) | MIT | 借鉴 | 研究 Thread/Environment/Provider/command/subscription/checkpoint 模型；不采用 Electron UI 和整仓依赖 |
-| Codex 桌面端 | 非本方案开源依赖 | 产品基准 | 只参考官方产品行为；不复制或声称拥有其内部实现 |
-| Electron / Tauri / WKWebView UI | — | 不采用 | 与“彻底 macOS 原生产品界面”目标冲突；兼容 Web UI 只能作为独立旧入口 |
-| Sentry 或默认遥测 | — | 不默认采用 | 未经用户授权不引入网络遥测；本地诊断先满足问题定位 |
+| 项目/能力                                                                                             | 许可证                       | 状态                 | 用途与边界                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [SwiftUI / AppKit / Security / ServiceManagement / OSLog](https://developer.apple.com/documentation/) | Apple SDK                    | 采用                 | 窗口、菜单、Keychain、Login Item、日志、权限等平台边界；优先于同功能包装库                                                                                         |
+| [Sparkle 2](https://github.com/sparkle-project/Sparkle)                                               | 宽松许可证，含第三方 notices | 当前不采用           | 当前明确不做签名、公证、DMG 或自动更新；未来若恢复签名分发，再以 active-session gate、checkpoint、Runtime/helper 协调和回滚验证为前提重新 spike                    |
+| [GRDB.swift](https://github.com/groue/GRDB.swift)                                                     | MIT                          | 采用                 | 只保存 App 自己的 bookmark metadata、window state、UI cache 和 migration journal；不与 Runtime 并发写同一数据库                                                    |
+| [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)                                               | MIT                          | **已采用（1.11.2）** | AppKit `TerminalView` 和 VT emulation；只接 Runtime 的 byte stream，不接管 PTY process；1.11.2 固定版本避免当前 CommandLineTools 缺少 `metal` 时的 shader 构建阻塞 |
+| [Ghostty / libghostty](https://github.com/ghostty-org/ghostty)                                        | MIT                          | Phase 0 对照         | 高性能 terminal engine/Metal 参考；`libghostty-vt` 可嵌入但 API 仍变化，只有 SwiftTerm 不达标时才评估 pin commit + C bridge                                        |
+| [Textual](https://github.com/gonzalezreal/textual)                                                    | MIT                          | Phase 0 首选         | 原生 selection、code block、table、accessibility-friendly rich text；用长 transcript 和流式更新验证后再采用                                                        |
+| [swift-markdown](https://github.com/swiftlang/swift-markdown)                                         | Apache-2.0                   | Phase 0 候选         | 需要可控 GFM AST 时作为解析层；renderer 仍由本项目或 Textual 提供                                                                                                  |
+| [MarkdownUI](https://github.com/gonzalezreal/swift-markdown-ui)                                       | MIT                          | 不新引入             | 当前已进入 maintenance mode；只作为历史参考，不作为新 App 的长期基座                                                                                               |
+| [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess)                                  | MIT                          | Phase 0 候选         | 若多 account、access group 和错误处理显著简化，可在自有 `SecretStore` 协议后采用；少量操作优先直接包装 Security framework                                          |
+| [XcodeGen](https://github.com/yonaskolb/XcodeGen)                                                     | MIT                          | Phase 0 候选         | 减少 `pbxproj` 冲突；必须验证 app/helper/tests/capabilities/signing，不为生成器牺牲 Xcode 可维护性                                                                 |
+| [swift-log](https://github.com/apple/swift-log)                                                       | Apache-2.0                   | 按需                 | 跨 Swift package 需要统一 facade 时采用；单 App 日志优先 OSLog，不为抽象而抽象                                                                                     |
+| [swift-argument-parser](https://github.com/apple/swift-argument-parser)                               | Apache-2.0                   | 按需                 | 仅在新增 Swift diagnostics/helper CLI 时使用；不影响 App GUI                                                                                                       |
+| [swift-collections](https://github.com/apple/swift-collections)                                       | Apache-2.0                   | 按需                 | transcript/terminal 确实需要 Deque 或有界 buffer 时使用；标准库足够时不引入                                                                                        |
+| [CodeEdit](https://github.com/CodeEditApp/CodeEdit)                                                   | MIT                          | 借鉴                 | 研究原生 split view、preferences、terminal hosting、Git/workspace 和 UI tests；项目仍标注未推荐生产使用，不整仓依赖                                                |
+| [syncthing-macos](https://github.com/syncthing/syncthing-macos)                                       | MIT                          | 借鉴                 | 研究原生 App 管理 bundled daemon、登录启动、状态菜单和 Sparkle 的真实生命周期                                                                                      |
+| [T3 Code](https://github.com/pingdotgg/t3code)                                                        | MIT                          | 借鉴                 | 研究 Thread/Environment/Provider/command/subscription/checkpoint 模型；不采用 Electron UI 和整仓依赖                                                               |
+| Codex 桌面端                                                                                          | 非本方案开源依赖             | 产品基准             | 只参考官方产品行为；不复制或声称拥有其内部实现                                                                                                                     |
+| Electron / Tauri / WKWebView UI                                                                       | —                            | 不采用               | 与“彻底 macOS 原生产品界面”目标冲突；兼容 Web UI 只能作为独立旧入口                                                                                                |
+| Sentry 或默认遥测                                                                                     | —                            | 不默认采用           | 未经用户授权不引入网络遥测；本地诊断先满足问题定位                                                                                                                 |
 
 ### 2.6 Terminal 选型结论
 
@@ -186,7 +186,7 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 3. 将必须保留的 copyright、license 和 third-party notice 放入 App 的 Acknowledgements 与发布 artifact；
 4. SwiftPM 使用受审查的固定版本并提交 `Package.resolved`；不在 release build 拉取 floating branch；
 5. bundled Node、native module、Swift package 和外部 binary 都进入 runtime manifest/SBOM，记录 hash 与架构；
-6. release 构建禁止下载未锁定脚本或二进制；所有 native artifact 在签名前做来源和 hash 校验；
+6. release 构建禁止下载未锁定脚本或二进制；所有 native artifact 在组装前做来源和 hash 校验；若未来恢复签名，再增加签名前校验；
 7. 复制 T3、CodeEdit 等 MIT 项目的具体代码时保留 attribution，并单独 code review；仅参考思想时不伪装成代码依赖；
 8. Apache-2.0 包保留 LICENSE/NOTICE，并检查是否触发额外 NOTICE 传递；
 9. Sparkle 自身及其 vendored components 的 notice 一并保留，不能只写“MIT”；
@@ -196,14 +196,14 @@ Thread 必须显示自己绑定的 Environment 和 branch。切换 Thread 不隐
 
 ### 2.10 Phase 0 依赖 spikes
 
-| Spike | 候选 | 必须回答的问题 | 退出证据 |
-| --- | --- | --- | --- |
-| Terminal | SwiftTerm vs libghostty | IME、VoiceOver、selection、`Cmd+C`、大输出、Metal/CPU、reconnect 是否达标 | 签名 `.app` 中连接真实 Runtime PTY 的录屏、指标和测试 |
-| Transcript | Textual vs swift-markdown | 10k+ message、stream delta、代码块/表格、selection、link policy、VoiceOver | 性能基线、内存曲线、snapshot/UI tests |
-| Keychain | Security framework vs KeychainAccess | 多 Provider/account、更新、删除、access group、错误映射和 redaction | fake + real Keychain integration tests，诊断无 secret |
-| Persistence | GRDB | migration、WAL、backup、observation 是否满足 App-owned state | schema/migration tests，证明不与 Runtime 共写 |
-| Project | XcodeGen vs checked-in xcodeproj | helper、UITests、SPM、capabilities、签名是否可重复 | clean clone 一条命令生成/构建，diff 稳定 |
-| Update（未来签名分发后） | Sparkle 2 | active session、helper/runtime version、rollback、appcast 安全 | 签名旧版到新版升级演练和失败回滚；当前不执行 |
+| Spike                    | 候选                                 | 必须回答的问题                                                             | 退出证据                                                              |
+| ------------------------ | ------------------------------------ | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Terminal                 | SwiftTerm vs libghostty              | IME、VoiceOver、selection、`Cmd+C`、大输出、Metal/CPU、reconnect 是否达标  | 打包 `.app` 中连接真实 Runtime PTY 的录屏、指标和测试；签名版另行复核 |
+| Transcript               | Textual vs swift-markdown            | 10k+ message、stream delta、代码块/表格、selection、link policy、VoiceOver | 性能基线、内存曲线、snapshot/UI tests                                 |
+| Keychain                 | Security framework vs KeychainAccess | 多 Provider/account、更新、删除、access group、错误映射和 redaction        | fake + real Keychain integration tests，诊断无 secret                 |
+| Persistence              | GRDB                                 | migration、WAL、backup、observation 是否满足 App-owned state               | schema/migration tests，证明不与 Runtime 共写                         |
+| Project                  | XcodeGen vs checked-in xcodeproj     | helper、UITests、SPM、capabilities、签名是否可重复                         | clean clone 一条命令生成/构建，diff 稳定                              |
+| Update（未来签名分发后） | Sparkle 2                            | active session、helper/runtime version、rollback、appcast 安全             | 签名旧版到新版升级演练和失败回滚；当前不执行                          |
 
 每个 spike 最终产出 ADR：选择、拒绝项、许可证、版本 pin、性能数据、辅助功能结果、回滚路径。没有证据时保留“候选”，不能因为 GitHub star 数或截图好看就宣布采用。
 
@@ -249,7 +249,7 @@ Runtime 是 App 的内部引擎，不是需要用户管理的第二个产品。�
 - 原生通用设置、Runtime 设置、快捷键与诊断；
 - 系统通知、Dock badge、菜单命令和标准窗口恢复；
 - 从现有 PI WEB 数据中无损迁移；
-- DMG 安装、签名、公证和应用内更新；
+- 可复制的未签名 `.app` 安装、保留数据的卸载/迁移和诊断；签名、公证和应用内更新不在当前范围；
 - 崩溃后重新连接仍在运行的 Runtime；
 - Runtime 异常退出后的可解释恢复，不丢失已持久化会话。
 
@@ -323,15 +323,15 @@ Bundled Agent Runtime
 
 每类状态必须只有一个最终所有者：
 
-| 状态 | 所有者 | 原因 |
-| --- | --- | --- |
-| 活动会话、队列、stream、终端 | Agent Runtime | App 重启或窗口关闭不能破坏运行中的任务 |
-| 项目和工作区登记 | Agent Runtime | CLI、兼容 Web UI 与原生 App 必须看到同一份数据 |
-| Provider secret | Keychain，由 Runtime 通过受限桥读取 | 不把秘密复制到 UI 状态或日志 |
-| 非秘密的全局 Runtime 配置 | Application Support 下的版本化配置 | 便于迁移、备份和诊断 |
-| 项目级核心配置 | `<project>/.pi-web/config.json` 兼容层 | 保持可提交、跨客户端一致 |
-| 窗口、分栏、选中项、主题 | 原生 App | 纯 UI 状态不应污染 Runtime |
-| 会话 UI 投影 | 原生 App 的缓存，可随时重建 | Runtime 持有真实状态，缓存不可成为事实源 |
+| 状态                         | 所有者                                 | 原因                                           |
+| ---------------------------- | -------------------------------------- | ---------------------------------------------- |
+| 活动会话、队列、stream、终端 | Agent Runtime                          | App 重启或窗口关闭不能破坏运行中的任务         |
+| 项目和工作区登记             | Agent Runtime                          | CLI、兼容 Web UI 与原生 App 必须看到同一份数据 |
+| Provider secret              | Keychain，由 Runtime 通过受限桥读取    | 不把秘密复制到 UI 状态或日志                   |
+| 非秘密的全局 Runtime 配置    | Application Support 下的版本化配置     | 便于迁移、备份和诊断                           |
+| 项目级核心配置               | `<project>/.pi-web/config.json` 兼容层 | 保持可提交、跨客户端一致                       |
+| 窗口、分栏、选中项、主题     | 原生 App                               | 纯 UI 状态不应污染 Runtime                     |
+| 会话 UI 投影                 | 原生 App 的缓存，可随时重建            | Runtime 持有真实状态，缓存不可成为事实源       |
 
 ## 6. macOS 工程结构
 
@@ -437,7 +437,7 @@ Pi Agent.app/Contents/
 - 默认关闭；
 - 设置页可见当前状态；
 - 菜单栏可暂停、打开主窗口或彻底退出；
-- helper 与主 App 使用同一签名团队和版本协议；
+- helper 与主 App 使用同一版本协议；若未来引入签名 helper，还必须使用同一签名团队；
 - 升级时先协调 Runtime checkpoint，再替换 App；
 - helper 版本不匹配时拒绝启动新会话，但允许读取诊断信息；
 - 卸载说明提供可逆、精确的 helper 注销和数据保留选项。
@@ -620,7 +620,7 @@ Pi 自己的 profile 和 session 文件仍由 Pi/OMP 兼容目录拥有，不能
 
 ## 11. 文件系统权限
 
-Pi Agent 需要真实访问项目、Git worktree、终端 cwd 和附件。第一版采用 Developer ID 分发，仍应按最小授权设计：
+Pi Agent 需要真实访问项目、Git worktree、终端 cwd 和附件。当前第一版是未签名的本地 `.app` 交付，仍应按最小授权设计；若未来恢复 Developer ID 分发，则在这一权限模型上另行完成签名/Sandbox 验证：
 
 - 用户通过 `NSOpenPanel` 添加项目目录；
 - 保存 security-scoped bookmark，并处理 stale bookmark；
@@ -648,17 +648,17 @@ Runtime 的路径安全策略继续负责防止目录穿越、符号链接逃逸
 
 主要威胁和控制：
 
-| 威胁 | 控制 |
-| --- | --- |
-| 其他本机用户连接 Runtime | `0700` 目录、socket owner 校验、每次启动的握手 token |
-| 恶意网页访问本地 Agent | 默认无 TCP listener；兼容 Web 服务必须显式开启 |
-| Secret 出现在日志/UI | Keychain、redaction、类型化 secret boundary |
+| 威胁                     | 控制                                                                   |
+| ------------------------ | ---------------------------------------------------------------------- |
+| 其他本机用户连接 Runtime | `0700` 目录、socket owner 校验、每次启动的握手 token                   |
+| 恶意网页访问本地 Agent   | 默认无 TCP listener；兼容 Web 服务必须显式开启                         |
+| Secret 出现在日志/UI     | Keychain、redaction、类型化 secret boundary                            |
 | 被替换的 bundled Runtime | exact dependency lock、manifest hash、Node 架构/版本与启动前完整性检查 |
-| 插件取得用户权限 | 明确信任警告、来源/作用域、默认禁用未知 native contribution |
-| 更新中断活动会话 | update coordination、checkpoint、延迟安装 |
-| App 重连造成重复 Prompt | idempotency key、epoch/sequence、未知结果不盲重试 |
-| 任意路径访问 | bookmark 授权 + Runtime path policy |
-| 远程协议复用本机信任 | 本地/远程 transport 与认证完全分离 |
+| 插件取得用户权限         | 明确信任警告、来源/作用域、默认禁用未知 native contribution            |
+| 更新中断活动会话         | update coordination、checkpoint、延迟安装                              |
+| App 重连造成重复 Prompt  | idempotency key、epoch/sequence、未知结果不盲重试                      |
+| 任意路径访问             | bookmark 授权 + Runtime path policy                                    |
+| 远程协议复用本机信任     | 本地/远程 transport 与认证完全分离                                     |
 
 ## 14. 更新和本地分发
 
@@ -799,18 +799,18 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ## 19. 主要风险与处理
 
-| 风险 | 处理 |
-| --- | --- |
-| SwiftUI transcript 在长会话中性能不足 | Phase 0 用真实长 transcript 和流式更新压测，必要处使用 AppKit-backed view |
-| 原生 terminal 复杂度过高 | SwiftTerm/libghostty 对照 spike 和退出门槛；不自研完整 VT，不接受 WKWebView/xterm 作为正式回退 |
-| bundled Node / node-pty 签名失败 | 构建期固定依赖、逐架构 artifact、嵌套签名和干净机验证 |
-| App 退出误杀任务 | Runtime lease、活动会话查询和明确退出三选项 |
-| Swift/TS 类型漂移 | schema codegen + shared fixtures + protocol compatibility tests |
-| Keychain 与 Pi auth 模型不一致 | 先做 bridge 与支持矩阵，不批量删除旧 auth 文件 |
-| macOS 权限导致工作区不可访问 | bookmark 状态可视化、重新授权和 Runtime 二次路径校验 |
-| 同时维护 Web 与 Native 成本过高 | 共享 Runtime contract；Web 进入兼容维护，不并行演进两套产品特性 |
-| 远程能力拖慢本机 MVP | 保留数据模型和协议边界，隐藏入口，Phase 4 再交付 |
-| 自动更新中断 Agent | 下载与安装分离、活动会话 gate、checkpoint 和回滚 App bundle |
+| 风险                                  | 处理                                                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| SwiftUI transcript 在长会话中性能不足 | Phase 0 用真实长 transcript 和流式更新压测，必要处使用 AppKit-backed view                      |
+| 原生 terminal 复杂度过高              | SwiftTerm/libghostty 对照 spike 和退出门槛；不自研完整 VT，不接受 WKWebView/xterm 作为正式回退 |
+| bundled Node / node-pty 打包失败      | 构建期固定依赖、逐架构 artifact、manifest/hash 和干净机验证；未来签名时再增加嵌套签名验证      |
+| App 退出误杀任务                      | Runtime lease、活动会话查询和明确退出三选项                                                    |
+| Swift/TS 类型漂移                     | schema codegen + shared fixtures + protocol compatibility tests                                |
+| Keychain 与 Pi auth 模型不一致        | 先做 bridge 与支持矩阵，不批量删除旧 auth 文件                                                 |
+| macOS 权限导致工作区不可访问          | bookmark 状态可视化、重新授权和 Runtime 二次路径校验                                           |
+| 同时维护 Web 与 Native 成本过高       | 共享 Runtime contract；Web 进入兼容维护，不并行演进两套产品特性                                |
+| 远程能力拖慢本机 MVP                  | 保留数据模型和协议边界，隐藏入口，Phase 4 再交付                                               |
+| 自动更新中断 Agent                    | 下载与安装分离、活动会话 gate、checkpoint 和回滚 App bundle                                    |
 
 ## 20. 关键 ADR 清单
 
@@ -818,7 +818,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 1. 最低支持 macOS 版本；
 2. SwiftTerm 与 libghostty 的 terminal 选择和版本 pin；
-3. bundled Node 的构建、架构和签名方式；
+3. bundled Node 的构建、架构和 manifest 验证方式；未来若恢复签名分发，再单独决定签名方式；
 4. 本机 IPC 第一阶段复用与最终 framing；
 5. schema 到 Swift/TypeScript 的生成工具；
 6. Runtime keep-alive 和 App 终止状态机；
