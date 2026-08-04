@@ -46,23 +46,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PI_WEB_DATA_DIR="$runtime_test_dir/state" \
-PI_WEB_CONFIG="$runtime_test_dir/config.json" \
-PI_WEB_SESSIOND_SOCKET="$runtime_test_dir/sessiond.sock" \
-PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN="$project_capability_token" \
-"$node_path" "$launcher_path" >"$runtime_test_dir/runtime.log" 2>&1 &
-runtime_pid=$!
+start_runtime() {
+	PI_WEB_DATA_DIR="$runtime_test_dir/state" \
+	PI_WEB_CONFIG="$runtime_test_dir/config.json" \
+	PI_WEB_SESSIOND_SOCKET="$runtime_test_dir/sessiond.sock" \
+	PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN="$project_capability_token" \
+	"$node_path" "$launcher_path" >>"$runtime_test_dir/runtime.log" 2>&1 &
+	runtime_pid=$!
+}
 
-for attempt in $(seq 1 240); do
-  if curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/health >"$runtime_test_dir/health.json"; then
-    break
-  fi
-  sleep 0.125
-  if [[ "$attempt" == "240" ]]; then
-    cat "$runtime_test_dir/runtime.log"
-    exit 1
-  fi
-done
+wait_for_runtime() {
+	for attempt in $(seq 1 240); do
+		if curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/health >"$runtime_test_dir/health.json"; then
+			return
+		fi
+		sleep 0.125
+		if [[ "$attempt" == "240" ]]; then
+			cat "$runtime_test_dir/runtime.log"
+			exit 1
+		fi
+	done
+}
+
+: >"$runtime_test_dir/runtime.log"
+start_runtime
+wait_for_runtime
 
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/runtime/hello >"$runtime_test_dir/hello.json"
 runtime_epoch="$("$node_path" --input-type=module -e '
@@ -215,16 +223,33 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   "http://pi-agent/runtime/commands/$command_id" >"$runtime_test_dir/abort-receipt-retry.json"
+kill -TERM "$runtime_pid"
+wait "$runtime_pid"
+runtime_pid=""
+start_runtime
+wait_for_runtime
+restarted_runtime_epoch="$("$node_path" --input-type=module -e '
+import { readFile } from "node:fs/promises";
+const health = JSON.parse(await readFile(process.argv[1], "utf8"));
+if (health.ok !== true) throw new Error("Restarted Runtime health was not OK");
+' "$runtime_test_dir/health.json" >/dev/null; curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" http://pi-agent/runtime/hello | "$node_path" --input-type=module -e 'let input=""; process.stdin.setEncoding("utf8"); process.stdin.on("data", (part) => { input += part; }); process.stdin.on("end", () => { const hello = JSON.parse(input); if (typeof hello.runtimeEpoch !== "string" || hello.runtimeEpoch.length === 0) throw new Error("Restarted Runtime hello did not include an epoch"); process.stdout.write(hello.runtimeEpoch); });')"
+test "$restarted_runtime_epoch" != "$runtime_epoch"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "{\"commandId\":\"$command_id\",\"runtimeEpoch\":\"$runtime_epoch\"}" \
+  http://pi-agent/runtime/commands/abort-active-work >"$runtime_test_dir/abort-receipt-after-restart.json"
 test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath, authorizePath, receiptPath, retryPath, treePath, checkpointReceiptPath, checkpointRetryPath, checkpointsPath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
+const [healthPath, helloPath, authorizePath, receiptPath, retryPath, restartRetryPath, treePath, checkpointReceiptPath, checkpointRetryPath, checkpointsPath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
 const authorized = JSON.parse(await readFile(authorizePath, "utf8"));
 const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
 const retry = JSON.parse(await readFile(retryPath, "utf8"));
+const restartRetry = JSON.parse(await readFile(restartRetryPath, "utf8"));
 const tree = JSON.parse(await readFile(treePath, "utf8"));
 const checkpointReceipt = JSON.parse(await readFile(checkpointReceiptPath, "utf8"));
 const checkpointRetry = JSON.parse(await readFile(checkpointRetryPath, "utf8"));
@@ -247,6 +272,8 @@ if (receipt.kind !== "abort-active-work" || receipt.status !== "completed") thro
 if (receipt.runtimeEpoch !== hello.runtimeEpoch) throw new Error("Runtime abort receipt epoch did not match hello");
 if (receipt.result?.requested !== 0 || receipt.result?.failures?.length !== 0) throw new Error("Idle Runtime abort receipt was unexpected");
 if (retry.commandId !== receipt.commandId || retry.status !== receipt.status) throw new Error("Runtime receipt retry was not idempotent");
+const { recoveredAfterRuntimeRestart, ...restartReceipt } = restartRetry;
+if (recoveredAfterRuntimeRestart !== true || JSON.stringify(restartReceipt) !== JSON.stringify(receipt)) throw new Error("Restarted Runtime did not recover the persisted command receipt");
 if (checkpointReceipt.kind !== "create-git-checkpoint" || checkpointReceipt.status !== "completed" || checkpointReceipt.result?.checkpointed !== true) throw new Error("Runtime Git checkpoint did not complete");
 if (JSON.stringify(checkpointRetry) !== JSON.stringify(checkpointReceipt) || !Array.isArray(checkpoints) || checkpoints[0]?.id !== checkpointReceipt.result?.checkpoint?.id) throw new Error("Runtime Git checkpoint was not receipt-safe or listable");
 if (tree.path !== "" || !Array.isArray(tree.entries) || !tree.entries.some((entry) => entry.path === "package.json")) throw new Error("Runtime workspace tree did not project package.json");
@@ -261,7 +288,7 @@ if (!Buffer.from(workspaceImagePreview.data, "base64").equals(Buffer.from([0x89,
 if (workspaceMove.kind !== "move-workspace-file" || workspaceMove.status !== "completed" || workspaceMove.result?.toPath !== "Notes/renamed.txt") throw new Error("Runtime workspace move did not complete");
 if (workspaceDelete.kind !== "delete-workspace-file" || workspaceDelete.status !== "completed" || workspaceDelete.result?.existed !== true) throw new Error("Runtime workspace delete did not complete");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/abort-receipt-after-restart.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \

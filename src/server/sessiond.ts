@@ -49,6 +49,8 @@ import {
 } from "../sessiond/sessiondSocketSecurity.js";
 import {
 	RUNTIME_COMMAND_KINDS,
+	defaultRuntimeCommandReceiptFilePath,
+	FileRuntimeCommandReceiptPersistence,
 	RuntimeCommandReceipts,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
@@ -144,9 +146,12 @@ await runSessionDaemonStartup({
 			ompSessions,
 			defaultRuntimeValue,
 		);
-		const runtimeCommandReceipts = new RuntimeCommandReceipts(
-			nativeRuntimeIdentity.runtimeEpoch,
-		);
+		const runtimeCommandReceipts = await RuntimeCommandReceipts.open({
+			runtimeEpoch: nativeRuntimeIdentity.runtimeEpoch,
+			persistence: new FileRuntimeCommandReceiptPersistence(
+				defaultRuntimeCommandReceiptFilePath(daemonEnvironment),
+			),
+		});
 		auth.subscribe((change) => {
 			sessions.applyAuthChange(change);
 		});

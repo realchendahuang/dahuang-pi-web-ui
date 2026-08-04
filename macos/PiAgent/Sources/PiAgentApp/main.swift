@@ -1278,7 +1278,7 @@ final class AppModel: ObservableObject {
         guard receipt.kind == kind else {
             throw RuntimeClientError.serverError(500, "Runtime returned a receipt for the wrong command kind.")
         }
-        guard receipt.runtimeEpoch == expectedRuntimeEpoch else {
+        guard receipt.runtimeEpoch == expectedRuntimeEpoch || receipt.recoveredAfterRuntimeRestart == true else {
             throw RuntimeClientError.incompatibleRuntime(
                 "Runtime restarted while this command was in flight. Reconnect before trying again."
             )

@@ -143,6 +143,13 @@ struct PiAgentContractCheck {
 		let promptReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: promptData)
 		precondition(promptReceipt.result?.accepted == true)
 		precondition(promptReceipt.result?.sessionId == "s1")
+		precondition(promptReceipt.recoveredAfterRuntimeRestart == nil)
+
+		let recoveredReceipt = try decoder.decode(
+			RuntimeCommandReceipt.self,
+			from: Data(#"{"commandId":"command-recovered","kind":"prompt","runtimeEpoch":"epoch-before-restart","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","recoveredAfterRuntimeRestart":true,"result":{"accepted":true,"sessionId":"s1"}}"#.utf8)
+		)
+		precondition(recoveredReceipt.recoveredAfterRuntimeRestart == true)
 
 		let startData = Data(
 			#"{"commandId":"command-3","kind":"start-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8

@@ -1018,6 +1018,9 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
     public let completedAt: Date
     public let result: Result?
     public let error: String?
+    /// A terminal receipt recovered by the Runtime's private command ledger
+    /// after a new epoch began. It proves the same command was not replayed.
+    public let recoveredAfterRuntimeRestart: Bool?
 }
 
 /// Session event transport kept separate from the request client so tests and
