@@ -19,88 +19,115 @@ private func nativeImageMimeType(for url: URL) -> String? {
     }
 }
 
+/// One App process must supervise at most one bundled Runtime. Each window
+/// receives this immutable connection but owns its own project/thread/UI state.
+@MainActor
+private final class SharedRuntimeConnection: ObservableObject {
+    let connection: AppModel.RuntimeConnection
+
+    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        connection = AppModel.makeRuntimeConnection(environment: environment)
+    }
+}
+
+private struct PiAgentWindowRoot: View {
+    @StateObject private var model: AppModel
+    private let lifecycle: AppLifecycleDelegate
+
+    init(connection: AppModel.RuntimeConnection, lifecycle: AppLifecycleDelegate) {
+        let windowIdentifier = UUID().uuidString
+        _model = StateObject(wrappedValue: AppModel(
+            projectAuthorizationStore: ProjectAuthorizationStore(
+                key: "com.realchendahuang.pi-agent.authorized-project.\(windowIdentifier)"
+            ),
+            connection: connection
+        ))
+        self.lifecycle = lifecycle
+    }
+
+    var body: some View {
+        ContentView(model: model)
+            .frame(minWidth: 980, minHeight: 680)
+            .onAppear { lifecycle.register(model) }
+            .onDisappear { lifecycle.unregister(model) }
+            .alert(
+                "Agent sessions are still active",
+                isPresented: $model.showTerminationConfirmation
+            ) {
+                Button("Keep Running and Quit") { model.keepRuntimeRunningAndTerminate() }
+                Button("Stop Runtime and Quit", role: .destructive) { model.stopOwnedRuntimeAndTerminate() }
+                Button("Cancel", role: .cancel) { model.cancelTermination() }
+            } message: {
+                Text(model.terminationConfirmationMessage)
+            }
+            .alert(
+                "Delete archived thread permanently?",
+                isPresented: Binding(
+                    get: { model.sessionPendingPermanentDeletion != nil },
+                    set: { if !$0 { model.cancelPermanentDelete() } }
+                )
+            ) {
+                Button("Delete Permanently", role: .destructive) { model.confirmPermanentDelete() }
+                Button("Cancel", role: .cancel) { model.cancelPermanentDelete() }
+            } message: {
+                Text("This removes the archived transcript from Pi Agent storage and cannot be undone.")
+            }
+            .alert(
+                "Delete workspace file?",
+                isPresented: Binding(
+                    get: { model.workspaceFilePendingDeletion != nil },
+                    set: { if !$0 { model.cancelWorkspaceFileDeletion() } }
+                )
+            ) {
+                Button("Delete File", role: .destructive) { model.confirmWorkspaceFileDeletion() }
+                Button("Cancel", role: .cancel) { model.cancelWorkspaceFileDeletion() }
+            } message: {
+                Text("This permanently removes the selected file from the authorized project.")
+            }
+    }
+}
+
 @main
 struct PiAgentApp: App {
-    @StateObject private var model = AppModel()
+    @StateObject private var runtime = SharedRuntimeConnection()
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycleDelegate
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup("Pi Agent") {
-            ContentView(model: model)
-                .frame(minWidth: 980, minHeight: 680)
-                .onAppear {
-                    lifecycleDelegate.model = model
-                }
-                .alert(
-                    "Agent sessions are still active",
-                    isPresented: $model.showTerminationConfirmation
-                ) {
-                    Button("Keep Running and Quit") {
-                        model.keepRuntimeRunningAndTerminate()
-                    }
-                    Button("Stop Runtime and Quit", role: .destructive) {
-                        model.stopOwnedRuntimeAndTerminate()
-                    }
-                    Button("Cancel", role: .cancel) {
-                        model.cancelTermination()
-                    }
-                } message: {
-                    Text(model.terminationConfirmationMessage)
-                }
-                .alert(
-                    "Delete archived thread permanently?",
-                    isPresented: Binding(
-                        get: { model.sessionPendingPermanentDeletion != nil },
-                        set: { if !$0 { model.cancelPermanentDelete() } }
-                    )
-                ) {
-                    Button("Delete Permanently", role: .destructive) {
-                        model.confirmPermanentDelete()
-                    }
-                    Button("Cancel", role: .cancel) {
-                        model.cancelPermanentDelete()
-                    }
-                } message: {
-                    Text("This removes the archived transcript from Pi Agent storage and cannot be undone.")
-                }
-                .alert(
-                    "Delete workspace file?",
-                    isPresented: Binding(
-                        get: { model.workspaceFilePendingDeletion != nil },
-                        set: { if !$0 { model.cancelWorkspaceFileDeletion() } }
-                    )
-                ) {
-                    Button("Delete File", role: .destructive) {
-                        model.confirmWorkspaceFileDeletion()
-                    }
-                    Button("Cancel", role: .cancel) {
-                        model.cancelWorkspaceFileDeletion()
-                    }
-                } message: {
-                    Text("This permanently removes the selected file from the authorized project.")
-                }
+        WindowGroup("Pi Agent", id: "pi-agent-main") {
+            PiAgentWindowRoot(connection: runtime.connection, lifecycle: lifecycleDelegate)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Thread") {
-                    model.startNewSession()
+                Button("New Window") {
+                    openWindow(id: "pi-agent-main")
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+                Divider()
+                Button("New Thread") {
+                    lifecycleDelegate.activeModel?.startNewSession()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandGroup(after: .toolbar) {
                 Button("Open Project") {
-                    model.openProject()
+                    lifecycleDelegate.activeModel?.openProject()
                 }
                 .keyboardShortcut("o", modifiers: [.command])
                 Button("Reconnect Runtime") {
-                    model.refreshRuntime()
+                    lifecycleDelegate.activeModel?.refreshRuntime()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }
 
         Settings {
-            SettingsView(model: model)
+            if let model = lifecycleDelegate.activeModel {
+                SettingsView(model: model)
+            } else {
+                Text("Open a Pi Agent window to configure its project and Runtime.")
+                    .padding()
+            }
         }
     }
 }
@@ -216,10 +243,15 @@ final class AppModel: ObservableObject {
     init(
         runtimeClient: (any RuntimeClient)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        projectAuthorizationStore: ProjectAuthorizationStore = ProjectAuthorizationStore()
+        projectAuthorizationStore: ProjectAuthorizationStore = ProjectAuthorizationStore(),
+        connection: RuntimeConnection? = nil
     ) {
         self.projectAuthorizationStore = projectAuthorizationStore
-        if let runtimeClient {
+        if let connection {
+            self.runtimeClient = connection.client
+            runtimeSupervisor = connection.supervisor
+            errorMessage = connection.startupError
+        } else if let runtimeClient {
             self.runtimeClient = runtimeClient
             runtimeSupervisor = nil
         } else {
@@ -2375,13 +2407,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private struct RuntimeConnection {
+    struct RuntimeConnection {
         let client: any RuntimeClient
         let supervisor: RuntimeSupervisor?
         let startupError: String?
     }
 
-    private static func makeRuntimeConnection(environment: [String: String]) -> RuntimeConnection {
+    static func makeRuntimeConnection(environment: [String: String]) -> RuntimeConnection {
         if let socket = environment["PI_AGENT_RUNTIME_SOCKET"], !socket.isEmpty {
             return RuntimeConnection(
                 client: UnixSocketRuntimeClient(socketPath: socket),
@@ -2427,7 +2459,8 @@ final class AppModel: ObservableObject {
 
 @MainActor
 private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
-    weak var model: AppModel?
+    private let models = NSHashTable<AppModel>.weakObjects()
+    weak var activeModel: AppModel?
     private var willSleepObserver: NSObjectProtocol?
     private var didWakeObserver: NSObjectProtocol?
 
@@ -2439,7 +2472,7 @@ private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.model?.systemWillSleep()
+                self?.allModels.forEach { $0.systemWillSleep() }
             }
         }
         didWakeObserver = notificationCenter.addObserver(
@@ -2448,13 +2481,25 @@ private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.model?.systemDidWake()
+                self?.allModels.forEach { $0.systemDidWake() }
             }
         }
     }
 
+    func register(_ model: AppModel) {
+        models.add(model)
+        activeModel = model
+    }
+
+    func unregister(_ model: AppModel) {
+        models.remove(model)
+        if activeModel === model {
+            activeModel = allModels.last
+        }
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        model?.requestApplicationTermination() ?? .terminateNow
+        activeModel?.requestApplicationTermination() ?? .terminateNow
     }
 
     func applicationWillTerminate(_: Notification) {
@@ -2468,6 +2513,8 @@ private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
         willSleepObserver = nil
         didWakeObserver = nil
     }
+
+    private var allModels: [AppModel] { models.allObjects }
 }
 
 private struct UnavailableRuntimeClient: RuntimeClient {

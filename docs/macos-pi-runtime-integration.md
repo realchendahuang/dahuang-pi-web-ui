@@ -1,6 +1,6 @@
 # macOS 原生客户端与 Pi Runtime 融合：研究与架构决策
 
-> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验、Unix-socket smoke、Runtime-owned workspace 文本创建/编辑/移动/删除、受限图片预览、原生消息图片附件、Thread Git checkpoint/review，以及 legacy `auth.json` 的 Keychain 受控迁移已完成；后台/登录生命周期和远程能力仍在实施。**
+> 状态：**bundled Runtime 的本机实现、App 启动、manifest 校验、Unix-socket smoke、Runtime-owned workspace 文本创建/编辑/移动/删除、受限图片预览、原生消息图片附件、Thread Git checkpoint/review、独立 selection 的多窗口，以及 legacy `auth.json` 的 Keychain 受控迁移已完成；菜单栏后台、登录生命周期和远程能力仍在实施。**
 >
 > 范围覆写：当前用户明确要求不做代码签名、公证、Gatekeeper/DMG/Sparkle 发布。本文保留相关研究作为未来参考，但所有当前验收以 exact dependency lock、manifest/hash、Node 版本/架构和真实 Runtime smoke 为准。
 >
@@ -336,7 +336,9 @@ RPC 的正确位置是 `SessionRuntimeDriver` 的一种实现：当第三方 Age
 
 ### 5.3 为什么长期 Node Runtime 是正式产品组件
 
-长期 Runtime 能自然提供：
+长期 Runtime 能自然提供。当前原生 `WindowGroup` 已让每个窗口构造自己的 UI model 与 project bookmark store，但把同一条 immutable Runtime connection/supervisor 注入全部窗口；因此 Project/Thread/transcript/terminal selection 相互独立，而一个窗口关闭或刷新不会重新启动或停止另一个窗口使用的 session。
+
+长期 Runtime 还提供：
 
 - App/UI 重启时 session 不丢；
 - 多窗口连接同一事实源；
