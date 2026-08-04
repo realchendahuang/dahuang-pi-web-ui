@@ -2,6 +2,22 @@ import AppKit
 import PiAgentCore
 import SwiftUI
 import SwiftTerm
+import UniformTypeIdentifiers
+
+private let nativeInlineImageLimit = Int(4.5 * 1024 * 1024)
+private let nativePromptAttachmentLimit = 16
+private let nativePromptImageContentTypes: [UTType] = [.png, .jpeg, .gif]
+    + (UTType(filenameExtension: "webp").map { [$0] } ?? [])
+
+private func nativeImageMimeType(for url: URL) -> String? {
+    switch url.pathExtension.lowercased() {
+    case "jpg", "jpeg": return "image/jpeg"
+    case "png": return "image/png"
+    case "gif": return "image/gif"
+    case "webp": return "image/webp"
+    default: return nil
+    }
+}
 
 @main
 struct PiAgentApp: App {
@@ -119,6 +135,7 @@ final class AppModel: ObservableObject {
     @Published var selectedSessionID: String?
     @Published var showInspector = true
     @Published var prompt = ""
+    @Published var promptImageAttachments: [RuntimePromptImageAttachment] = []
     @Published var sessions: [RuntimeSession] = []
     @Published var transcriptMessages: [RuntimeMessage] = []
     @Published var statusBySession: [String: RuntimeSessionStatus] = [:]
@@ -602,7 +619,8 @@ final class AppModel: ObservableObject {
             return
         }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending else { return }
+        let attachments = promptImageAttachments
+        guard !text.isEmpty || !attachments.isEmpty, !isSending else { return }
 		guard canUseProjectRuntime else {
 			errorMessage = "Authorize the selected project before sending a prompt."
 			return
@@ -631,6 +649,7 @@ final class AppModel: ObservableObject {
                         cwd: cwd,
                         runtimeId: session.runtimeId,
                         text: text,
+                        attachments: attachments,
                         commandId: commandId,
                         expectedRuntimeEpoch: expectedRuntimeEpoch
                     )
@@ -655,12 +674,60 @@ final class AppModel: ObservableObject {
                     )
                 }
                 self.prompt = ""
+                self.promptImageAttachments = []
                 self.isSending = false
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.isSending = false
             }
         }
+    }
+
+    func choosePromptImages() {
+        guard !isSending else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = nativePromptImageContentTypes
+        panel.prompt = "Attach Images"
+        panel.message = "Pi Agent sends supported images inline to the selected Thread. Each image must be at most 4.5 MB."
+        guard panel.runModal() == .OK else { return }
+
+        var accepted: [RuntimePromptImageAttachment] = []
+        var rejected: [String] = []
+        for url in panel.urls {
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard data.count > 0 else { throw RuntimeClientError.serverError(400, "Image is empty.") }
+                guard data.count <= nativeInlineImageLimit else {
+                    throw RuntimeClientError.serverError(400, "Image exceeds Pi's 4.5 MB inline limit.")
+                }
+                guard let mimeType = nativeImageMimeType(for: url) else {
+                    throw RuntimeClientError.serverError(400, "Only PNG, JPEG, GIF, and WebP images are supported.")
+                }
+                accepted.append(RuntimePromptImageAttachment(
+                    name: url.lastPathComponent,
+                    mimeType: mimeType,
+                    data: data.base64EncodedString(),
+                    size: data.count
+                ))
+            } catch {
+                rejected.append(url.lastPathComponent)
+            }
+        }
+        let capacity = max(0, nativePromptAttachmentLimit - promptImageAttachments.count)
+        promptImageAttachments.append(contentsOf: accepted.prefix(capacity))
+        if accepted.count > capacity { rejected.append("more than \(nativePromptAttachmentLimit) images") }
+        if !rejected.isEmpty {
+            errorMessage = "Could not attach: \(rejected.joined(separator: ", "))."
+        }
+    }
+
+    func removePromptImage(_ attachment: RuntimePromptImageAttachment) {
+        promptImageAttachments.removeAll { $0.id == attachment.id }
     }
 
     func archiveSession(_ session: RuntimeSession) {
@@ -2321,6 +2388,7 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         cwd _: String,
         runtimeId _: String?,
         text _: String,
+        attachments _: [RuntimePromptImageAttachment],
         commandId _: String,
         expectedRuntimeEpoch _: String
     ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
@@ -2651,24 +2719,46 @@ struct TranscriptView: View {
             }
 
             Divider()
-            HStack(alignment: .bottom, spacing: 12) {
-                TextField("Ask Pi Agent…", text: $model.prompt, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...6)
-                    .onSubmit {
-                        if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
+            VStack(alignment: .leading, spacing: 8) {
+                if !model.promptImageAttachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(model.promptImageAttachments) { attachment in
+                                PromptImageAttachmentChip(attachment: attachment) {
+                                    model.removePromptImage(attachment)
+                                }
+                            }
+                        }
                     }
-                Button(model.isSending ? "Sending…" : "Send") {
-                    model.sendPrompt()
+                    .frame(maxHeight: 64)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    model.selectedSession == nil
-                        || model.selectedSession?.archived == true
-                        || model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-						|| !model.canUseProjectRuntime
-                        || model.isSending
-                )
+                HStack(alignment: .bottom, spacing: 12) {
+                    Button("Attach Images…") { model.choosePromptImages() }
+                        .disabled(
+                            model.selectedSession == nil
+                                || model.selectedSession?.archived == true
+                                || !model.canUseProjectRuntime
+                                || model.isSending
+                                || model.promptImageAttachments.count >= nativePromptAttachmentLimit
+                        )
+                    TextField("Ask Pi Agent…", text: $model.prompt, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...6)
+                        .onSubmit {
+                            if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
+                        }
+                    Button(model.isSending ? "Sending…" : "Send") {
+                        model.sendPrompt()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        model.selectedSession == nil
+                            || model.selectedSession?.archived == true
+                            || (model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.promptImageAttachments.isEmpty)
+							|| !model.canUseProjectRuntime
+                            || model.isSending
+                    )
+                }
             }
             .padding(16)
         }
@@ -2686,9 +2776,64 @@ struct MessageRow: View {
             Text(message.text.isEmpty ? "(non-text message)" : message.text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if !message.images.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                            MessageImagePreview(image: image)
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct PromptImageAttachmentChip: View {
+    let attachment: RuntimePromptImageAttachment
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "photo")
+            VStack(alignment: .leading, spacing: 1) {
+                Text(attachment.name).lineLimit(1)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.size), countStyle: .file))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Button(action: remove) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Remove \(attachment.name)")
+        }
+        .font(.caption)
+        .padding(6)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+struct MessageImagePreview: View {
+    let image: RuntimeMessageImage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let data = image.imageData, let nsImage = NSImage(data: data) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 360, maxHeight: 220)
+            } else {
+                Label("This image format cannot be rendered by this macOS version.", systemImage: "photo.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(image.mimeType)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

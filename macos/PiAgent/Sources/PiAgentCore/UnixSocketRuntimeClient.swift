@@ -79,6 +79,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         cwd: String,
         runtimeId: String?,
         text: String,
+        attachments: [RuntimePromptImageAttachment],
         commandId: String,
         expectedRuntimeEpoch: String
     ) async throws -> RuntimeCommandReceipt {
@@ -90,6 +91,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
                 cwd: cwd,
                 text: text,
                 runtimeId: runtimeId,
+                attachments: attachments,
                 commandId: commandId,
                 runtimeEpoch: expectedRuntimeEpoch
             )
@@ -708,6 +710,7 @@ private struct PromptPayload: Encodable {
     let cwd: String
     let text: String
     let runtimeId: String?
+    let attachments: [RuntimePromptImageAttachment]
     let commandId: String
     let runtimeEpoch: String
 
@@ -716,6 +719,7 @@ private struct PromptPayload: Encodable {
         try container.encode(cwd, forKey: .cwd)
         try container.encode(text, forKey: .text)
         try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(attachments, forKey: .attachments)
         try container.encode(commandId, forKey: .commandId)
         try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
     }
@@ -724,6 +728,7 @@ private struct PromptPayload: Encodable {
         case cwd
         case text
         case runtimeId
+        case attachments
         case commandId
         case runtimeEpoch
     }

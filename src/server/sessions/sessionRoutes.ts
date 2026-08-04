@@ -13,6 +13,7 @@ import {
 	type SessionUnreadAcknowledgeRequest,
 } from "../../shared/apiTypes.js";
 import { requireAgentRuntimeId } from "../../shared/agentRuntime.js";
+import { parsePromptAttachments } from "../../shared/promptAttachments.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import {
 	RUNTIME_COMMAND_KINDS,
@@ -617,7 +618,9 @@ export function registerSessionRoutes(
 						ref,
 						body["text"],
 						body["streamingBehavior"],
-						body["attachments"],
+						nativeCommand.attachments.length === 0
+							? undefined
+							: nativeCommand.attachments,
 					);
 					return {
 						accepted: true,
@@ -1078,6 +1081,12 @@ function nativePromptCommand(
 	if (!hasCommandId || !hasRuntimeEpoch) {
 		throw new Error("commandId and runtimeEpoch must be provided together");
 	}
+	// The native Composer transports only Pi-inline images. Validate the payload
+	// before it enters the receipt map so an oversized retry cannot retain an
+	// unbounded base64 body in Runtime memory.
+	const attachments = parsePromptAttachments(body["attachments"], {
+		enforceInlineSizeLimit: true,
+	});
 	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
 	const cwd = typeof ref === "string" ? undefined : ref.cwd;
 	return {
@@ -1090,8 +1099,9 @@ function nativePromptCommand(
 			runtimeId,
 			text: body["text"],
 			streamingBehavior: body["streamingBehavior"],
-			attachments: body["attachments"],
+			attachments,
 		}),
+		attachments,
 	};
 }
 

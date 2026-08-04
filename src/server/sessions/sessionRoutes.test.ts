@@ -749,6 +749,30 @@ describe("session routes", () => {
 		}
 	});
 
+	it("validates native inline image attachments before retaining a prompt receipt", async () => {
+		const routeApp = Fastify({ logger: false });
+		const eventHub = new SessionEventHub();
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(routeApp, routeService, eventHub, "", {
+			runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1"),
+		});
+		try {
+			const invalid = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/prompt",
+				payload: {
+					cwd: "/repo",
+					text: "look",
+					attachments: [{ kind: "file", mimeType: "application/pdf", data: "QUJD" }],
+					commandId: "native-attachment-1",
+					runtimeEpoch: "epoch-1",
+				},
+			});
+			expect(invalid.statusCode).toBe(400);
+			expect(routeService.calls).toEqual([]);
+		} finally { await routeApp.close(); }
+	});
+
 	it("executes a native prompt once per command id and returns its epoch-bound receipt", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);

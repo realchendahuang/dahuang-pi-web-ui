@@ -326,13 +326,24 @@ struct PiAgentContractCheck {
         precondition(session.runtimeId == "pi")
         precondition(session.messageCount == 2)
 
-        let messageData = Data(
-            #"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"world"}]}],"start":0,"total":2}"#.utf8
+		let messageData = Data(
+			#"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"world"},{"type":"image","mimeType":"image/png","data":"QUJD"}]}],"start":0,"total":2}"#.utf8
         )
         let page = try decoder.decode(RuntimeMessagePage.self, from: messageData)
         precondition(page.messages.count == 2)
-        precondition(page.messages[0].text == "hello")
-        precondition(page.messages[1].text == "world")
+		precondition(page.messages[0].text == "hello")
+		precondition(page.messages[1].text == "world")
+		precondition(page.messages[1].images.count == 1)
+		precondition(page.messages[1].images[0].imageData == Data([0x41, 0x42, 0x43]))
+
+		let promptAttachment = RuntimePromptImageAttachment(
+			name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3
+		)
+		let encodedAttachment = try JSONSerialization.jsonObject(
+			with: JSONEncoder().encode(promptAttachment)
+		) as? [String: Any]
+		precondition(encodedAttachment?["kind"] as? String == "image")
+		precondition(encodedAttachment?["id"] == nil)
         precondition(page.total == 2)
     }
 

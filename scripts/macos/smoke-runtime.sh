@@ -74,6 +74,13 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --get --data-urlencode "cwd=$repo_root" \
   http://pi-agent/sessions >"$runtime_test_dir/sessions.json"
+native_attachment_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], text: "attachment validation", attachments: [{ kind: "file", mimeType: "application/pdf", data: "QUJD" }], commandId: "native-attachment-invalid", runtimeEpoch: process.argv[2] }))' "$repo_root" "$runtime_epoch")"
+native_attachment_rejection_status="$(curl --silent --output "$runtime_test_dir/native-attachment-rejection.json" --write-out '%{http_code}' --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$native_attachment_payload" \
+  http://pi-agent/sessions/runtime-smoke-invalid-attachment/prompt)"
+test "$native_attachment_rejection_status" = "400"
 checkpoint_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 checkpoint_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ cwd: process.argv[1], sessionId: "runtime-smoke-thread", commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$repo_root" "$checkpoint_command_id" "$runtime_epoch")"
 curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \

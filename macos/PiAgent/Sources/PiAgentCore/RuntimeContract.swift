@@ -290,11 +290,13 @@ public struct RuntimeMessage: Decodable, Identifiable, Sendable {
     public let id: String
     public let role: String
     public let text: String
+    public let images: [RuntimeMessageImage]
 
-    public init(id: String, role: String, text: String) {
+    public init(id: String, role: String, text: String, images: [RuntimeMessageImage] = []) {
         self.id = id
         self.role = role
         self.text = text
+        self.images = images
     }
 
     public init(from decoder: Decoder) throws {
@@ -303,14 +305,55 @@ public struct RuntimeMessage: Decodable, Identifiable, Sendable {
             id = UUID().uuidString
             role = "message"
             text = value.transcriptText
+            images = []
             return
         }
         id = fields["id"]?.stringValue ?? UUID().uuidString
         role = fields["role"]?.stringValue ?? fields["type"]?.stringValue ?? "message"
-        text = fields["content"]?.transcriptText
+        let content = fields["content"]
+        text = content?.transcriptText
             ?? fields["text"]?.stringValue
             ?? fields["message"]?.stringValue
             ?? ""
+        images = content?.messageImages ?? []
+    }
+}
+
+/// A Pi-inline image carried by a persisted transcript entry. The Runtime
+/// delivers this through the existing session contract; Swift does not reopen
+/// a workspace URL or receive a filesystem capability for it.
+public struct RuntimeMessageImage: Decodable, Equatable, Sendable {
+    public let mimeType: String
+    public let data: String
+
+    public var imageData: Data? { Data(base64Encoded: data) }
+}
+
+/// A user-selected Composer image. Its custom encoding deliberately matches
+/// Pi's prompt attachment schema and omits the UI-only local id and byte count.
+public struct RuntimePromptImageAttachment: Encodable, Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let name: String
+    public let mimeType: String
+    public let data: String
+    public let size: Int
+
+    public init(id: UUID = UUID(), name: String, mimeType: String, data: String, size: Int) {
+        self.id = id
+        self.name = name
+        self.mimeType = mimeType
+        self.data = data
+        self.size = size
+    }
+
+    enum CodingKeys: String, CodingKey { case kind, name, mimeType, data }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("image", forKey: .kind)
+        try container.encode(name, forKey: .name)
+        try container.encode(mimeType, forKey: .mimeType)
+        try container.encode(data, forKey: .data)
     }
 }
 
@@ -519,6 +562,28 @@ public indirect enum JSONValue: Decodable, Sendable {
             return ""
         }
     }
+
+    fileprivate var messageImages: [RuntimeMessageImage] {
+        switch self {
+        case let .array(values):
+            return values.compactMap(\.asMessageImage)
+        case .object:
+            return asMessageImage.map { [$0] } ?? []
+        default:
+            return []
+        }
+    }
+
+    private var asMessageImage: RuntimeMessageImage? {
+        guard case let .object(fields) = self,
+              fields["type"]?.stringValue == "image",
+              let mimeType = fields["mimeType"]?.stringValue,
+              let data = fields["data"]?.stringValue,
+              !mimeType.isEmpty,
+              !data.isEmpty
+        else { return nil }
+        return RuntimeMessageImage(mimeType: mimeType, data: data)
+    }
 }
 
 public protocol RuntimeClient: RuntimeHealthClient {
@@ -536,6 +601,7 @@ public protocol RuntimeClient: RuntimeHealthClient {
         cwd: String,
         runtimeId: String?,
         text: String,
+        attachments: [RuntimePromptImageAttachment],
         commandId: String,
         expectedRuntimeEpoch: String
     ) async throws -> RuntimeCommandReceipt
