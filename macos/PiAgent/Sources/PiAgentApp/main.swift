@@ -144,6 +144,9 @@ final class AppModel: ObservableObject {
     private var terminalTask: Task<Void, Never>?
     private var terminalSubscription: RuntimeTerminalSubscription?
     private var terminalCWD: String?
+    private var runtimeRefreshGeneration = RuntimeRefreshGeneration()
+    private var runtimeRecovery = RuntimeLifecycleRecovery()
+    private var runtimeRecoveryTask: Task<Void, Never>?
     private var terminationCheckInFlight = false
     private var terminationActiveSessionCount: Int?
     private var terminationAbortInFlight = false
@@ -327,15 +330,20 @@ final class AppModel: ObservableObject {
         showTerminationConfirmation = false
     }
 
-    func refreshRuntime() {
+    func refreshRuntime(cancellingScheduledRecovery: Bool = true) {
         let client = runtimeClient
         let supervisor = runtimeSupervisor
         let cwd = projectPath
+        if cancellingScheduledRecovery {
+            cancelOwnedRuntimeRecovery()
+        }
+        let refreshToken = runtimeRefreshGeneration.begin(cwd: cwd)
         isLoading = true
         errorMessage = nil
         runtimeState = .connecting
-		let capabilityClient = client as? any RuntimeProjectCapabilityClient
-		projectRuntimeAuthorization = capabilityClient == nil ? .notRequired : .authorizing
+        runtimeEpoch = nil
+        let capabilityClient = client as? any RuntimeProjectCapabilityClient
+        projectRuntimeAuthorization = capabilityClient == nil ? .notRequired : .authorizing
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -347,34 +355,56 @@ final class AppModel: ObservableObject {
                 } else {
                     health = try await client.health()
                 }
+                let epoch: String?
                 if let helloClient = client as? any RuntimeHelloClient {
                     let hello = try await helloClient.hello()
                     try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
-                    self.runtimeEpoch = hello.runtimeEpoch
+                    epoch = hello.runtimeEpoch
                 } else {
-                    self.runtimeEpoch = nil
+                    epoch = nil
                 }
-				if let capabilityClient,
-				   let epoch = self.runtimeEpoch {
-					let commandId = UUID().uuidString
-					let receipt = try await capabilityClient.authorizeProject(path: cwd, commandId: commandId, expectedRuntimeEpoch: epoch)
-					try self.requireCompletedReceipt(receipt, kind: "authorize-project", expectedRuntimeEpoch: epoch)
-					guard receipt.result?.authorized == true,
-						  let authorizedPath = receipt.result?.path,
-						  !authorizedPath.isEmpty
-					else { throw RuntimeClientError.serverError(500, "Runtime did not authorize the selected project.") }
-					self.projectRuntimeAuthorization = .authorized(path: authorizedPath)
-				}
+                if let capabilityClient,
+                   let epoch
+                {
+                    let commandId = UUID().uuidString
+                    let receipt = try await capabilityClient.authorizeProject(
+                        path: cwd,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: epoch
+                    )
+                    try self.requireCompletedReceipt(
+                        receipt,
+                        kind: "authorize-project",
+                        expectedRuntimeEpoch: epoch
+                    )
+                    guard receipt.result?.authorized == true,
+                          let authorizedPath = receipt.result?.path,
+                          !authorizedPath.isEmpty
+                    else {
+                        throw RuntimeClientError.serverError(
+                            500,
+                            "Runtime did not authorize the selected project."
+                        )
+                    }
+                    guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
+                    self.projectRuntimeAuthorization = .authorized(path: authorizedPath)
+                }
                 let sessions = try await client.listSessions(cwd: cwd)
+                guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
+                self.runtimeEpoch = epoch
                 self.runtimeState = .connected(health)
                 self.replaceSessions(sessions)
                 self.isLoading = false
+                // A Runtime restart invalidates any terminal WebSocket. A
+                // reconnect always reads the authoritative terminal list.
+                self.stopTerminalConnection()
                 self.ensureTerminalConnection()
-				self.refreshGit()
+                self.refreshGit()
             } catch {
-				if capabilityClient != nil {
-					self.projectRuntimeAuthorization = .failed(message: error.localizedDescription)
-				}
+                guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
+                if capabilityClient != nil {
+                    self.projectRuntimeAuthorization = .failed(message: error.localizedDescription)
+                }
                 self.runtimeState = .failed(error.localizedDescription)
                 self.errorMessage = error.localizedDescription
                 self.runtimeEpoch = nil
@@ -399,6 +429,8 @@ final class AppModel: ObservableObject {
             errorMessage = error.localizedDescription
             return
         }
+        stopSessionEventStream()
+        stopTerminalConnection()
         selectedSessionID = nil
         transcriptMessages = []
         statusBySession = [:]
@@ -407,6 +439,26 @@ final class AppModel: ObservableObject {
 		gitUnstagedDiff = nil
 		gitStagedDiff = nil
         refreshRuntime()
+    }
+
+    /// The App remains a UI client while macOS sleeps. Stop its socket readers
+    /// rather than ending work; the Runtime process and its Pi sessions retain
+    /// ownership and are reconciled after wake.
+    func systemWillSleep() {
+        guard runtimeRecovery.prepareForSleep() else { return }
+        runtimeRefreshGeneration.invalidate()
+        runtimeRecoveryTask?.cancel()
+        runtimeRecoveryTask = nil
+        stopSessionEventStream()
+        stopTerminalConnection()
+        runtimeEpoch = nil
+        isLoading = false
+        runtimeState = .disconnected
+    }
+
+    func systemDidWake() {
+        guard runtimeRecovery.recoverAfterWake() else { return }
+        refreshRuntime(cancellingScheduledRecovery: false)
     }
 
     func selectSession(_ sessionID: String?) {
@@ -1051,18 +1103,14 @@ final class AppModel: ObservableObject {
     }
 
     func ensureTerminalConnection() {
-		guard canUseProjectRuntime else { return }
+        guard canUseProjectRuntime else { return }
         guard let client = runtimeClient as? any RuntimeTerminalClient else {
             terminalErrorMessage = "This Runtime does not expose a terminal surface."
             return
         }
         if terminalCWD == projectPath && (terminalSubscription != nil || terminalTask != nil) { return }
 
-        terminalTask?.cancel()
-        terminalSubscription?.cancel()
-        terminalTask = nil
-        terminalSubscription = nil
-        terminalInfo = nil
+        stopTerminalConnection()
         terminalCWD = projectPath
         terminalErrorMessage = nil
 
@@ -1113,6 +1161,7 @@ final class AppModel: ObservableObject {
                     }
                     terminal = createdTerminal
                 }
+                guard self.isCurrentTerminalConnection(cwd) else { return }
                 self.terminalInfo = terminal
                 var reconnectDelay: UInt64 = 250_000_000
                 while !Task.isCancelled && self.terminalCWD == cwd {
@@ -1157,6 +1206,7 @@ final class AppModel: ObservableObject {
                         guard self.terminalCWD == cwd else { return }
                         self.terminalSubscription = nil
                         self.terminalErrorMessage = "Terminal reconnecting: \(error.localizedDescription)"
+                        self.scheduleOwnedRuntimeRecovery()
                         do {
                             try await Task.sleep(nanoseconds: reconnectDelay)
                         } catch {
@@ -1176,7 +1226,7 @@ final class AppModel: ObservableObject {
     }
 
     func reconnectTerminal() {
-        terminalCWD = nil
+        stopTerminalConnection()
         ensureTerminalConnection()
     }
 
@@ -1306,7 +1356,7 @@ final class AppModel: ObservableObject {
                         return
                     }
                     self.applyStreamSnapshot(snapshot, sessionID: session.id)
-					self.refreshExtensionInteractions(for: session)
+                    self.refreshExtensionInteractions(for: session)
                     reconnectDelay = 250_000_000
 
                     for try await event in subscription.events {
@@ -1324,6 +1374,7 @@ final class AppModel: ObservableObject {
                     subscription.cancel()
                     guard self.isCurrentSessionStream(generation, sessionID: session.id) else { return }
                     self.errorMessage = "Session stream reconnecting: \(error.localizedDescription)"
+                    self.scheduleOwnedRuntimeRecovery()
                     do {
                         try await Task.sleep(nanoseconds: reconnectDelay)
                     } catch {
@@ -1341,6 +1392,51 @@ final class AppModel: ObservableObject {
         sessionEventSubscription?.cancel()
         sessionStreamTask = nil
         sessionEventSubscription = nil
+    }
+
+    private func stopTerminalConnection() {
+        terminalTask?.cancel()
+        terminalSubscription?.cancel()
+        terminalTask = nil
+        terminalSubscription = nil
+        terminalInfo = nil
+        terminalCWD = nil
+        terminalErrorMessage = nil
+    }
+
+    private func scheduleOwnedRuntimeRecovery() {
+        guard runtimeRecovery.scheduleRecoveryIfNeeded(ownsRuntime: runtimeSupervisor != nil) else { return }
+
+        runtimeRecoveryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 750_000_000)
+            } catch {
+                return
+            }
+            guard let self,
+                  !Task.isCancelled,
+                  self.runtimeRecovery.consumeScheduledRecovery()
+            else { return }
+            self.runtimeRecoveryTask = nil
+            self.refreshRuntime(cancellingScheduledRecovery: false)
+        }
+    }
+
+    private func cancelOwnedRuntimeRecovery() {
+        runtimeRecovery.cancelScheduledRecovery()
+        runtimeRecoveryTask?.cancel()
+        runtimeRecoveryTask = nil
+    }
+
+    private func isCurrentRuntimeRefresh(
+        _ token: RuntimeRefreshGeneration.Token,
+        cwd: String
+    ) -> Bool {
+        runtimeRefreshGeneration.isCurrent(token, cwd: cwd) && cwd == projectPath
+    }
+
+    private func isCurrentTerminalConnection(_ cwd: String) -> Bool {
+        terminalCWD == cwd && cwd == projectPath
     }
 
     private func isCurrentSessionStream(_ generation: Int, sessionID: String) -> Bool {
@@ -1635,9 +1731,45 @@ final class AppModel: ObservableObject {
 @MainActor
 private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
+    private var willSleepObserver: NSObjectProtocol?
+    private var didWakeObserver: NSObjectProtocol?
+
+    func applicationDidFinishLaunching(_: Notification) {
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        willSleepObserver = notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.model?.systemWillSleep()
+            }
+        }
+        didWakeObserver = notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.model?.systemDidWake()
+            }
+        }
+    }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         model?.requestApplicationTermination() ?? .terminateNow
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        if let willSleepObserver {
+            notificationCenter.removeObserver(willSleepObserver)
+        }
+        if let didWakeObserver {
+            notificationCenter.removeObserver(didWakeObserver)
+        }
+        willSleepObserver = nil
+        didWakeObserver = nil
     }
 }
 

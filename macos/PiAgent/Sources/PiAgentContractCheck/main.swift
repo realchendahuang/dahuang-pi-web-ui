@@ -7,12 +7,13 @@ struct PiAgentContractCheck {
         try checkHealthDecoding()
         try checkRuntimeHelloDecoding()
         try checkRuntimeCommandReceiptDecoding()
-		try checkProjectCapabilityReceiptDecoding()
-		try checkGitContractDecoding()
-		try checkExtensionInteractionContractDecoding()
+        try checkProjectCapabilityReceiptDecoding()
+        try checkGitContractDecoding()
+        try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
         try checkStreamingAndTerminalDecoding()
+        checkRuntimeLifecycleRecovery()
         try await checkRuntimeSupervisorOwnership()
         checkImplicitLaunchIsDisabled()
         try checkExplicitLaunchPlan()
@@ -292,6 +293,30 @@ struct PiAgentContractCheck {
         precondition(terminal.type == "output")
         precondition(terminal.data == "$ ")
         precondition(terminal.replay == true)
+    }
+
+    private static func checkRuntimeLifecycleRecovery() {
+        var recovery = RuntimeLifecycleRecovery()
+        precondition(!recovery.scheduleRecoveryIfNeeded(ownsRuntime: false))
+        precondition(recovery.scheduleRecoveryIfNeeded(ownsRuntime: true))
+        precondition(!recovery.scheduleRecoveryIfNeeded(ownsRuntime: true))
+        precondition(recovery.prepareForSleep())
+        precondition(!recovery.consumeScheduledRecovery())
+        precondition(!recovery.scheduleRecoveryIfNeeded(ownsRuntime: true))
+        precondition(recovery.recoverAfterWake())
+        precondition(!recovery.recoverAfterWake())
+        precondition(recovery.scheduleRecoveryIfNeeded(ownsRuntime: true))
+        recovery.cancelScheduledRecovery()
+        precondition(!recovery.consumeScheduledRecovery())
+
+        var refreshGeneration = RuntimeRefreshGeneration()
+        let first = refreshGeneration.begin(cwd: "/projects/first")
+        precondition(refreshGeneration.isCurrent(first, cwd: "/projects/first"))
+        let second = refreshGeneration.begin(cwd: "/projects/second")
+        precondition(!refreshGeneration.isCurrent(first, cwd: "/projects/first"))
+        precondition(refreshGeneration.isCurrent(second, cwd: "/projects/second"))
+        refreshGeneration.invalidate()
+        precondition(!refreshGeneration.isCurrent(second, cwd: "/projects/second"))
     }
 
     /// This executable doubles as the portable native smoke harness because
