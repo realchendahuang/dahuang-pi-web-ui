@@ -240,6 +240,10 @@ final class AppModel: ObservableObject {
 	@Published var isUninstallPreparing = false
 	@Published var showUninstallConfirmation = false
 	@Published var uninstallMessage: String?
+	@Published var isDataErasePreparing = false
+	@Published var showDataEraseConfirmation = false
+	@Published var dataEraseConfirmationText = ""
+	@Published var dataEraseMessage: String?
     @Published var gitCommitMessage = ""
 	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
 	@Published var isExtensionInteractionMutationInFlight = false
@@ -272,7 +276,8 @@ final class AppModel: ObservableObject {
     private var terminationAbortInFlight = false
     private var terminationAbortError: String?
     private var uninstallPlan: NativeAppUninstallPlan?
-    private var uninstallLaunched = false
+    private var dataErasePlan: NativeAppDataErasePlan?
+    private var maintenanceHelperLaunched = false
     private var runtimeEpoch: String?
     private var authPollingTask: Task<Void, Never>?
 
@@ -384,11 +389,17 @@ final class AppModel: ObservableObject {
 			.path
 	}
 
+	static let dataEraseConfirmationPhrase = "ERASE PI AGENT DATA"
+
+	var canConfirmDataErase: Bool {
+		dataEraseConfirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == Self.dataEraseConfirmationPhrase
+	}
+
     /// Called synchronously from `NSApplicationDelegate`. The authoritative
     /// active-session count is fetched before choosing whether App termination
     /// may proceed, so a stale UI projection cannot silently stop work.
     func requestApplicationTermination() -> NSApplication.TerminateReply {
-		if uninstallLaunched {
+		if maintenanceHelperLaunched {
 			runtimeSupervisor?.stop()
 			return .terminateNow
 		}
@@ -1826,7 +1837,7 @@ final class AppModel: ObservableObject {
 	}
 
 	func requestUninstallKeepingData() {
-		guard !isUninstallPreparing, !uninstallLaunched else { return }
+		guard !isUninstallPreparing, !maintenanceHelperLaunched else { return }
 		guard runtimeSupervisor != nil else {
 			uninstallMessage = "Automatic uninstall is available only from the bundled Pi Agent.app Runtime. This connection is external, so Pi Agent will not stop or remove it."
 			return
@@ -1870,7 +1881,7 @@ final class AppModel: ObservableObject {
 	}
 
 	func confirmUninstallKeepingData() {
-		guard let uninstallPlan, !isUninstallPreparing, !uninstallLaunched else { return }
+		guard let uninstallPlan, !isUninstallPreparing, !maintenanceHelperLaunched else { return }
 		showUninstallConfirmation = false
 		isUninstallPreparing = true
 		Task { [weak self] in
@@ -1884,12 +1895,87 @@ final class AppModel: ObservableObject {
 				process.executableURL = uninstallPlan.helperURL
 				process.arguments = uninstallPlan.helperArguments
 				try process.run()
-				self.uninstallLaunched = true
+				self.maintenanceHelperLaunched = true
 				self.isUninstallPreparing = false
 				NSApp.terminate(nil)
 			} catch {
 				self.isUninstallPreparing = false
 				self.uninstallMessage = "Pi Agent did not begin uninstalling: \(error.localizedDescription)"
+			}
+		}
+	}
+
+	func requestDataErase() {
+		guard !isDataErasePreparing, !maintenanceHelperLaunched else { return }
+		guard runtimeSupervisor != nil else {
+			dataEraseMessage = "Automatic data erase is available only from the bundled Pi Agent.app Runtime. This connection is external, so Pi Agent will not remove any data."
+			return
+		}
+		do {
+			let bundleURL = Bundle.main.bundleURL
+			let helperURL = bundleURL
+				.appendingPathComponent("Contents/Helpers", isDirectory: true)
+				.appendingPathComponent(NativeAppDataErasePlan.helperName)
+			dataErasePlan = try NativeAppDataErasePlan.prepare(
+				appBundleURL: bundleURL,
+				helperURL: helperURL,
+				waitForProcessID: ProcessInfo.processInfo.processIdentifier
+			)
+		} catch {
+			dataEraseMessage = error.localizedDescription
+			return
+		}
+
+		isDataErasePreparing = true
+		dataEraseMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let health = try await self.runtimeClient.health()
+				guard health.activeSessions == 0 else {
+					throw RuntimeClientError.serverError(409, "An active session is running. Pi Agent left all data unchanged.")
+				}
+				self.isDataErasePreparing = false
+				self.dataEraseConfirmationText = ""
+				self.showDataEraseConfirmation = true
+			} catch {
+				self.isDataErasePreparing = false
+				self.dataEraseMessage = "Pi Agent did not begin data erase: \(error.localizedDescription)"
+			}
+		}
+	}
+
+	func cancelDataErase() {
+		showDataEraseConfirmation = false
+		dataEraseConfirmationText = ""
+		dataErasePlan = nil
+	}
+
+	func confirmDataErase() {
+		guard let dataErasePlan,
+			  canConfirmDataErase,
+			  !isDataErasePreparing,
+			  !maintenanceHelperLaunched
+		else { return }
+		showDataEraseConfirmation = false
+		isDataErasePreparing = true
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let health = try await self.runtimeClient.health()
+				guard health.activeSessions == 0 else {
+					throw RuntimeClientError.serverError(409, "An active session started before data erase. Pi Agent left all data unchanged.")
+				}
+				let process = Process()
+				process.executableURL = dataErasePlan.helperURL
+				process.arguments = dataErasePlan.helperArguments
+				try process.run()
+				self.maintenanceHelperLaunched = true
+				self.isDataErasePreparing = false
+				NSApp.terminate(nil)
+			} catch {
+				self.isDataErasePreparing = false
+				self.dataEraseMessage = "Pi Agent did not begin data erase: \(error.localizedDescription)"
 			}
 		}
 	}
@@ -4491,14 +4577,30 @@ struct SettingsView: View {
 					model.requestUninstallKeepingData()
 				}
 				.disabled(model.isUninstallPreparing)
+				Button("Erase All Native Pi Agent Data…", role: .destructive) {
+					model.requestDataErase()
+				}
+				.disabled(model.isDataErasePreparing)
 				if model.isUninstallPreparing {
 					ProgressView("Checking active sessions before uninstall…")
 				} else if let message = model.uninstallMessage {
 					Text(message)
 						.font(.caption)
 						.foregroundStyle(.red)
+					.fixedSize(horizontal: false, vertical: true)
+				}
+				if model.isDataErasePreparing {
+					ProgressView("Checking active sessions before erasing data…")
+				} else if let message = model.dataEraseMessage {
+					Text(message)
+						.font(.caption)
+						.foregroundStyle(.red)
 						.fixedSize(horizontal: false, vertical: true)
 				}
+				Text("Erase All moves Pi Agent Application Support data to the Trash and clears native project bookmarks, migration records, sessions, Runtime state, preferences, and Pi Agent Keychain credentials. It keeps Pi Agent.app, your project directories, and legacy PI WEB files. Keychain credentials cannot be recovered.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
 			}
 			Section("Legacy PI WEB projects") {
 				Text("Each migration is read back into the native Project Library before Pi Agent records it. Rolling back removes only a bookmark created by that exact migration; it never changes the legacy projects.json, your directory, sessions, or manually added projects.")
@@ -4609,6 +4711,9 @@ struct SettingsView: View {
 			Button("Cancel", role: .cancel) { model.cancelUninstallKeepingData() }
 		} message: {
 			Text("Pi Agent verifies that no session is active, exits, then moves only its own bundle-ID-verified app to the Trash. It keeps Pi Agent data, project folders, legacy PI WEB state, and Keychain credentials.")
+		}
+		.sheet(isPresented: $model.showDataEraseConfirmation, onDismiss: model.cancelDataErase) {
+			NativeDataEraseSheet(model: model)
 		}
 		.confirmationDialog(
 			"Roll back the last project migration?",

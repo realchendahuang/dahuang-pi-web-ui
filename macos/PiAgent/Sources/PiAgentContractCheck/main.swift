@@ -15,6 +15,7 @@ struct PiAgentContractCheck {
         try checkProjectAuthorization()
         try checkNativeProjectMigrationJournal()
         try checkNativeAppUninstallPlan()
+		try checkNativeAppDataErasePlan()
         try checkSessionAndMessageDecoding()
         try checkTaskNotificationDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -550,6 +551,49 @@ struct PiAgentContractCheck {
             // The helper never accepts a broad directory as its target.
         }
     }
+
+	private static func checkNativeAppDataErasePlan() throws {
+		let fileManager = FileManager.default
+		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+			.appendingPathComponent("pi-agent-data-erase-plan-\(UUID().uuidString)", isDirectory: true)
+		defer { try? fileManager.removeItem(at: root) }
+		let appURL = root.appendingPathComponent("Pi Agent.app", isDirectory: true)
+		let helperURL = appURL
+			.appendingPathComponent("Contents/Helpers", isDirectory: true)
+			.appendingPathComponent(NativeAppDataErasePlan.helperName)
+		try fileManager.createDirectory(at: helperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+		let info = ["CFBundleIdentifier": NativeAppUninstallPlan.expectedBundleIdentifier] as NSDictionary
+		try info.write(to: appURL.appendingPathComponent("Contents/Info.plist"), atomically: true)
+		try Data("#!/bin/sh\nexit 0\n".utf8).write(to: helperURL)
+		try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helperURL.path)
+
+		let plan = try NativeAppDataErasePlan.prepare(
+			appBundleURL: appURL,
+			helperURL: helperURL,
+			waitForProcessID: 42,
+			fileManager: fileManager
+		)
+		precondition(plan.appBundleURL == appURL.standardizedFileURL.resolvingSymlinksInPath())
+		precondition(plan.helperURL == helperURL.standardizedFileURL.resolvingSymlinksInPath())
+		precondition(plan.dataDirectoryURL == fileManager.homeDirectoryForCurrentUser
+			.appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true))
+		precondition(plan.helperArguments == [
+			"--erase-data-when-parent-exits",
+			"--wait-for-pid", "42",
+			"--app-path", plan.appBundleURL.path,
+		])
+		do {
+			_ = try NativeAppDataErasePlan.prepare(
+				appBundleURL: appURL,
+				helperURL: appURL.appendingPathComponent("Contents/Helpers/PiAgentUninstaller"),
+				waitForProcessID: 42,
+				fileManager: fileManager
+			)
+			preconditionFailure("The data eraser must reject a different bundled helper")
+		} catch NativeAppMaintenanceError.invalidHelper {
+			// The eraser never accepts an adjacent helper or an arbitrary executable.
+		}
+	}
 
     private static func checkSessionAndMessageDecoding() throws {
         let sessionData = Data(

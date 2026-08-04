@@ -12,6 +12,7 @@ let package = Package(
         .executable(name: "PiAgent", targets: ["PiAgentApp"]),
         .executable(name: "PiAgentKeychainHelper", targets: ["PiAgentKeychainHelper"]),
         .executable(name: "PiAgentUninstaller", targets: ["PiAgentUninstaller"]),
+        .executable(name: "PiAgentDataEraser", targets: ["PiAgentDataEraser"]),
     ],
     dependencies: [
         // SwiftTerm provides the native VT parser and AppKit surface. PTY
@@ -45,6 +46,11 @@ let package = Package(
             name: "PiAgentUninstaller",
             dependencies: ["PiAgentCore"],
             path: "Sources/PiAgentUninstaller"
+        ),
+        .executableTarget(
+            name: "PiAgentDataEraser",
+            dependencies: ["PiAgentCore"],
+            path: "Sources/PiAgentDataEraser"
         ),
     ]
 )

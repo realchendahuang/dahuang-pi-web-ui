@@ -39,9 +39,96 @@ public struct NativeAppUninstallPlan: Equatable, Sendable {
         waitForProcessID: Int32,
         fileManager: FileManager = .default
     ) throws -> NativeAppUninstallPlan {
+        let target = try NativeAppMaintenanceTarget.verify(
+            appBundleURL: appBundleURL,
+            helperURL: helperURL,
+            helperName: helperName,
+            waitForProcessID: waitForProcessID,
+            fileManager: fileManager
+        )
+
+        let retainedDataURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
+        return NativeAppUninstallPlan(
+            appBundleURL: target.appBundleURL,
+            helperURL: target.helperURL,
+            waitForProcessID: waitForProcessID,
+            retainedDataURL: retainedDataURL
+        )
+    }
+}
+
+/// A deliberately explicit full reset hand-off. The helper is allowed to move
+/// only Pi Agent's own Application Support directory to Trash, remove this
+/// App's preferences domain, and delete credentials under Pi Agent's exact
+/// Keychain service. It never receives a project path or a legacy PI WEB path.
+public struct NativeAppDataErasePlan: Equatable, Sendable {
+    public static let helperName = "PiAgentDataEraser"
+    public static let preferencesDomain = NativeAppUninstallPlan.expectedBundleIdentifier
+
+    public let appBundleURL: URL
+    public let helperURL: URL
+    public let waitForProcessID: Int32
+    public let dataDirectoryURL: URL
+
+    public init(
+        appBundleURL: URL,
+        helperURL: URL,
+        waitForProcessID: Int32,
+        dataDirectoryURL: URL
+    ) {
+        self.appBundleURL = appBundleURL
+        self.helperURL = helperURL
+        self.waitForProcessID = waitForProcessID
+        self.dataDirectoryURL = dataDirectoryURL
+    }
+
+    public var helperArguments: [String] {
+        [
+            "--erase-data-when-parent-exits",
+            "--wait-for-pid", String(waitForProcessID),
+            "--app-path", appBundleURL.path,
+        ]
+    }
+
+    public static func prepare(
+        appBundleURL: URL,
+        helperURL: URL,
+        waitForProcessID: Int32,
+        fileManager: FileManager = .default
+    ) throws -> NativeAppDataErasePlan {
+        let target = try NativeAppMaintenanceTarget.verify(
+            appBundleURL: appBundleURL,
+            helperURL: helperURL,
+            helperName: helperName,
+            waitForProcessID: waitForProcessID,
+            fileManager: fileManager
+        )
+        let dataDirectoryURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
+        return NativeAppDataErasePlan(
+            appBundleURL: target.appBundleURL,
+            helperURL: target.helperURL,
+            waitForProcessID: waitForProcessID,
+            dataDirectoryURL: dataDirectoryURL
+        )
+    }
+}
+
+private struct NativeAppMaintenanceTarget {
+    let appBundleURL: URL
+    let helperURL: URL
+
+    static func verify(
+        appBundleURL: URL,
+        helperURL: URL,
+        helperName: String,
+        waitForProcessID: Int32,
+        fileManager: FileManager
+    ) throws -> NativeAppMaintenanceTarget {
         guard waitForProcessID > 0 else { throw NativeAppMaintenanceError.invalidParentProcess }
         let appURL = appBundleURL.standardizedFileURL.resolvingSymlinksInPath()
-        guard appURL.lastPathComponent == expectedBundleName,
+        guard appURL.lastPathComponent == NativeAppUninstallPlan.expectedBundleName,
               appURL.pathExtension.lowercased() == "app",
               appURL.hasDirectoryPath
         else { throw NativeAppMaintenanceError.invalidAppBundle(appURL.path) }
@@ -51,7 +138,7 @@ public struct NativeAppUninstallPlan: Equatable, Sendable {
 
         let infoURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let info = NSDictionary(contentsOf: infoURL),
-              info["CFBundleIdentifier"] as? String == expectedBundleIdentifier
+              info["CFBundleIdentifier"] as? String == NativeAppUninstallPlan.expectedBundleIdentifier
         else { throw NativeAppMaintenanceError.unexpectedBundleIdentifier(appURL.path) }
 
         let expectedHelperURL = appURL
@@ -63,15 +150,7 @@ public struct NativeAppUninstallPlan: Equatable, Sendable {
         guard actualHelperURL == expectedHelperURL,
               fileManager.isExecutableFile(atPath: actualHelperURL.path)
         else { throw NativeAppMaintenanceError.invalidHelper(actualHelperURL.path) }
-
-        let retainedDataURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
-        return NativeAppUninstallPlan(
-            appBundleURL: appURL,
-            helperURL: actualHelperURL,
-            waitForProcessID: waitForProcessID,
-            retainedDataURL: retainedDataURL
-        )
+        return NativeAppMaintenanceTarget(appBundleURL: appURL, helperURL: actualHelperURL)
     }
 }
 
@@ -83,6 +162,8 @@ public enum NativeAppMaintenanceError: LocalizedError, Equatable, Sendable {
     case invalidHelper(String)
     case parentDidNotExit(Int32)
     case moveToTrashFailed(String)
+    case eraseDataMoveToTrashFailed(String)
+    case eraseKeychainCredentialsFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -100,6 +181,10 @@ public enum NativeAppMaintenanceError: LocalizedError, Equatable, Sendable {
             return "Pi Agent did not exit in time (process \(pid)); the app bundle was left untouched."
         case let .moveToTrashFailed(message):
             return "Pi Agent could not move its app bundle to the Trash: \(message)"
+        case let .eraseDataMoveToTrashFailed(message):
+            return "Pi Agent could not move its local data to the Trash: \(message)"
+        case let .eraseKeychainCredentialsFailed(message):
+            return "Pi Agent could not erase its Keychain credentials: \(message)"
         }
     }
 }
