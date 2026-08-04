@@ -8,7 +8,7 @@
 >
 > 开源与产品调研快照：**2026-08-03**。外部项目的维护状态、许可证和 API 稳定性在真正引入依赖时必须重新核实。
 
-当前已经可验证的实现位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health/hello contract、Unix-socket client、项目目录选择与 security-scoped bookmark、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable。`scripts/macos/build-app.sh` 会组装 App 内的固定 Node、production dependency closure、launcher 与 SHA-256 manifest；`verify-app.sh` 会完整校验 bundle、启动内部 Runtime，并以 Swift client 做 socket smoke。Prompt 不再通过固定间隔轮询等待完成。它仍不是 DMG/自动更新产品，也不改变现有 Web UI 或 sessiond 的事实所有权。
+当前已经可验证的实现位于 `macos/PiAgent`：SwiftUI 原生窗口、Runtime health/hello contract、Unix-socket client、项目目录选择与 security-scoped bookmark、Project → Thread 侧边栏、session projection、session event WebSocket + `seq`/snapshot 去重、事件驱动 transcript、真实 Prompt 提交、SwiftTerm 原生 terminal surface、PTY input/resize/reconnect，以及 contract-check executable。`scripts/macos/build-app.sh` 会组装 App 内的固定 Node、production dependency closure、launcher 与 SHA-256 manifest；`verify-app.sh` 会完整校验 bundle、启动内部 Runtime，并以 Swift client 做 socket smoke。2026-08-04 的实际 staging build 已裁掉浏览器 UI 专用 Runtime 根依赖，manifest 从 47,474 项降至 41,351 项，仍通过 Runtime/Swift smoke；完整数据与尚未完成的 SBOM/license 边界见 [Pi Runtime 融合决策](./macos-pi-runtime-integration.md)。Prompt 不再通过固定间隔轮询等待完成。它仍不是 DMG/自动更新产品，也不改变现有 Web UI 或 sessiond 的事实所有权。
 
 ## 1. 结论
 
