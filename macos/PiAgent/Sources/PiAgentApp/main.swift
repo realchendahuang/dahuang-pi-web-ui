@@ -177,6 +177,9 @@ final class AppModel: ObservableObject {
     @Published var knownProjects: [NativeProjectBookmark] = []
 	@Published var legacyProjectPreview: RuntimeLegacyProjectPreview?
 	@Published var isLegacyProjectPreviewLoading = false
+	@Published var legacyMigrationOverview: RuntimeLegacyMigrationOverview?
+	@Published var isLegacyMigrationOverviewLoading = false
+	@Published var legacyMigrationOverviewError: String?
 	@Published var legacyProjectMigration: NativeProjectMigrationRecord?
 	@Published var isLegacyProjectMigrationInFlight = false
 	@Published var showLegacyProjectMigrationRollbackConfirmation = false
@@ -660,6 +663,25 @@ final class AppModel: ObservableObject {
 				guard let self else { return }
 				self.errorMessage = error.localizedDescription
 				self.isLegacyProjectPreviewLoading = false
+			}
+		}
+	}
+
+	func refreshLegacyMigrationOverview() {
+		guard let client = runtimeClient as? any RuntimeLegacyMigrationOverviewClient else { return }
+		isLegacyMigrationOverviewLoading = true
+		legacyMigrationOverviewError = nil
+		Task { [weak self] in
+			do {
+				let overview = try await client.legacyMigrationOverview()
+				guard let self else { return }
+				self.legacyMigrationOverview = overview
+				self.isLegacyMigrationOverviewLoading = false
+			} catch {
+				guard let self else { return }
+				self.legacyMigrationOverview = nil
+				self.legacyMigrationOverviewError = error.localizedDescription
+				self.isLegacyMigrationOverviewLoading = false
 			}
 		}
 	}
@@ -4602,6 +4624,43 @@ struct SettingsView: View {
 					.foregroundStyle(.secondary)
 					.fixedSize(horizontal: false, vertical: true)
 			}
+			Section("Legacy PI WEB migration") {
+				Text("This inventory is read-only. It distinguishes data Pi Agent can migrate now from legacy state that remains in place because the native product has no safe target for it yet.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				if model.isLegacyMigrationOverviewLoading {
+					ProgressView("Inspecting legacy PI WEB state…")
+				} else if let overview = model.legacyMigrationOverview {
+					LabeledContent("Legacy data", value: overview.legacyDataDir)
+					ForEach(overview.items) { item in
+						VStack(alignment: .leading, spacing: 2) {
+							LabeledContent(legacyMigrationItemLabel(item.id), value: legacyMigrationActionLabel(item.action))
+							Text(item.source)
+								.font(.caption)
+								.foregroundStyle(.secondary)
+							if let count = item.itemCount {
+								Text("\(count) item\(count == 1 ? "" : "s") discovered")
+									.font(.caption)
+									.foregroundStyle(.secondary)
+							}
+							if let issue = item.issue {
+								Text(issue)
+									.font(.caption)
+									.foregroundStyle(.orange)
+							}
+						}
+					}
+				}
+				if let error = model.legacyMigrationOverviewError {
+					Text("Could not inspect legacy PI WEB state: \(error)")
+						.font(.caption)
+						.foregroundStyle(.orange)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+				Button("Review Legacy Migration") { model.refreshLegacyMigrationOverview() }
+					.disabled(model.isLegacyMigrationOverviewLoading)
+			}
 			Section("Legacy PI WEB projects") {
 				Text("Each migration is read back into the native Project Library before Pi Agent records it. Rolling back removes only a bookmark created by that exact migration; it never changes the legacy projects.json, your directory, sessions, or manually added projects.")
 					.font(.caption)
@@ -4736,6 +4795,25 @@ struct SettingsView: View {
             Text("Only the listed providers will be copied. Existing Keychain credentials will not be overwritten, and the old auth.json will remain unchanged.")
         }
     }
+}
+
+private func legacyMigrationItemLabel(_ id: String) -> String {
+	switch id {
+	case "projects": return "Projects"
+	case "archived-sessions": return "Archived sessions"
+	case "machines": return "Remote machines"
+	case "unread": return "Unread state"
+	default: return id
+	}
+}
+
+private func legacyMigrationActionLabel(_ action: String) -> String {
+	switch action {
+	case "reauthorize-projects": return "Re-authorize in Projects"
+	case "copied-and-retained": return "Copied, source retained"
+	case "retained": return "Retained; no native target"
+	default: return action
+	}
 }
 
 private struct NativeTaskNotificationsSection: View {

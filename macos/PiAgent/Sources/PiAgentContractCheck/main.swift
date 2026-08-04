@@ -8,6 +8,7 @@ struct PiAgentContractCheck {
         try checkRuntimeHelloDecoding()
         try checkRuntimeCommandReceiptDecoding()
         try checkProjectCapabilityReceiptDecoding()
+		try checkLegacyMigrationOverviewDecoding()
         try checkGitContractDecoding()
 		try checkSupportReportEncoding()
         try checkWorkspaceContractDecoding()
@@ -378,6 +379,18 @@ struct PiAgentContractCheck {
 		)
 		precondition(receipt.result?.authorized == true)
 		precondition(receipt.result?.path == "/private/tmp/project")
+	}
+
+	private static func checkLegacyMigrationOverviewDecoding() throws {
+		let overview = try JSONDecoder().decode(
+			RuntimeLegacyMigrationOverview.self,
+			from: Data(#"{"legacyDataDir":"/Users/example/.pi-web","items":[{"id":"projects","source":"/Users/example/.pi-web/projects.json","sourceExists":true,"action":"reauthorize-projects","itemCount":2},{"id":"machines","source":"/Users/example/.pi-web/machines.json","sourceExists":true,"action":"retained"}]}"#.utf8)
+		)
+		precondition(overview.legacyDataDir == "/Users/example/.pi-web")
+		precondition(overview.items.map(\.id) == ["projects", "machines"])
+		precondition(overview.items[0].action == "reauthorize-projects")
+		precondition(overview.items[0].itemCount == 2)
+		precondition(overview.items[1].issue == nil)
 	}
 
     private static func checkProjectAuthorization() throws {

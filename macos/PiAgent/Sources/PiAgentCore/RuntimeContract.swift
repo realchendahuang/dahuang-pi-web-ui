@@ -894,6 +894,27 @@ public protocol RuntimeLegacyProjectMigrationClient: Sendable {
     func legacyProjectMigrationPreview() async throws -> RuntimeLegacyProjectPreview
 }
 
+/// Redacted inventory of legacy PI WEB state and the native App action that is
+/// safe for each item. It deliberately contains no machine token, unread
+/// payload, project bookmark, or legacy file content.
+public struct RuntimeLegacyMigrationOverviewItem: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let source: String
+    public let sourceExists: Bool
+    public let action: String
+    public let itemCount: Int?
+    public let issue: String?
+}
+
+public struct RuntimeLegacyMigrationOverview: Codable, Equatable, Sendable {
+    public let legacyDataDir: String
+    public let items: [RuntimeLegacyMigrationOverviewItem]
+}
+
+public protocol RuntimeLegacyMigrationOverviewClient: Sendable {
+    func legacyMigrationOverview() async throws -> RuntimeLegacyMigrationOverview
+}
+
 /// Product projection of a pending Pi extension dialog. The App does not see
 /// the SDK callback; it renders this data and returns a kind-compatible value.
 public struct RuntimeExtensionInteraction: Codable, Equatable, Identifiable, Sendable {
