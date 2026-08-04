@@ -194,6 +194,7 @@ final class AppModel: ObservableObject {
     @Published var forkCandidates: [RuntimeForkCandidate] = []
 	@Published var gitStatus: RuntimeGitStatus?
 	@Published var gitPushPreview: RuntimeGitPushPreview?
+	@Published var gitRevertPreview: RuntimeGitRevertPreview?
     @Published var gitSelectedPath: String?
     @Published var gitUnstagedDiff: RuntimeGitDiff?
     @Published var gitStagedDiff: RuntimeGitDiff?
@@ -201,6 +202,8 @@ final class AppModel: ObservableObject {
     @Published var isGitMutationInFlight = false
     @Published var showGitCommitSheet = false
 	@Published var showGitPushConfirmation = false
+	@Published var gitPathPendingDiscard: RuntimeGitFile?
+	@Published var showGitRevertConfirmation = false
     @Published var gitCheckpoints: [RuntimeGitCheckpoint] = []
     @Published var isGitCheckpointLoading = false
     @Published var workspaceTree: RuntimeWorkspaceTree?
@@ -551,6 +554,7 @@ final class AppModel: ObservableObject {
         statusBySession = [:]
 		gitStatus = nil
 		gitPushPreview = nil
+		gitRevertPreview = nil
         gitSelectedPath = nil
         gitUnstagedDiff = nil
         gitStagedDiff = nil
@@ -1289,6 +1293,60 @@ final class AppModel: ObservableObject {
 		try await client.unstageGitPaths(cwd: cwd, paths: paths, commandId: commandId, expectedRuntimeEpoch: epoch)
 	} }
 
+	func canDiscardGitFile(_ file: RuntimeGitFile) -> Bool {
+		guard let status = gitStatus else { return false }
+		return file.index == "unmodified" &&
+			file.workingTree != "unmodified" &&
+			file.workingTree != "untracked" &&
+			file.oldPath == nil &&
+			!status.submodules.contains(file.path)
+	}
+
+	func requestGitDiscard(_ file: RuntimeGitFile) {
+		guard canDiscardGitFile(file), !isGitMutationInFlight else { return }
+		gitPathPendingDiscard = file
+	}
+
+	func cancelGitDiscard() { gitPathPendingDiscard = nil }
+
+	func discardGitPath(_ file: RuntimeGitFile) {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let expectedRuntimeEpoch = runtimeEpoch,
+			  canDiscardGitFile(file),
+			  !isGitMutationInFlight
+		else { errorMessage = "Reconnect the Runtime before discarding a Git change."; return }
+		let cwd = projectPath
+		let commandId = UUID().uuidString
+		isGitMutationInFlight = true
+		gitPathPendingDiscard = nil
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do {
+					receipt = try await client.discardGitPaths(cwd: cwd, paths: [file.path], confirmed: true, commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch)
+				} catch {
+					receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error)
+				}
+				try self.requireCompletedReceipt(receipt, kind: "discard-git-paths", expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard receipt.result?.discarded == true, let status = receipt.result?.status else {
+					throw RuntimeClientError.serverError(500, "Runtime discard receipt was missing its Git status projection.")
+				}
+				guard self.projectPath == cwd else { return }
+				self.gitStatus = status
+				self.gitSelectedPath = nil
+				self.gitUnstagedDiff = nil
+				self.gitStagedDiff = nil
+				self.isGitMutationInFlight = false
+				self.refreshGitPushPreview()
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
+			}
+		}
+	}
+
 	func requestGitCommit() {
 		guard gitStatus?.isGitRepo == true, !isGitMutationInFlight else { return }
 		showGitCommitSheet = true
@@ -1319,6 +1377,69 @@ final class AppModel: ObservableObject {
 
 	func cancelGitPush() {
 		showGitPushConfirmation = false
+	}
+
+	func requestGitRevert() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  !isGitMutationInFlight
+		else { errorMessage = "Reconnect the Runtime before undoing a Git commit."; return }
+		let cwd = projectPath
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let preview = try await client.gitRevertPreview(cwd: cwd)
+				guard self.projectPath == cwd else { return }
+				self.gitRevertPreview = preview
+				guard preview.canRevert else {
+					self.errorMessage = preview.reason ?? "The latest commit cannot be undone."
+					return
+				}
+				self.showGitRevertConfirmation = true
+			} catch {
+				guard self.projectPath == cwd else { return }
+				self.errorMessage = error.localizedDescription
+			}
+		}
+	}
+
+	func cancelGitRevert() { showGitRevertConfirmation = false }
+
+	func revertGitHead() {
+		guard let client = runtimeClient as? any RuntimeGitClient,
+			  let expectedRuntimeEpoch = runtimeEpoch,
+			  gitRevertPreview?.canRevert == true,
+			  !isGitMutationInFlight
+		else { errorMessage = "Refresh the latest-commit undo preview before continuing."; return }
+		let cwd = projectPath
+		let commandId = UUID().uuidString
+		isGitMutationInFlight = true
+		showGitRevertConfirmation = false
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do {
+					receipt = try await client.revertGitHead(cwd: cwd, confirmed: true, commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch)
+				} catch {
+					receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error)
+				}
+				try self.requireCompletedReceipt(receipt, kind: "revert-git-head", expectedRuntimeEpoch: expectedRuntimeEpoch)
+				guard receipt.result?.reverted == true, let status = receipt.result?.status else {
+					throw RuntimeClientError.serverError(500, "Runtime revert receipt was missing its Git status projection.")
+				}
+				guard self.projectPath == cwd else { return }
+				self.gitStatus = status
+				self.gitSelectedPath = nil
+				self.gitUnstagedDiff = nil
+				self.gitStagedDiff = nil
+				self.isGitMutationInFlight = false
+				self.refreshGitPushPreview()
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isGitMutationInFlight = false
+			}
+		}
 	}
 
 	func cancelGitCommit() {
@@ -3032,6 +3153,15 @@ struct ContentView: View {
 		.sheet(isPresented: $model.showGitPushConfirmation) {
 			GitPushConfirmationSheet(model: model)
 		}
+		.sheet(item: Binding(
+			get: { model.gitPathPendingDiscard },
+			set: { if $0 == nil { model.cancelGitDiscard() } }
+		)) { file in
+			GitDiscardConfirmationSheet(model: model, file: file)
+		}
+		.sheet(isPresented: $model.showGitRevertConfirmation) {
+			GitRevertConfirmationSheet(model: model)
+		}
         .sheet(item: Binding(
             get: { model.workspaceFilePendingMove },
             set: { if $0 == nil { model.cancelWorkspaceFileMove() } }
@@ -3682,6 +3812,10 @@ struct GitChangesView: View {
 								} else {
 									Button("Unstage") { model.unstageGitPath(file.path) }
 								}
+								if model.canDiscardGitFile(file) {
+									Button("Discard…") { model.requestGitDiscard(file) }
+										.foregroundStyle(.red)
+								}
 								Spacer()
 							}
 							.buttonStyle(.borderless)
@@ -3694,6 +3828,8 @@ struct GitChangesView: View {
 				}
 				Button("Commit Staged Changes…") { model.requestGitCommit() }
 					.disabled(model.isGitMutationInFlight || !status.files.contains(where: { $0.index != "unmodified" && $0.index != "untracked" }))
+				Button("Undo Latest Commit…") { model.requestGitRevert() }
+					.disabled(model.isGitMutationInFlight)
 				if let preview = model.gitPushPreview, preview.canPush {
 					Button("Push \(preview.status.ahead ?? 0) Commit\(preview.status.ahead == 1 ? "" : "s")…") { model.requestGitPush() }
 						.disabled(model.isGitMutationInFlight)
@@ -3904,6 +4040,62 @@ struct GitPushConfirmationSheet: View {
 				Button("Push") { model.pushGit() }
 					.buttonStyle(.borderedProminent)
 					.disabled(preview?.canPush != true || model.isGitMutationInFlight)
+			}
+		}
+		.padding(24)
+		.frame(width: 520)
+	}
+}
+
+struct GitDiscardConfirmationSheet: View {
+	@ObservedObject var model: AppModel
+	let file: RuntimeGitFile
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 16) {
+			Text("Discard Unstaged Change")
+				.font(.title2.weight(.semibold))
+			Text("Discard the unstaged changes in \(file.path)? This restores that tracked file to the current HEAD and cannot be undone from Pi Agent.")
+				.foregroundStyle(.secondary)
+				.fixedSize(horizontal: false, vertical: true)
+			Text("Untracked files, staged changes, renamed files, and submodule changes are intentionally unavailable here.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+			HStack {
+				Spacer()
+				Button("Cancel") { model.cancelGitDiscard() }
+				Button("Discard Changes") { model.discardGitPath(file) }
+					.buttonStyle(.borderedProminent)
+					.tint(.red)
+					.disabled(model.isGitMutationInFlight)
+			}
+		}
+		.padding(24)
+		.frame(width: 520)
+	}
+}
+
+struct GitRevertConfirmationSheet: View {
+	@ObservedObject var model: AppModel
+
+	var body: some View {
+		let preview = model.gitRevertPreview
+		VStack(alignment: .leading, spacing: 16) {
+			Text("Undo Latest Commit")
+				.font(.title2.weight(.semibold))
+			if let commit = preview?.commit {
+				Text("Create a new commit that reverses \(commit.hash.prefix(12)): \(commit.subject)")
+					.foregroundStyle(.secondary)
+			}
+			Text("This preserves history. Pi Agent will not reset or amend commits, change branches, force-push, select another commit, or alter an upstream. The working tree and index must remain clean when you confirm.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+			HStack {
+				Spacer()
+				Button("Cancel") { model.cancelGitRevert() }
+				Button("Create Revert Commit") { model.revertGitHead() }
+					.buttonStyle(.borderedProminent)
+					.disabled(preview?.canRevert != true || model.isGitMutationInFlight)
 			}
 		}
 		.padding(24)

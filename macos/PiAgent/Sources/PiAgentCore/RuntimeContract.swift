@@ -766,6 +766,20 @@ public struct RuntimeGitPushPreview: Codable, Equatable, Sendable {
     public let reason: String?
 }
 
+/// Runtime-owned policy for a history-preserving undo of exactly the latest
+/// non-merge commit. Swift cannot choose an arbitrary ref or reset history.
+public struct RuntimeGitRevertPreview: Codable, Equatable, Sendable {
+    public struct Commit: Codable, Equatable, Sendable {
+        public let hash: String
+        public let subject: String
+    }
+
+    public let status: RuntimeGitStatus
+    public let canRevert: Bool
+    public let reason: String?
+    public let commit: Commit?
+}
+
 /// A bounded review snapshot owned by the Runtime. It intentionally carries no
 /// restore operation: viewing a Thread checkpoint must never mutate Git state.
 public struct RuntimeGitCheckpointDiff: Codable, Equatable, Sendable {
@@ -790,8 +804,11 @@ public protocol RuntimeGitClient: Sendable {
     func stageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func unstageGitPaths(cwd: String, paths: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
-	func gitPushPreview(cwd: String) async throws -> RuntimeGitPushPreview
-	func pushGit(cwd: String, confirmed: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func discardGitPaths(cwd: String, paths: [String], confirmed: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func gitPushPreview(cwd: String) async throws -> RuntimeGitPushPreview
+    func pushGit(cwd: String, confirmed: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
+    func gitRevertPreview(cwd: String) async throws -> RuntimeGitRevertPreview
+    func revertGitHead(cwd: String, confirmed: Bool, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint]
     func createGitCheckpoint(cwd: String, sessionId: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
@@ -942,7 +959,9 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let continued: Bool?
 		public let staged: Bool?
 		public let unstaged: Bool?
+		public let discarded: Bool?
 		public let committed: Bool?
+		public let reverted: Bool?
 		public let pushed: Bool?
 		public let paths: [String]?
 		public let hash: String?

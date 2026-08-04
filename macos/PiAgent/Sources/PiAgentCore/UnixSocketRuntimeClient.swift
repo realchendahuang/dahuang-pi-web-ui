@@ -264,6 +264,25 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func discardGitPaths(
+        cwd: String,
+        paths: [String],
+        confirmed: Bool,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: "/git/discard",
+            body: GitDiscardPayload(
+                cwd: cwd,
+                paths: paths,
+                confirmed: confirmed,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func commitGit(
         cwd: String,
         message: String,
@@ -289,6 +308,27 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         try await request(
             method: "POST", path: "/git/push",
             body: GitPushPayload(
+                cwd: cwd,
+                confirmed: confirmed,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
+    public func gitRevertPreview(cwd: String) async throws -> RuntimeGitRevertPreview {
+        try await request(method: "GET", path: "/git/revert-preview", query: [("cwd", cwd)])
+    }
+
+    public func revertGitHead(
+        cwd: String,
+        confirmed: Bool,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST", path: "/git/revert-head",
+            body: GitRevertPayload(
                 cwd: cwd,
                 confirmed: confirmed,
                 commandId: commandId,
@@ -849,6 +889,14 @@ private struct GitPathsPayload: Encodable {
     let runtimeEpoch: String
 }
 
+private struct GitDiscardPayload: Encodable {
+    let cwd: String
+    let paths: [String]
+    let confirmed: Bool
+    let commandId: String
+    let runtimeEpoch: String
+}
+
 private struct GitCommitPayload: Encodable {
     let cwd: String
     let message: String
@@ -857,6 +905,13 @@ private struct GitCommitPayload: Encodable {
 }
 
 private struct GitPushPayload: Encodable {
+    let cwd: String
+    let confirmed: Bool
+    let commandId: String
+    let runtimeEpoch: String
+}
+
+private struct GitRevertPayload: Encodable {
     let cwd: String
     let confirmed: Bool
     let commandId: String

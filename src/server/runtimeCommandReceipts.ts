@@ -18,8 +18,10 @@ export const RUNTIME_COMMAND_KINDS = {
 	continueTerminal: "continue-terminal",
 	stageGitPaths: "stage-git-paths",
 	unstageGitPaths: "unstage-git-paths",
+	discardGitPaths: "discard-git-paths",
 	commitGit: "commit-git",
 	pushGit: "push-git",
+	revertGitHead: "revert-git-head",
 	createGitCheckpoint: "create-git-checkpoint",
 	respondExtensionInteraction: "respond-extension-interaction",
 	authorizeProject: "authorize-project",
@@ -92,7 +94,9 @@ export interface RuntimeContinueTerminalCommandResult {
 export interface RuntimeGitMutationCommandResult {
 	staged?: true;
 	unstaged?: true;
+	discarded?: true;
 	committed?: true;
+	reverted?: true;
 	paths?: string[];
 	hash?: string;
 	subject?: string;

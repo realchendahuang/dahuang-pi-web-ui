@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import type { GitCheckpoint, GitDiffResponse, GitPushPreview, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitCheckpoint, GitDiffResponse, GitPushPreview, GitRevertPreview, GitStatusResponse } from "../../shared/apiTypes.js";
 import { RuntimeCommandReceipts } from "../runtimeCommandReceipts.js";
 import { registerNativeGitRoutes, type NativeGitRouteService } from "./nativeGitRoutes.js";
 
@@ -54,6 +54,21 @@ describe("native Git routes", () => {
 		} finally { await app.close(); }
 	});
 
+	it("requires confirmation to discard paths and makes the destructive receipt idempotent", async () => {
+		const service = new CapturingNativeGitService();
+		const app = createApp(service);
+		const payload = { cwd: "/repo", paths: ["src/main.ts"], confirmed: true, commandId: "discard-1", runtimeEpoch: "epoch-1" };
+		try {
+			const rejected = await app.inject({ method: "POST", url: "/git/discard", payload: { ...payload, confirmed: false, commandId: "discard-unconfirmed" } });
+			const first = await app.inject({ method: "POST", url: "/git/discard", payload });
+			const retry = await app.inject({ method: "POST", url: "/git/discard", payload });
+			expect(rejected.statusCode).toBe(400);
+			expect(first.json()).toMatchObject({ kind: "discard-git-paths", result: { discarded: true, paths: ["src/main.ts"], status: cleanStatus } });
+			expect(retry.json()).toEqual(first.json());
+			expect(service.discardCalls).toEqual([{ cwd: resolve("/repo"), paths: ["src/main.ts"] }]);
+		} finally { await app.close(); }
+	});
+
 	it("previews and pushes only after explicit confirmation with one receipt", async () => {
 		const service = new CapturingNativeGitService();
 		const app = createApp(service);
@@ -70,6 +85,24 @@ describe("native Git routes", () => {
 			expect(retry.json()).toEqual(first.json());
 			expect(service.pushPreviewCalls).toEqual([resolve("/repo")]);
 			expect(service.pushCalls).toEqual([resolve("/repo")]);
+		} finally { await app.close(); }
+	});
+
+	it("previews and confirms a latest-commit inverse without exposing arbitrary refs", async () => {
+		const service = new CapturingNativeGitService();
+		const app = createApp(service);
+		const payload = { cwd: "/repo", confirmed: true, commandId: "revert-1", runtimeEpoch: "epoch-1" };
+		try {
+			const preview = await app.inject({ method: "GET", url: "/git/revert-preview?cwd=/repo" });
+			const rejected = await app.inject({ method: "POST", url: "/git/revert-head", payload: { ...payload, confirmed: false, commandId: "revert-unconfirmed" } });
+			const first = await app.inject({ method: "POST", url: "/git/revert-head", payload });
+			const retry = await app.inject({ method: "POST", url: "/git/revert-head", payload });
+			expect(preview.json()).toEqual({ status: cleanStatus, canRevert: true, commit: { hash: "deadbeef", subject: "latest" } });
+			expect(rejected.statusCode).toBe(400);
+			expect(first.json()).toMatchObject({ kind: "revert-git-head", result: { reverted: true, hash: "reverted", subject: 'Revert "latest"', status: cleanStatus } });
+			expect(retry.json()).toEqual(first.json());
+			expect(service.revertPreviewCalls).toEqual([resolve("/repo")]);
+			expect(service.revertHeadCalls).toEqual([resolve("/repo")]);
 		} finally { await app.close(); }
 	});
 
@@ -101,9 +134,12 @@ class CapturingNativeGitService implements NativeGitRouteService {
 	readonly diffCalls: { cwd: string; options: { path?: string; staged?: boolean } }[] = [];
 	readonly stageCalls: { cwd: string; paths: readonly string[] }[] = [];
 	readonly unstageCalls: { cwd: string; paths: readonly string[] }[] = [];
+	readonly discardCalls: { cwd: string; paths: readonly string[] }[] = [];
 	readonly commitCalls: { cwd: string; message: string }[] = [];
 	readonly pushPreviewCalls: string[] = [];
 	readonly pushCalls: string[] = [];
+	readonly revertPreviewCalls: string[] = [];
+	readonly revertHeadCalls: string[] = [];
 	readonly checkpointCalls: { cwd: string; sessionId: string }[] = [];
 	readonly checkpoints: GitCheckpoint[] = [];
 
@@ -117,9 +153,12 @@ class CapturingNativeGitService implements NativeGitRouteService {
 	}
 	stage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> { this.stageCalls.push({ cwd, paths }); return Promise.resolve(cleanStatus); }
 	unstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> { this.unstageCalls.push({ cwd, paths }); return Promise.resolve(cleanStatus); }
+	discard(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> { this.discardCalls.push({ cwd, paths }); return Promise.resolve(cleanStatus); }
 	commit(cwd: string, message: string) { this.commitCalls.push({ cwd, message }); return Promise.resolve({ hash: "deadbeef", subject: message, status: cleanStatus }); }
 	pushPreview(cwd: string): Promise<GitPushPreview> { this.pushPreviewCalls.push(cwd); return Promise.resolve({ status: cleanStatus, canPush: true }); }
 	push(cwd: string): Promise<GitStatusResponse> { this.pushCalls.push(cwd); return Promise.resolve(cleanStatus); }
+	revertPreview(cwd: string): Promise<GitRevertPreview> { this.revertPreviewCalls.push(cwd); return Promise.resolve({ status: cleanStatus, canRevert: true, commit: { hash: "deadbeef", subject: "latest" } }); }
+	revertHead(cwd: string) { this.revertHeadCalls.push(cwd); return Promise.resolve({ hash: "reverted", subject: 'Revert "latest"', status: cleanStatus }); }
 	listCheckpoints(cwd: string, sessionId: string): Promise<GitCheckpoint[]> { return Promise.resolve(this.checkpoints.filter((checkpoint) => checkpoint.cwd === cwd && checkpoint.sessionId === sessionId)); }
 	createCheckpoint(cwd: string, sessionId: string): Promise<GitCheckpoint> {
 		this.checkpointCalls.push({ cwd, sessionId });

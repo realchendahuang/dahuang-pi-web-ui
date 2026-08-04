@@ -442,7 +442,7 @@ Pi Agent.app/Contents/
 - **停止 Runtime 并退出**：先通过 epoch-bound `abort-active-work` receipt 逐一停止实际工作，再停止当前 App 自己启动的 bundled Runtime；绝不触碰显式连接的开发/外部 daemon；
 - **取消**：返回应用。
 
-没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、Git stage/unstage/commit/push，以及 Pi extension dialog response 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；不会因未知网络结果而自动执行第二次 mutation。原生 Git push 还必须先取得 Runtime 的 fresh preview、在 sheet 显式确认，并且只允许当前 branch 推向既有 tracking upstream：不提供 force、set-upstream、选择 remote/refspec、tag 或 remote deletion。Pi extension 的 select/confirm/input/editor 会显示为原生 sheet；Runtime 断开重连后以权威 pending projection 恢复，SDK timeout/Abort、rebind 或 Runtime shutdown 会安全取消。
+没有活动 session 时，App 会停止自己拥有的 Runtime 后退出。若 health 无法刷新，则保守地展示相同三选项，不在未知状态下静默停止工作。`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、Git stage/unstage/discard/commit/push/revert-head，以及 Pi extension dialog response 都具备同 `commandId` 可回读的 receipt、Runtime epoch、请求指纹冲突保护与 socket-timeout 后只查询 receipt 的语义；不会因未知网络结果而自动执行第二次 mutation。原生 Git push、discard 和 undo latest commit 都先取得 Runtime 的 fresh policy、在 sheet 显式确认。push 只允许当前 branch 推向既有 tracking upstream；latest-commit undo 只为干净的 non-merge `HEAD` 创建反向 commit；discard 只恢复已跟踪且未暂存的 root-worktree 文件。它们都不提供 force、set-upstream、选择 remote/refspec、tag、remote deletion、reset 或任意 commit 操作。Pi extension 的 select/confirm/input/editor 会显示为原生 sheet；Runtime 断开重连后以权威 pending projection 恢复，SDK timeout/Abort、rebind 或 Runtime shutdown 会安全取消。
 
 ### 7.3 后台与登录启动
 
@@ -769,7 +769,7 @@ bundled Runtime、Node 动态库、Pi SDK production dependency closure、`node-
 
 ### Phase 2：生命周期与 macOS 集成
 
-已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、Git stage/unstage/commit/push 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
+已交付子集：security-scoped project bookmark；Runtime 的 hello/health 兼容握手；跨实例 launch lock；退出前 active-session health refresh；`abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、Git stage/unstage/discard/commit/push/revert-head 的 epoch-bound command receipt；活动 session 的保持 Runtime/停止自有 Runtime/取消三选项；外部 daemon 永不被 App quit 停止。
 
 已交付的 non-sandbox project boundary：bundled Runtime 启动时获得仅在 child environment 中传递的 token；原生客户端先执行 epoch-bound `authorize-project` receipt，再读取 project session；Runtime 对其他请求要求 token，并通过 canonical `realpath` root/descendant allow-list 拒绝未授权 cwd、sibling-prefix 和 symlink escape。Swift 显示授权状态，未授权时不创建 thread、prompt 或 terminal。它是同用户的逻辑能力边界，不是 sandbox security scope。
 

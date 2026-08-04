@@ -847,6 +847,17 @@ export interface GitPushPreview {
 	reason?: string;
 }
 
+/** Read-only policy for undoing HEAD without rewriting history. */
+export interface GitRevertPreview {
+	status: GitStatusResponse;
+	canRevert: boolean;
+	reason?: string;
+	commit?: {
+		hash: string;
+		subject: string;
+	};
+}
+
 /** A bounded, local snapshot for native Thread review. It is not a Git ref. */
 export interface GitCheckpointDiff {
 	hash: string;

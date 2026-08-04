@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { GitCheckpoint, GitCheckpointDiff, GitDiffResponse, GitPushPreview, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitCheckpoint, GitCheckpointDiff, GitDiffResponse, GitPushPreview, GitRevertPreview, GitStatusResponse } from "../../shared/apiTypes.js";
 import {
 	RUNTIME_COMMAND_KINDS,
 	type RuntimeCommandReceipts,
@@ -15,9 +15,12 @@ import { normalizeRequestCwd } from "../workingDirectory.js";
 import { GitCheckpointStore } from "./gitCheckpointStore.js";
 import {
 	gitCommit,
+	gitDiscard,
 	gitDiff,
 	gitPush,
 	gitPushPreview,
+	gitRevertHead,
+	gitRevertPreview,
 	gitStage,
 	gitStatus,
 	gitUnstage,
@@ -30,9 +33,12 @@ export interface NativeGitRouteService {
 	diff(cwd: string, options: { path?: string; staged?: boolean }): Promise<GitDiffResponse>;
 	stage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse>;
 	unstage(cwd: string, paths: readonly string[]): Promise<GitStatusResponse>;
+	discard(cwd: string, paths: readonly string[]): Promise<GitStatusResponse>;
 	commit(cwd: string, message: string): Promise<{ hash: string; subject: string; status: GitStatusResponse }>;
 	pushPreview(cwd: string): Promise<GitPushPreview>;
 	push(cwd: string): Promise<GitStatusResponse>;
+	revertPreview(cwd: string): Promise<GitRevertPreview>;
+	revertHead(cwd: string): Promise<{ hash: string; subject: string; status: GitStatusResponse }>;
 	listCheckpoints(cwd: string, sessionId: string): Promise<GitCheckpoint[]>;
 	createCheckpoint(cwd: string, sessionId: string): Promise<GitCheckpoint>;
 }
@@ -43,9 +49,12 @@ const defaultService: NativeGitRouteService = {
 	diff: gitDiff,
 	stage: gitStage,
 	unstage: gitUnstage,
+	discard: gitDiscard,
 	commit: gitCommit,
 	pushPreview: gitPushPreview,
 	push: gitPush,
+	revertPreview: gitRevertPreview,
+	revertHead: gitRevertHead,
 	listCheckpoints: (cwd, sessionId) => checkpointStore.list(cwd, sessionId),
 	createCheckpoint: async (cwd, sessionId) => {
 		const status = await gitStatus(cwd);
@@ -65,9 +74,10 @@ const defaultService: NativeGitRouteService = {
 };
 
 interface GitQuery { cwd?: string; path?: string; staged?: string; sessionId?: string }
-interface GitPathsCommand { cwd?: unknown; paths?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
+interface GitPathsCommand { cwd?: unknown; paths?: unknown; confirmed?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 interface GitCommitCommand { cwd?: unknown; message?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 interface GitPushCommand { cwd?: unknown; confirmed?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
+interface GitRevertCommand { cwd?: unknown; confirmed?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 interface GitCheckpointCommand { cwd?: unknown; sessionId?: unknown; commandId?: unknown; runtimeEpoch?: unknown }
 
 /**
@@ -116,6 +126,14 @@ export function registerNativeGitRoutes(
 			}));
 		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
 	});
+	app.post<{ Body: GitPathsCommand | undefined }>("/git/discard", async (request, reply) => {
+		try {
+			const command = parseDiscardCommand(request.body);
+			return await receipts.execute(command.receipt, async (): Promise<RuntimeGitMutationCommandResult> => ({
+				discarded: true, paths: command.paths, status: await service.discard(command.cwd, command.paths),
+			}));
+		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
+	});
 	app.post<{ Body: GitCommitCommand | undefined }>("/git/commit", async (request, reply) => {
 		try {
 			const command = parseCommitCommand(request.body);
@@ -135,6 +153,19 @@ export function registerNativeGitRoutes(
 			return await receipts.execute(command.receipt, async (): Promise<RuntimeGitPushCommandResult> => ({
 				pushed: true, status: await service.push(command.cwd),
 			}));
+		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
+	});
+	app.get<{ Querystring: GitQuery }>("/git/revert-preview", async (request, reply) => {
+		try { return await service.revertPreview(requireCwd(request.query.cwd)); }
+		catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+	});
+	app.post<{ Body: GitRevertCommand | undefined }>("/git/revert-head", async (request, reply) => {
+		try {
+			const command = parseRevertCommand(request.body);
+			return await receipts.execute(command.receipt, async (): Promise<RuntimeGitMutationCommandResult> => {
+				const result = await service.revertHead(command.cwd);
+				return { reverted: true, hash: result.hash, subject: result.subject, status: result.status };
+			});
 		} catch (error) { return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({ error: errorMessage(error) }); }
 	});
 	app.get<{ Querystring: GitQuery }>("/git/checkpoints", async (request, reply) => {
@@ -163,6 +194,14 @@ function parsePathsCommand(body: GitPathsCommand | undefined, kind: typeof RUNTI
 	return { cwd, paths, receipt: nativeReceipt(record, kind, { cwd, paths }) };
 }
 
+function parseDiscardCommand(body: GitPathsCommand | undefined) {
+	const record = requireRecord(body);
+	const cwd = requireCwd(record["cwd"]);
+	if (record["confirmed"] !== true) throw new Error("Discard requires explicit confirmation");
+	const paths = normalizeGitMutationPaths(requireStringArray(record["paths"], "paths"));
+	return { cwd, paths, receipt: nativeReceipt(record, RUNTIME_COMMAND_KINDS.discardGitPaths, { cwd, paths }) };
+}
+
 function parseCommitCommand(body: GitCommitCommand | undefined) {
 	const record = requireRecord(body);
 	const cwd = requireCwd(record["cwd"]);
@@ -177,6 +216,13 @@ function parsePushCommand(body: GitPushCommand | undefined) {
 	return { cwd, receipt: nativeReceipt(record, RUNTIME_COMMAND_KINDS.pushGit, { cwd }) };
 }
 
+function parseRevertCommand(body: GitRevertCommand | undefined) {
+	const record = requireRecord(body);
+	const cwd = requireCwd(record["cwd"]);
+	if (record["confirmed"] !== true) throw new Error("Undo latest commit requires explicit confirmation");
+	return { cwd, receipt: nativeReceipt(record, RUNTIME_COMMAND_KINDS.revertGitHead, { cwd }) };
+}
+
 function parseCheckpointCommand(body: GitCheckpointCommand | undefined) {
 	const record = requireRecord(body);
 	const cwd = requireCwd(record["cwd"]);
@@ -188,7 +234,7 @@ function parseCheckpointCommand(body: GitCheckpointCommand | undefined) {
 	};
 }
 
-function nativeReceipt(body: Record<string, unknown>, kind: typeof RUNTIME_COMMAND_KINDS.stageGitPaths | typeof RUNTIME_COMMAND_KINDS.unstageGitPaths | typeof RUNTIME_COMMAND_KINDS.commitGit | typeof RUNTIME_COMMAND_KINDS.pushGit | typeof RUNTIME_COMMAND_KINDS.createGitCheckpoint, payload: unknown) {
+function nativeReceipt(body: Record<string, unknown>, kind: typeof RUNTIME_COMMAND_KINDS.stageGitPaths | typeof RUNTIME_COMMAND_KINDS.unstageGitPaths | typeof RUNTIME_COMMAND_KINDS.discardGitPaths | typeof RUNTIME_COMMAND_KINDS.commitGit | typeof RUNTIME_COMMAND_KINDS.pushGit | typeof RUNTIME_COMMAND_KINDS.revertGitHead | typeof RUNTIME_COMMAND_KINDS.createGitCheckpoint, payload: unknown) {
 	return {
 		commandId: requireRuntimeCommandId(body["commandId"]), kind,
 		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),

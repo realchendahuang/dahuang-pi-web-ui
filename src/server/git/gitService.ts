@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { GitDiffResponse, GitFileState, GitPushPreview, GitStatusFile, GitStatusResponse } from "../../shared/apiTypes.js";
+import type { GitDiffResponse, GitFileState, GitPushPreview, GitRevertPreview, GitStatusFile, GitStatusResponse } from "../../shared/apiTypes.js";
 import { normalizeRelativePath } from "../workspaces/pathSafety.js";
 import { sanitizedGitEnv } from "./gitEnv.js";
 
@@ -156,10 +156,45 @@ export async function gitUnstage(cwd: string, paths: readonly string[]): Promise
   return gitStatus(cwd);
 }
 
+/**
+ * Discard only already-tracked, unstaged root-worktree edits. It deliberately
+ * excludes untracked files, index changes, renames, and submodules so this
+ * narrow native action cannot turn into a destructive general Git shell.
+ */
+export async function gitDiscard(cwd: string, paths: readonly string[]): Promise<GitStatusResponse> {
+	const normalized = normalizeGitMutationPaths(paths);
+	await requireRootWorktreePaths(cwd, normalized);
+	const status = await gitStatus(cwd);
+	if (!status.isGitRepo) throw new Error("This project is not a Git repository.");
+	for (const path of normalized) {
+		const file = status.files.find((candidate) => candidate.path === path);
+		if (file === undefined) {
+			throw new Error(`Only a tracked, unstaged, non-renamed root-worktree change can be discarded: ${path}`);
+		}
+		if (
+			file.index !== "unmodified" ||
+			file.workingTree === "unmodified" ||
+			file.workingTree === "untracked" ||
+			file.oldPath !== undefined ||
+			status.submodules.includes(path)
+		) {
+			throw new Error(`Only a tracked, unstaged, non-renamed root-worktree change can be discarded: ${path}`);
+		}
+	}
+	await requireGitSuccess(cwd, ["restore", "--source=HEAD", "--worktree", "--", ...normalized], "git discard failed");
+	return gitStatus(cwd);
+}
+
 export interface GitCommitResult {
   hash: string;
   subject: string;
   status: GitStatusResponse;
+}
+
+export interface GitRevertResult {
+	hash: string;
+	subject: string;
+	status: GitStatusResponse;
 }
 
 /**
@@ -193,6 +228,35 @@ export async function gitPush(cwd: string): Promise<GitStatusResponse> {
 		"git push failed",
 	);
 	return gitStatus(cwd);
+}
+
+/** Read-only guard for the narrow, history-preserving latest-commit undo. */
+export async function gitRevertPreview(cwd: string): Promise<GitRevertPreview> {
+	const status = await gitStatus(cwd);
+	if (!status.isGitRepo) return { status, canRevert: false, reason: "This project is not a Git repository." };
+	if (status.files.length > 0) return { status, canRevert: false, reason: "Commit or clear all working-tree and index changes before undoing the latest commit." };
+	const parents = await runGit(cwd, ["rev-list", "--parents", "-n", "1", "HEAD"]);
+	if (parents.code !== 0 || parents.stdout.trim() === "") return { status, canRevert: false, reason: "This repository has no commit to undo." };
+	const parts = parents.stdout.trim().split(/\s+/);
+	if (parts.length !== 2) return { status, canRevert: false, reason: "Merge commits cannot be undone from the native inspector." };
+	const subject = await runGit(cwd, ["show", "-s", "--format=%s", "HEAD"]);
+	if (subject.code !== 0 || subject.stdout.trim() === "") return { status, canRevert: false, reason: subject.stderr.trim() || "Could not read the latest commit." };
+	const [headHash] = parts;
+	if (headHash === undefined) return { status, canRevert: false, reason: "Could not read the latest commit." };
+	return { status, canRevert: true, commit: { hash: headHash, subject: subject.stdout.trim() } };
+}
+
+/** Create a new inverse commit for current non-merge HEAD. It never resets or force-pushes. */
+export async function gitRevertHead(cwd: string): Promise<GitRevertResult> {
+	const preview = await gitRevertPreview(cwd);
+	if (!preview.canRevert || preview.commit === undefined) throw new Error(preview.reason ?? "The latest commit cannot be undone.");
+	await requireGitSuccess(cwd, ["revert", "--no-edit", "HEAD"], "git revert failed");
+	const head = await runGit(cwd, ["rev-parse", "HEAD"]);
+	const subject = await runGit(cwd, ["show", "-s", "--format=%s", "HEAD"]);
+	if (head.code !== 0 || head.stdout.trim() === "" || subject.code !== 0 || subject.stdout.trim() === "") {
+		throw new Error(head.stderr.trim() || subject.stderr.trim() || "git revert did not produce a commit");
+	}
+	return { hash: head.stdout.trim(), subject: subject.stdout.trim(), status: await gitStatus(cwd) };
 }
 
 /** Commit the existing index only; callers must stage deliberately first. */

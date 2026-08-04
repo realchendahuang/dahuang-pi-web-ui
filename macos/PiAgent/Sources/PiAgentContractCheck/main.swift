@@ -214,6 +214,13 @@ struct PiAgentContractCheck {
 		precondition(pushPreview.canPush)
 		precondition(pushPreview.status.upstream == "origin/main")
 
+		let revertPreviewData = Data(
+			#"{"status":{"isGitRepo":true,"hash":"clean","branch":"main","files":[],"submodules":[]},"canRevert":true,"commit":{"hash":"deadbeef","subject":"latest change"}}"#.utf8
+		)
+		let revertPreview = try decoder.decode(RuntimeGitRevertPreview.self, from: revertPreviewData)
+		precondition(revertPreview.canRevert)
+		precondition(revertPreview.commit?.hash == "deadbeef")
+
 		let receiptData = Data(
 			#"{"commandId":"git-1","kind":"commit-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"committed":true,"hash":"deadbeef","subject":"native Git","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
 		)
@@ -228,6 +235,20 @@ struct PiAgentContractCheck {
 		let pushReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: pushReceiptData)
 		precondition(pushReceipt.result?.pushed == true)
 		precondition(pushReceipt.result?.status?.ahead == 0)
+
+		let discardReceiptData = Data(
+			#"{"commandId":"discard-1","kind":"discard-git-paths","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"discarded":true,"paths":["Sources/App.swift"],"status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+		)
+		let discardReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: discardReceiptData)
+		precondition(discardReceipt.result?.discarded == true)
+		precondition(discardReceipt.result?.paths == ["Sources/App.swift"])
+
+		let revertReceiptData = Data(
+			#"{"commandId":"revert-1","kind":"revert-git-head","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"reverted":true,"hash":"reverted","subject":"Revert latest","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+		)
+		let revertReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: revertReceiptData)
+		precondition(revertReceipt.result?.reverted == true)
+		precondition(revertReceipt.result?.hash == "reverted")
 
 		let checkpointData = Data(
 			#"{"commandId":"checkpoint-1","kind":"create-git-checkpoint","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"checkpointed":true,"checkpoint":{"id":"cp-1","sessionId":"thread-1","cwd":"/repo","createdAt":"2026-08-04T00:00:00Z","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]},"unstaged":{"hash":"u","diff":"diff --git","truncated":false},"staged":{"hash":"s","diff":"","truncated":false}}}}"#.utf8

@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, renameSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { gitCommit, gitDiff, gitPush, gitPushPreview, gitStage, gitStatus, gitUnstage } from "./gitService.js";
+import { gitCommit, gitDiscard, gitDiff, gitPush, gitPushPreview, gitRevertHead, gitRevertPreview, gitStage, gitStatus, gitUnstage } from "./gitService.js";
 
 // Isolate from any global/system git config and force a deterministic identity;
 // `protocol.file.allow` is required for `submodule add` from a local path.
@@ -223,6 +223,80 @@ describe("Runtime-owned Git mutations", () => {
 		expect(committed.hash).toMatch(/^[0-9a-f]{40}$/);
 		expect(committed.subject).toBe("native Runtime commit");
 		expect(committed.status.files).toEqual([]);
+	});
+
+	it("discards only an unstaged tracked root-worktree change", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-discard-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "before\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		writeFileSync(join(dir, "tracked.txt"), "after\n");
+
+		const status = await gitDiscard(dir, ["tracked.txt"]);
+		expect(status.files).toEqual([]);
+		expect(readFileSync(join(dir, "tracked.txt"), "utf8")).toBe("before\n");
+	});
+
+	it("refuses unsafe discard shapes", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-discard-policy-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "before\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		writeFileSync(join(dir, "untracked.txt"), "new\n");
+		await expect(gitDiscard(dir, ["untracked.txt"])).rejects.toThrow("Only a tracked, unstaged");
+		writeFileSync(join(dir, "tracked.txt"), "staged\n");
+		await gitStage(dir, ["tracked.txt"]);
+		await expect(gitDiscard(dir, ["tracked.txt"])).rejects.toThrow("Only a tracked, unstaged");
+	});
+});
+
+describe("Runtime-owned latest-commit undo", () => {
+	it("previews and reverts a clean, non-merge HEAD into a new inverse commit", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-revert-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "before\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		writeFileSync(join(dir, "tracked.txt"), "after\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "change file"]);
+		const previousHead = git(dir, ["rev-parse", "HEAD"]).trim();
+
+		const preview = await gitRevertPreview(dir);
+		expect(preview).toMatchObject({ canRevert: true, commit: { hash: previousHead, subject: "change file" } });
+		const reverted = await gitRevertHead(dir);
+		expect(reverted.hash).not.toBe(previousHead);
+		expect(reverted.subject).toBe('Revert "change file"');
+		expect(reverted.status.files).toEqual([]);
+		expect(readFileSync(join(dir, "tracked.txt"), "utf8")).toBe("before\n");
+	});
+
+	it("refuses a dirty worktree and a merge HEAD", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-web-git-revert-policy-"));
+		created.push(dir);
+		git(dir, ["init", "-b", "main"]);
+		writeFileSync(join(dir, "tracked.txt"), "initial\n");
+		git(dir, ["add", "tracked.txt"]);
+		git(dir, ["commit", "-m", "initial"]);
+		writeFileSync(join(dir, "tracked.txt"), "dirty\n");
+		await expect(gitRevertHead(dir)).rejects.toThrow("Commit or clear all working-tree");
+		git(dir, ["restore", "tracked.txt"]);
+		git(dir, ["checkout", "-b", "topic"]);
+		writeFileSync(join(dir, "topic.txt"), "topic\n");
+		git(dir, ["add", "topic.txt"]);
+		git(dir, ["commit", "-m", "topic"]);
+		git(dir, ["checkout", "main"]);
+		writeFileSync(join(dir, "main.txt"), "main\n");
+		git(dir, ["add", "main.txt"]);
+		git(dir, ["commit", "-m", "main"]);
+		git(dir, ["merge", "--no-ff", "topic", "-m", "merge topic"]);
+		const preview = await gitRevertPreview(dir);
+		expect(preview).toMatchObject({ canRevert: false, reason: "Merge commits cannot be undone from the native inspector." });
 	});
 });
 
