@@ -757,7 +757,7 @@ Pi 的 JavaScript extension、skill、prompt 和 context discovery 可以保留�
 - nonce 通过权限受限文件、继承 fd 或 RuntimeHost 安全通道传递，不写命令行；
 - 所有外部 remote connection 走独立的认证和 TLS 设计，不能复用本地信任假设。
 
-当前 bundled Runtime 已执行前两项：`prepareSessiondSocketPath()` 只清理 stale socket，并拒绝替换普通文件、symlink、FIFO 或设备；Fastify listen 后以 `0600` 固化 socket。退出时按 `dev`/`ino` 删除自身创建的 socket，避免误删后来替换路径的进程。bundled Native client 还会在每次 HTTP 或 WebSocket 连接前以 `lstat` 验证 socket 是当前用户拥有的 Unix socket、精确为 `0600`，且父目录是当前用户拥有的 `0700` directory；macOS 连接成功后再用 `getpeereid` 验证 peer UID。显式外部/开发 socket 维持兼容模式，不被这套 bundled-only gate 意外拒绝。hello nonce 和受限 nonce 传递仍待作为下一版 Native Contract 安全门实现。
+当前 bundled Runtime 已执行前三项：`prepareSessiondSocketPath()` 只清理 stale socket，并拒绝替换普通文件、symlink、FIFO 或设备；Fastify listen 后以 `0600` 固化 socket。退出时按 `dev`/`ino` 删除自身创建的 socket，避免误删后来替换路径的进程。bundled Native client 还会在每次 HTTP 或 WebSocket 连接前以 `lstat` 验证 socket 是当前用户拥有的 Unix socket、精确为 `0600`，且父目录是当前用户拥有的 `0700` directory；macOS 连接成功后再用 `getpeereid` 验证 peer UID。Swift 在这个 `0700` Runtime 目录维护一个当前用户拥有的 `0600`、256-bit launch nonce 文件；只有 Runtime 从该路径读取到合法 nonce 时才启动，hello 通过回显该 nonce 证明身份。App 在启动**新** Runtime 前轮换 nonce，重开 App 则先用已保存值验证并复用健康 Runtime；每次 hello/重连都会比对，且 nonce 不进入命令行、日志或普通 command payload。显式外部/开发 socket 维持兼容模式，不被 bundled-only gate 意外拒绝。受限 nonce 传递已经落地；未来若引入 Sandbox/XPC，再以 bookmark capability hand-off 和 XPC peer requirement 重新审计同一边界。
 
 ### 10.3 Keychain 与 credential bridge
 

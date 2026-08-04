@@ -15,6 +15,11 @@ workspace_project_dir="$runtime_test_dir/workspace-project"
 submodule_origin_dir="$runtime_test_dir/submodule-origin"
 runtime_pid=""
 project_capability_token="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+runtime_hello_nonce="$("$node_path" --input-type=module -e 'import { randomBytes } from "node:crypto"; process.stdout.write(randomBytes(32).toString("base64url"));')"
+runtime_hello_nonce_file="$runtime_test_dir/runtime-hello-nonce"
+
+printf '%s' "$runtime_hello_nonce" >"$runtime_hello_nonce_file"
+chmod 600 "$runtime_hello_nonce_file"
 
 mkdir -p "$workspace_project_dir" "$submodule_origin_dir"
 printf 'seed file\n' >"$workspace_project_dir/seed.txt"
@@ -51,6 +56,7 @@ start_runtime() {
 	PI_WEB_CONFIG="$runtime_test_dir/config.json" \
 	PI_WEB_SESSIOND_SOCKET="$runtime_test_dir/sessiond.sock" \
 	PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN="$project_capability_token" \
+	PI_AGENT_RUNTIME_HELLO_NONCE_FILE="$runtime_hello_nonce_file" \
 	"$node_path" "$launcher_path" >>"$runtime_test_dir/runtime.log" 2>&1 &
 	runtime_pid=$!
 }
@@ -266,6 +272,7 @@ const workspaceWriteQuery = JSON.parse(await readFile(workspaceWriteQueryPath, "
 if (health.ok !== true) throw new Error("Runtime health was not OK");
 if (hello.kind !== "pi-agent-runtime") throw new Error("Unexpected Runtime hello kind");
 if (hello.protocol?.major !== 1) throw new Error("Unexpected Runtime protocol major");
+if (hello.launchNonce !== process.argv.at(-1)) throw new Error("Bundled Runtime hello nonce did not match the protected launch file");
 if (typeof hello.manifest?.piSdkVersion !== "string" || hello.manifest.piSdkVersion.length === 0) throw new Error("Bundled Pi SDK version is missing");
 if (authorized.kind !== "authorize-project" || authorized.status !== "completed" || authorized.result?.authorized !== true) throw new Error("Runtime project authorization did not complete");
 if (receipt.kind !== "abort-active-work" || receipt.status !== "completed") throw new Error("Runtime abort receipt did not complete");
@@ -288,7 +295,7 @@ if (!Buffer.from(workspaceImagePreview.data, "base64").equals(Buffer.from([0x89,
 if (workspaceMove.kind !== "move-workspace-file" || workspaceMove.status !== "completed" || workspaceMove.result?.toPath !== "Notes/renamed.txt") throw new Error("Runtime workspace move did not complete");
 if (workspaceDelete.kind !== "delete-workspace-file" || workspaceDelete.status !== "completed" || workspaceDelete.result?.existed !== true) throw new Error("Runtime workspace delete did not complete");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/abort-receipt-after-restart.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/abort-receipt-after-restart.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json" "$runtime_hello_nonce"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \

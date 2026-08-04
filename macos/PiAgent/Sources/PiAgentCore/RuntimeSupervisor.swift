@@ -12,15 +12,18 @@ import Glibc
 /// distinction is what lets the App reconnect after a window or UI restart.
 public final class RuntimeSupervisor: @unchecked Sendable {
     private let plan: RuntimeLaunchPlan
+    private let launchNonce: RuntimeLaunchNonce?
     private let validateBeforeStart: @Sendable () throws -> Void
     private let lock = NSLock()
     private var process: Process?
 
     public init(
         plan: RuntimeLaunchPlan,
+        launchNonce: RuntimeLaunchNonce? = nil,
         validateBeforeStart: @escaping @Sendable () throws -> Void = {}
     ) {
         self.plan = plan
+        self.launchNonce = launchNonce
         self.validateBeforeStart = validateBeforeStart
     }
 
@@ -35,6 +38,7 @@ public final class RuntimeSupervisor: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard process?.isRunning != true else { return }
+        try launchNonce?.rotate()
 
         let child = Process()
         child.executableURL = plan.executable

@@ -24,6 +24,7 @@ public struct RuntimeHello: Codable, Equatable, Sendable {
     public let kind: String
     public let protocolVersion: RuntimeProtocolVersion
     public let runtimeEpoch: String
+    public let launchNonce: String?
     public let nodeVersion: String
     public let architecture: String
     public let manifest: Manifest?
@@ -32,6 +33,7 @@ public struct RuntimeHello: Codable, Equatable, Sendable {
         case kind
         case protocolVersion = "protocol"
         case runtimeEpoch
+        case launchNonce
         case nodeVersion
         case architecture
         case manifest
@@ -41,6 +43,7 @@ public struct RuntimeHello: Codable, Equatable, Sendable {
         kind: String,
         protocolVersion: RuntimeProtocolVersion,
         runtimeEpoch: String,
+        launchNonce: String? = nil,
         nodeVersion: String,
         architecture: String,
         manifest: Manifest?
@@ -48,6 +51,7 @@ public struct RuntimeHello: Codable, Equatable, Sendable {
         self.kind = kind
         self.protocolVersion = protocolVersion
         self.runtimeEpoch = runtimeEpoch
+        self.launchNonce = launchNonce
         self.nodeVersion = nodeVersion
         self.architecture = architecture
         self.manifest = manifest
@@ -63,6 +67,12 @@ public struct RuntimeHello: Codable, Equatable, Sendable {
             )
         }
     }
+
+    public func requireMatchingLaunchNonce(_ expected: String) throws {
+        guard launchNonce == expected else {
+            throw RuntimeClientError.incompatibleRuntime("Bundled Runtime hello nonce did not match this App launch")
+        }
+    }
 }
 
 public protocol RuntimeHelloClient: RuntimeHealthClient {
@@ -74,11 +84,13 @@ public struct BundledRuntime: Sendable {
 
     public let launchPlan: RuntimeLaunchPlan
 	public let projectCapabilityToken: String
+    public let launchNonce: RuntimeLaunchNonce
     private let verification: RuntimeBundleVerification
 
-    private init(launchPlan: RuntimeLaunchPlan, projectCapabilityToken: String, verification: RuntimeBundleVerification) {
+    private init(launchPlan: RuntimeLaunchPlan, projectCapabilityToken: String, launchNonce: RuntimeLaunchNonce, verification: RuntimeBundleVerification) {
         self.launchPlan = launchPlan
 		self.projectCapabilityToken = projectCapabilityToken
+        self.launchNonce = launchNonce
         self.verification = verification
     }
 
@@ -162,6 +174,8 @@ public struct BundledRuntime: Sendable {
         let applicationSupport = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
         let runtimeState = applicationSupport.appendingPathComponent("Runtime", isDirectory: true)
+        try fileManager.createDirectory(at: runtimeState, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let launchNonce = try RuntimeLaunchNonce.loadOrCreate(in: runtimeState)
         let socketPath = runtimeState.appendingPathComponent("sessiond.sock").path
         var runtimeEnvironment = environment
         runtimeEnvironment["PI_WEB_DATA_DIR"] = applicationSupport.appendingPathComponent("State", isDirectory: true).path
@@ -172,6 +186,7 @@ public struct BundledRuntime: Sendable {
 		runtimeEnvironment["PI_AGENT_KEYCHAIN_HELPER"] = keychainHelperURL.path
 		let projectCapabilityToken = UUID().uuidString
 		runtimeEnvironment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"] = projectCapabilityToken
+        runtimeEnvironment["PI_AGENT_RUNTIME_HELLO_NONCE_FILE"] = launchNonce.fileURL.path
 
         let verification = RuntimeBundleVerification(
             root: runtimeRoot,
@@ -187,12 +202,13 @@ public struct BundledRuntime: Sendable {
                 socketPath: socketPath
             ),
 			projectCapabilityToken: projectCapabilityToken,
+            launchNonce: launchNonce,
             verification: verification
         )
     }
 
     public func makeSupervisor() -> RuntimeSupervisor {
-        RuntimeSupervisor(plan: launchPlan, validateBeforeStart: { try verification.validate() })
+        RuntimeSupervisor(plan: launchPlan, launchNonce: launchNonce, validateBeforeStart: { try verification.validate() })
     }
 }
 

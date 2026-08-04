@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,11 +35,14 @@ describe("native Runtime manifest", () => {
 		const directory = await mkdtemp(join(tmpdir(), "pi-agent-runtime-manifest-"));
 		temporaryDirectories.push(directory);
 		const path = join(directory, "runtime-manifest.json");
+		const noncePath = join(directory, "runtime-hello-nonce");
 		await writeFile(path, `${JSON.stringify(manifest)}\n`, "utf8");
+		await writeFile(noncePath, "a".repeat(43), { mode: 0o600 });
 
 		const identity = loadNativeRuntimeIdentity({
 			PI_AGENT_RUNTIME_MANIFEST: path,
 			PI_AGENT_RUNTIME_EPOCH: "epoch-1",
+			PI_AGENT_RUNTIME_HELLO_NONCE_FILE: noncePath,
 		});
 		expect(identity.manifest).toEqual({
 			...manifest,
@@ -49,6 +52,7 @@ describe("native Runtime manifest", () => {
 			kind: "pi-agent-runtime",
 			protocol: { major: 1, minor: 0 },
 			runtimeEpoch: "epoch-1",
+			launchNonce: "a".repeat(43),
 			nodeVersion: "v24.18.0",
 			architecture: "arm64",
 			manifest: {
@@ -58,6 +62,20 @@ describe("native Runtime manifest", () => {
 				piSdkVersion: "0.81.1",
 			},
 		});
+	});
+
+	it("rejects a bundled nonce that is not protected as a current-user 0600 file", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-agent-runtime-manifest-"));
+		temporaryDirectories.push(directory);
+		const manifestPath = join(directory, "runtime-manifest.json");
+		const noncePath = join(directory, "runtime-hello-nonce");
+		await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, "utf8");
+		await writeFile(noncePath, "a".repeat(43), "utf8");
+		await chmod(noncePath, 0o644);
+		expect(() => loadNativeRuntimeIdentity({
+			PI_AGENT_RUNTIME_MANIFEST: manifestPath,
+			PI_AGENT_RUNTIME_HELLO_NONCE_FILE: noncePath,
+		})).toThrow("must have mode 0600");
 	});
 
 	it("keeps unbundled development daemons compatible", () => {

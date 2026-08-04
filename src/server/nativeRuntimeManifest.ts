@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, normalize, relative, resolve, sep } from "node:path";
 
 export const NATIVE_RUNTIME_MANIFEST_ENV = "PI_AGENT_RUNTIME_MANIFEST";
 export const NATIVE_RUNTIME_EPOCH_ENV = "PI_AGENT_RUNTIME_EPOCH";
+export const NATIVE_RUNTIME_HELLO_NONCE_FILE_ENV = "PI_AGENT_RUNTIME_HELLO_NONCE_FILE";
 export const NATIVE_RUNTIME_PROTOCOL = Object.freeze({ major: 1, minor: 0 });
 
 export interface NativeRuntimeManifestFile {
@@ -34,6 +35,7 @@ export interface NativeRuntimeManifest {
 
 export interface NativeRuntimeIdentity {
 	runtimeEpoch: string;
+	launchNonce?: string;
 	manifest?: NativeRuntimeManifest;
 	manifestPath?: string;
 }
@@ -45,6 +47,7 @@ export interface NativeRuntimeHello {
 		minor: number;
 	};
 	runtimeEpoch: string;
+	launchNonce?: string;
 	nodeVersion: string;
 	architecture: string;
 	manifest?: Pick<
@@ -73,7 +76,16 @@ export function loadNativeRuntimeIdentity(
 			cause: error,
 		});
 	}
-	return { runtimeEpoch, manifest: parseNativeRuntimeManifest(value), manifestPath };
+	const nonceFilePath = nonEmptyString(env[NATIVE_RUNTIME_HELLO_NONCE_FILE_ENV]);
+	if (nonceFilePath === undefined) {
+		throw new Error("Bundled Runtime is missing its protected hello nonce file");
+	}
+	return {
+		runtimeEpoch,
+		launchNonce: readProtectedLaunchNonce(nonceFilePath),
+		manifest: parseNativeRuntimeManifest(value),
+		manifestPath,
+	};
 }
 
 export function nativeRuntimeHello(
@@ -85,6 +97,7 @@ export function nativeRuntimeHello(
 		kind: "pi-agent-runtime",
 		protocol: manifest?.protocol ?? NATIVE_RUNTIME_PROTOCOL,
 		runtimeEpoch: identity.runtimeEpoch,
+		...(identity.launchNonce === undefined ? {} : { launchNonce: identity.launchNonce }),
 		nodeVersion: runtime.version,
 		architecture: runtime.arch,
 		...(manifest === undefined
@@ -98,6 +111,32 @@ export function nativeRuntimeHello(
 				},
 			}),
 	};
+}
+
+function readProtectedLaunchNonce(path: string): string {
+	let metadata: ReturnType<typeof lstatSync>;
+	try {
+		metadata = lstatSync(path);
+	} catch (error) {
+		throw new Error(`Could not read bundled Runtime hello nonce file: ${path}`, { cause: error });
+	}
+	if (!metadata.isFile()) throw new Error("Bundled Runtime hello nonce path must be a regular file");
+	if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
+		throw new Error("Bundled Runtime hello nonce file must be owned by the current user");
+	}
+	if ((metadata.mode & 0o777) !== 0o600) {
+		throw new Error("Bundled Runtime hello nonce file must have mode 0600");
+	}
+	let nonce: string;
+	try {
+		nonce = readFileSync(path, "utf8").trim();
+	} catch (error) {
+		throw new Error(`Could not read bundled Runtime hello nonce file: ${path}`, { cause: error });
+	}
+	if (!/^[A-Za-z0-9_-]{43}$/.test(nonce)) {
+		throw new Error("Bundled Runtime hello nonce file is invalid");
+	}
+	return nonce;
 }
 
 export function parseNativeRuntimeManifest(value: unknown): NativeRuntimeManifest {

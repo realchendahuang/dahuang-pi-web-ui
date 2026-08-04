@@ -11,15 +11,18 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
     public let socketPath: String
 	public let projectCapabilityToken: String?
 	public let socketSecurity: RuntimeSocketSecurity
+    public let launchNonce: RuntimeLaunchNonce?
 
     public init(
         socketPath: String,
         projectCapabilityToken: String? = nil,
-        socketSecurity: RuntimeSocketSecurity = .permissive
+        socketSecurity: RuntimeSocketSecurity = .permissive,
+        launchNonce: RuntimeLaunchNonce? = nil
     ) {
         self.socketPath = socketPath
 		self.projectCapabilityToken = projectCapabilityToken
 		self.socketSecurity = socketSecurity
+        self.launchNonce = launchNonce
     }
 
     public func health() async throws -> RuntimeHealth {
@@ -27,7 +30,9 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
     }
 
     public func hello() async throws -> RuntimeHello {
-        try await request(method: "GET", path: "/runtime/hello")
+        let hello: RuntimeHello = try await request(method: "GET", path: "/runtime/hello")
+        if let launchNonce { try hello.requireMatchingLaunchNonce(launchNonce.currentValue) }
+        return hello
     }
 
     public func legacyProjectMigrationPreview() async throws -> RuntimeLegacyProjectPreview {

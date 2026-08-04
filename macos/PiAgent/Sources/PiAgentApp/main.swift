@@ -3062,8 +3062,9 @@ final class AppModel: ObservableObject {
                 return RuntimeConnection(
                     client: UnixSocketRuntimeClient(
 						socketPath: bundledRuntime.launchPlan.socketPath,
-						projectCapabilityToken: bundledRuntime.projectCapabilityToken,
-						socketSecurity: .bundled
+					projectCapabilityToken: bundledRuntime.projectCapabilityToken,
+					socketSecurity: .bundled,
+                    launchNonce: bundledRuntime.launchNonce
 					),
                     supervisor: bundledRuntime.makeSupervisor(),
                     startupError: nil

@@ -10,6 +10,7 @@ struct PiAgentContractCheck {
         try checkProjectCapabilityReceiptDecoding()
 		try checkLegacyMigrationOverviewDecoding()
 		try checkBundledRuntimeSocketSecurity()
+		try checkRuntimeLaunchNonce()
         try checkGitContractDecoding()
 		try checkSupportReportEncoding()
         try checkWorkspaceContractDecoding()
@@ -119,13 +120,40 @@ struct PiAgentContractCheck {
 
     private static func checkRuntimeHelloDecoding() throws {
         let data = Data(
-            #"{"kind":"pi-agent-runtime","protocol":{"major":1,"minor":0},"runtimeEpoch":"epoch-1","nodeVersion":"v24.18.0","architecture":"arm64","manifest":{"schemaVersion":1,"appVersion":"0.1.0","runtimeVersion":"0.1.0","piSdkVersion":"0.81.1"}}"#.utf8
+            #"{"kind":"pi-agent-runtime","protocol":{"major":1,"minor":0},"runtimeEpoch":"epoch-1","launchNonce":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","nodeVersion":"v24.18.0","architecture":"arm64","manifest":{"schemaVersion":1,"appVersion":"0.1.0","runtimeVersion":"0.1.0","piSdkVersion":"0.81.1"}}"#.utf8
         )
         let hello = try JSONDecoder().decode(RuntimeHello.self, from: data)
         try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
         precondition(hello.runtimeEpoch == "epoch-1")
-        precondition(hello.manifest?.piSdkVersion == "0.81.1")
-    }
+		precondition(hello.manifest?.piSdkVersion == "0.81.1")
+		try hello.requireMatchingLaunchNonce("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	}
+
+	private static func checkRuntimeLaunchNonce() throws {
+		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+			.appendingPathComponent("pi-agent-launch-nonce-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: root) }
+		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+		let nonce = try RuntimeLaunchNonce.loadOrCreate(in: root)
+		let first = nonce.currentValue
+		precondition(first.count == 43)
+		try nonce.rotate()
+		let second = nonce.currentValue
+		precondition(second.count == 43 && second != first)
+		let attributes = try FileManager.default.attributesOfItem(atPath: nonce.fileURL.path)
+		precondition((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+		let reloaded = try RuntimeLaunchNonce.loadOrCreate(in: root)
+		precondition(reloaded.currentValue == second)
+		let supervisor = RuntimeSupervisor(
+			plan: contractShellPlan("sleep 20", socketPath: root.appendingPathComponent("sessiond.sock").path),
+			launchNonce: nonce
+		)
+		defer { supervisor.stop() }
+		try supervisor.start()
+		let launchedValue = nonce.currentValue
+		try supervisor.start()
+		precondition(nonce.currentValue == launchedValue)
+	}
 
 	private static func checkRuntimeCommandReceiptDecoding() throws {
 		let decoder = JSONDecoder()
