@@ -41,6 +41,10 @@ import type {
 } from "./sessionService.js";
 import { registerSessionRoutes } from "./sessionRoutes.js";
 import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
+import type {
+	ExtensionInteraction,
+	ExtensionInteractionResponse,
+} from "./extensionInteractionService.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -811,6 +815,34 @@ describe("session routes", () => {
 		}
 	});
 
+	it("returns extension dialogs and answers one receipt-safe response exactly once", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		routeService.extensionInteractions = [{
+			id: "interaction-1", sessionId: "session-1", cwd: resolve("/repo"), kind: "confirm",
+			title: "Proceed", message: "Continue?", createdAt: "2026-08-04T00:00:00.000Z",
+		}];
+		registerSessionRoutes(routeApp, routeService, new SessionEventHub(), "", {
+			runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1"),
+		});
+		const cwd = resolve("/repo");
+		const payload = { cwd, runtimeId: "pi", confirmed: true, commandId: "interaction-command-1", runtimeEpoch: "epoch-1" };
+		try {
+			const listed = await routeApp.inject({ method: "GET", url: `/sessions/session-1/interactions?cwd=${encodeURIComponent(cwd)}&runtimeId=pi` });
+			const first = await routeApp.inject({ method: "POST", url: "/sessions/session-1/interactions/interaction-1/respond", payload });
+			const retry = await routeApp.inject({ method: "POST", url: "/sessions/session-1/interactions/interaction-1/respond", payload });
+			expect(listed.statusCode).toBe(200);
+			expect(listed.json()).toMatchObject({ interactions: [{ id: "interaction-1", kind: "confirm" }] });
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({ kind: "respond-extension-interaction", status: "completed", result: { responded: true, interaction: { id: "interaction-1" } } });
+			expect(retry.json()).toEqual(first.json());
+			expect(routeService.extensionInteractionResponseCalls).toEqual([
+			{ lookup: { id: "session-1", cwd, runtimeId: "pi" }, interactionId: "interaction-1", response: { confirmed: true } },
+		]);
+		} finally { await routeApp.close(); }
+	});
+
 	it("executes native archive, restore, and archived deletion once per command id", async () => {
 		const routeApp = Fastify({ logger: false });
 		await routeApp.register(fastifyWebsocket);
@@ -1503,6 +1535,37 @@ class CapturingRouteSessionService implements SessionRouteService {
 	}[] = [];
 	reloadError: Error | undefined;
 	clearQueueError: Error | undefined;
+	extensionInteractions: ExtensionInteraction[] = [];
+	readonly extensionInteractionResponseCalls: {
+		lookup: SessionRouteLookup;
+		interactionId: string;
+		response: ExtensionInteractionResponse;
+	}[] = [];
+
+	listExtensionInteractions(): Promise<ExtensionInteraction[]> {
+		return Promise.resolve(this.extensionInteractions);
+	}
+
+	respondToExtensionInteraction(
+		_ref: SessionRouteLookup,
+		_interactionId: string,
+		_response: ExtensionInteractionResponse,
+	): Promise<ExtensionInteraction> {
+		this.extensionInteractionResponseCalls.push({
+			lookup: _ref,
+			interactionId: _interactionId,
+			response: _response,
+		});
+		const interaction = this.extensionInteractions.find(
+			(candidate) => candidate.id === _interactionId,
+		);
+		if (interaction === undefined)
+			return Promise.reject(new Error("Extension interaction not found"));
+		this.extensionInteractions = this.extensionInteractions.filter(
+			(candidate) => candidate.id !== _interactionId,
+		);
+		return Promise.resolve(interaction);
+	}
 
 	cleanupPreview(
 		request: NormalizedSessionCleanupRequest,

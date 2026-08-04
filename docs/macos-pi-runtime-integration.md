@@ -97,8 +97,8 @@ Node SEA 仍标为 **Stability 1.1 / Active development**，且在启用 code ca
 
 | 优先级 | 交付 | 完成证据 |
 | --- | --- | --- |
-| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue 与 Git stage/unstage/commit 已交付**：同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。后续按同一合同覆盖 approval，并补全端到端断线恢复测试。 |
-| P0 | 原生 approval/extension-UI bridge | Pi extension 的 select/confirm/input 被投影成 Swift 原生 sheet；取消、timeout、App 重连都有确定语义。 |
+| P0 | 把 receipt 从 abort 扩展到 prompt、create/fork/import、archive/delete、terminal、Git 与 approval | **已交付**：Prompt、原生创建 session、archive、restore、archived delete、Fork/Import、terminal create/continue、Git stage/unstage/commit，以及 Pi extension dialog response。相同 `commandId` 重试返回同一 receipt，payload 冲突或 runtime epoch 变化返回 `409`，原生客户端在 transport 结果未知时仅查询 receipt。剩余工作是跨 Runtime restart 的持久 command ledger 与端到端断线矩阵。 |
+| P0 | 原生 approval/extension-UI bridge | **已交付**：Pi `select`、`confirm`、`input` 与 `editor` 被投影为 Swift 原生 sheet；取消、SDK timeout/Abort、session replacement、Runtime shutdown 和 App 重连都有确定语义。 |
 | P0 | project authorization 的 Runtime capability | 不只持久化 bookmark：验证 Runtime 对未授权 cwd 拒绝、授权续期/失效可见；若进入 Sandbox 路线，先做独立跨进程 spike。 |
 | P1 | lifecycle recovery matrix | 覆盖关闭窗口、App crash/reopen、Runtime crash、sleep/wake、terminal reconnect；任何场景不出现重复 prompt 或第二个 PTY owner。 |
 | P1 | dependency closure、SBOM 与冷启动测量 | 基于实际 staging tree 的资源清单、license/SBOM、arm64/x64 smoke、hash 时延和 Runtime 首次 ready 时间。 |
@@ -401,7 +401,7 @@ received → accepted → running → completed | failed | cancelled
 
 断线、timeout 和“没有看到 response”都不是重复提交的理由。App 保存原 idempotency key，先查询 command 状态；只有 Runtime 明确表示未接收或该 key 已安全终止，才能决定下一步。
 
-当前 Runtime receipt store 已覆盖 `POST /runtime/commands/abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue，以及原生 Git stage/unstage/commit；`GET /runtime/commands/:commandId` 支持 timeout 后查询。所有这些 mutation 都以 `commandId + runtimeEpoch + payload fingerprint` 绑定：相同 intent 只执行一次，冲突或 stale epoch 返回 `409`。Swift 在 socket transport 结果未知时只查 receipt，不会盲重放。archive/restore/delete 成功后再拉取 session projection；delete 仍由服务端拒绝非 Archived 会话，原生 UI 也只在 Archived 分组提供二次确认入口。terminal receipt 返回 Runtime-owned terminal projection，避免一次未知 socket 写入生成第二个 PTY，continue 也不会重复替换已退出 terminal 的 PTY。abort 会对 Pi/OMP 中真正仍有 streaming、compaction、shell 或 queued work 的 session 逐一 abort，只有 receipt completed 且无失败项时，App 才停止自己拥有的 Runtime。Fork Thread 使用只读候选项 projection 和独立 `fork-session` receipt，Import Thread 也通过 Pi SDK 的 `importFromJsonl()` 进入同一 session replacement/rebind 生命周期。
+当前 Runtime receipt store 已覆盖 `POST /runtime/commands/abort-active-work`、原生 Prompt、New Thread、Import Thread、archive、restore、archived delete、Fork Thread、terminal create/continue、原生 Git stage/unstage/commit，以及 `POST /sessions/:sessionId/interactions/:interactionId/respond`；`GET /runtime/commands/:commandId` 支持 timeout 后查询。所有这些 mutation 都以 `commandId + runtimeEpoch + payload fingerprint` 绑定：相同 intent 只执行一次，冲突或 stale epoch 返回 `409`。Swift 在 socket transport 结果未知时只查 receipt，不会盲重放。archive/restore/delete 成功后再拉取 session projection；delete 仍由服务端拒绝非 Archived 会话，原生 UI 也只在 Archived 分组提供二次确认入口。terminal receipt 返回 Runtime-owned terminal projection，避免一次未知 socket 写入生成第二个 PTY，continue 也不会重复替换已退出 terminal 的 PTY。abort 会对 Pi/OMP 中真正仍有 streaming、compaction、shell 或 queued work 的 session 逐一 abort，只有 receipt completed 且无失败项时，App 才停止自己拥有的 Runtime。Fork Thread 使用只读候选项 projection 和独立 `fork-session` receipt，Import Thread 也通过 Pi SDK 的 `importFromJsonl()` 进入同一 session replacement/rebind 生命周期。
 
 #### Fork Thread 的产品合同
 
@@ -420,6 +420,14 @@ Runtime 在执行时再次验证 entry 仍属于当前可 fork 的 user-message 
 Swift inspector 通过 `/git/status?cwd=` 和 `/git/diff?cwd=&path=&staged=` 读取只读 projection；Swift **绝不**用 `Process()` 运行 Git。`POST /git/stage`、`/git/unstage` 与 `/git/commit` 都必须携带 `cwd`、`commandId` 和 `runtimeEpoch`，并分别使用 `stage-git-paths`、`unstage-git-paths`、`commit-git` receipt。每个完成 receipt 返回新的 `GitStatus` projection；commit 还返回 commit hash 和 subject。socket 写入未知时，App 只读取同一 receipt，不能再次执行 stage 或 commit。
 
 Runtime 用经过净化的环境启动 Git，并设置 `GIT_TERMINAL_PROMPT=0`，所以不能因隐藏的凭据交互而在后台卡住；这不是 Keychain credential broker，push 和凭据交互仍不在当前原生能力内。当前 UI 支持 root worktree 的 status/diff、逐文件 stage/unstage 及原生 commit sheet，保留 Git hooks；不会用 `--no-verify` 绕过项目政策。内嵌 submodule 的内容可展示和查看 diff，但原生 inspector 明确拒绝直接 stage/unstage，必须先在该 submodule 自己的 checkout 完成操作；superproject 的 submodule pointer 仍可按普通 root path 暂存。reset/revert、push 和任意路径执行也未提供。
+
+#### Pi extension dialog 的产品合同
+
+Runtime 在 Pi session 绑定 extensions 时，将 `ctx.ui.select`、`confirm`、`input` 和 `editor` 接到 daemon-owned interaction service。`GET /sessions/:sessionId/interactions?cwd=&runtimeId=` 只返回稳定 projection：opaque interaction id、session/cwd、kind、title、可显示 message/options/placeholder/prefill、创建时间和可选 timeout。SDK callback、extension implementation、Promise resolver 和任何 Pi 私有类型都不会离开 Node Runtime。
+
+当 interaction 打开或关闭时，Runtime 在既有 session WebSocket 上发 `extension.interaction.opened`/`closed`。Swift 不做定时轮询：连接 snapshot 后拉取一次权威列表，随后只在这两个事件到达时重新拉取。这样浏览器/App 短暂断开不会取消 extension 请求；重连后若 timeout 尚未发生，sheet 会按 Runtime 的现状恢复。SDK `AbortSignal`、SDK timeout、session extension rebind、session close 和 Runtime shutdown 都会从服务端撤销 projection 并以该类型的安全默认值结束（select/input/editor 为取消，confirm 为 `false`）。
+
+回应必须使用 `POST /sessions/:sessionId/interactions/:interactionId/respond`，带 `cwd`、`runtimeId`、`commandId`、`runtimeEpoch` 和且仅有一种 kind-compatible response（`cancelled`、`selected`、`confirmed` 或 `text`）。Runtime 再次校验 interaction 仍属于该 session/cwd 且 value 与 kind/options 匹配；完成 receipt 返回已消费 interaction projection。若 Swift 没有看到 socket 写入结果，只读回同一 receipt，绝不再次响应。`input` 目前没有 Pi SDK 传来的 secret metadata，因此按普通文本 field 展示；未来只有 SDK 合同新增明确的敏感字段后，才可提升为 `SecureField`。
 
 ### 7.4 Event projection
 
@@ -477,7 +485,7 @@ App launch
 
 没有活动任务时，按照用户的“关闭后继续运行”设置决定保留或优雅停止 Runtime。不能在 `applicationShouldTerminate` 中无等待地杀进程。
 
-当前已实现退出协调：App 在 `applicationShouldTerminate` 中先异步刷新 `/health`；有活动 session 或 health 不可用时显示“保持 Runtime 并退出 / 停止自有 Runtime 并退出 / 取消”。“停止”先执行 epoch-bound、可查询的 `abort-active-work` receipt；只有所有已识别 active work 成功 abort，才调用 `RuntimeSupervisor.stop()`。`RuntimeSupervisor` 只会终止它自行 `Process.run()` 的 child，不会停止 `PI_AGENT_RUNTIME_SOCKET` 指向的开发/外部 Runtime。Prompt、New Thread、单会话 Import/Fork/archive/restore/archived delete 与 terminal create/continue 已采用相同的 receipt 恢复策略；其余 mutation 仍待泛化。
+当前已实现退出协调：App 在 `applicationShouldTerminate` 中先异步刷新 `/health`；有活动 session 或 health 不可用时显示“保持 Runtime 并退出 / 停止自有 Runtime 并退出 / 取消”。“停止”先执行 epoch-bound、可查询的 `abort-active-work` receipt；只有所有已识别 active work 成功 abort，才调用 `RuntimeSupervisor.stop()`。`RuntimeSupervisor` 只会终止它自行 `Process.run()` 的 child，不会停止 `PI_AGENT_RUNTIME_SOCKET` 指向的开发/外部 Runtime。Prompt、New Thread、单会话 Import/Fork/archive/restore/archived delete、terminal create/continue、Git mutation 和 extension dialog response 都采用相同的 receipt 恢复策略；command ledger 不跨 Runtime restart 持久化。
 
 ### 8.3 Runtime crash 与 App crash
 
@@ -829,7 +837,7 @@ Swift 使用 `NSOpenPanel` 获得用户选择，并保存 security-scoped bookma
 - 发布 artifact 有 runtime manifest、hash、SBOM 和 license notices；
 - Web/CLI/systemd 兼容路径与 macOS bundled Runtime 的支持边界有文档。
 
-截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create 和 terminal continue 的 command receipt。下一步是将 receipt 泛化到 Git 和 approval 等剩余 mutation，完成 crash/sleep lifecycle、Keychain broker 与 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
+截至本文件调研日期，这些条件**尚未全部达成**。已经落地的包括 bundled Node Runtime、exact production lock、资源 manifest/hash、`/runtime/hello`、Swift RuntimeSupervisor、项目 bookmark、事件流 transcript、原生 terminal surface、Pi SDK lifecycle adapter、跨实例 launch lock，以及 abort-active-work、Prompt、New Thread、Import Thread、Fork Thread、archive、restore、archived delete、terminal create/continue、Git stage/unstage/commit 和 Pi extension dialog response 的 command receipt。下一步是完成 crash/sleep lifecycle、Keychain broker、project bookmark 到 child Runtime 的 capability hand-off，以及 dependency-closure 审计；不能将这些已实现切片误报为完整发布版。
 
 ## 15. 主要一手资料
 

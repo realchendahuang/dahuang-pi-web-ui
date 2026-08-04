@@ -1136,6 +1136,12 @@ type SessionUiEventBody =
 	  }
 	| SessionNotificationInboxEvent
 	| { type: "session.error"; message: string }
+	| {
+			type: "extension.interaction.opened" | "extension.interaction.closed";
+			interactionId: string;
+			interactionKind: "select" | "confirm" | "input" | "editor";
+			reason?: string;
+	  }
 	| { type: "session.name"; sessionId: string; name?: string }
 	| { type: "session.created"; session: SessionInfo }
 	| {

@@ -28,6 +28,10 @@ import type {
 	SessionStreamSnapshot,
 } from "../types.js";
 import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
+import type {
+	ExtensionInteraction,
+	ExtensionInteractionResponse,
+} from "./extensionInteractionService.js";
 
 export type SessionRouteRef = Omit<ClientSessionRef, "runtimeId"> & {
 	runtimeId?: AgentRuntimeId;
@@ -155,6 +159,14 @@ export interface SessionRouteService {
 		requestId: string,
 		value: string,
 	): Promise<ClientCommandResult>;
+	listExtensionInteractions(
+		ref: SessionRouteLookup,
+	): Promise<ExtensionInteraction[]>;
+	respondToExtensionInteraction(
+		ref: SessionRouteLookup,
+		interactionId: string,
+		response: ExtensionInteractionResponse,
+	): Promise<ExtensionInteraction>;
 	forkCandidates(ref: SessionRouteLookup): Promise<SessionForkCandidate[]>;
 	fork(ref: SessionRouteLookup, entryId: string): Promise<SessionForkResult>;
 	importSession(

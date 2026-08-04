@@ -7,7 +7,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, Sendable {
+public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeExtensionInteractionClient, Sendable {
     public let socketPath: String
 
     public init(socketPath: String) {
@@ -268,6 +268,41 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func listExtensionInteractions(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> [RuntimeExtensionInteraction] {
+        let response: ExtensionInteractionsResponse = try await request(
+            method: "GET",
+            path: "/sessions/\(Self.pathSegment(sessionId))/interactions",
+            query: query(cwd: cwd, runtimeId: runtimeId)
+        )
+        return response.interactions
+    }
+
+    public func respondToExtensionInteraction(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        interactionId: String,
+        response: RuntimeExtensionInteractionResponse,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/interactions/\(Self.pathSegment(interactionId))/respond",
+            body: ExtensionInteractionResponsePayload(
+                cwd: cwd,
+                runtimeId: runtimeId,
+                response: response,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
+        )
+    }
+
     public func streamSnapshot(
         sessionId: String,
         cwd: String,
@@ -448,6 +483,34 @@ private struct StartSessionPayload: Encodable {
 
 private struct ForkCandidatesResponse: Decodable {
     let candidates: [RuntimeForkCandidate]
+}
+
+private struct ExtensionInteractionsResponse: Decodable {
+    let interactions: [RuntimeExtensionInteraction]
+}
+
+private struct ExtensionInteractionResponsePayload: Encodable {
+    let cwd: String
+    let runtimeId: String?
+    let response: RuntimeExtensionInteractionResponse
+    let commandId: String
+    let runtimeEpoch: String
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cwd, forKey: .cwd)
+        try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        switch response {
+        case .cancelled: try container.encode(true, forKey: .cancelled)
+        case let .selected(value): try container.encode(value, forKey: .selected)
+        case let .confirmed(value): try container.encode(value, forKey: .confirmed)
+        case let .text(value): try container.encode(value, forKey: .text)
+        }
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
+    }
+
+    private enum CodingKeys: String, CodingKey { case cwd, runtimeId, commandId, runtimeEpoch, cancelled, selected, confirmed, text }
 }
 
 private struct ForkSessionPayload: Encodable {

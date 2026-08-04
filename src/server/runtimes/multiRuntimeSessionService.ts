@@ -31,6 +31,10 @@ import type { AuthChange } from "../sessions/authService.js";
 import type { ActiveSessionAbortResult } from "../sessions/activeSessionAbort.js";
 import type { NormalizedSessionCleanupRequest } from "../sessions/sessionCleanup.js";
 import type {
+	ExtensionInteraction,
+	ExtensionInteractionResponse,
+} from "../sessions/extensionInteractionService.js";
+import type {
 	SessionForkCandidate,
 	SessionForkResult,
 	SessionImportResult,
@@ -290,6 +294,24 @@ export class MultiRuntimeSessionService implements SessionRouteService {
 		value: string,
 	): Promise<CommandResult> {
 		return this.serviceForLookup(ref).respondToCommand(ref, requestId, value);
+	}
+
+	listExtensionInteractions(
+		ref: SessionRouteLookup,
+	): Promise<ExtensionInteraction[]> {
+		return this.serviceForLookup(ref).listExtensionInteractions(ref);
+	}
+
+	respondToExtensionInteraction(
+		ref: SessionRouteLookup,
+		interactionId: string,
+		response: ExtensionInteractionResponse,
+	): Promise<ExtensionInteraction> {
+		return this.serviceForLookup(ref).respondToExtensionInteraction(
+			ref,
+			interactionId,
+			response,
+		);
 	}
 
 	forkCandidates(ref: SessionRouteLookup): Promise<SessionForkCandidate[]> {

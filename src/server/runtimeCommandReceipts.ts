@@ -3,6 +3,7 @@ import type { ActiveSessionAbortResult } from "./sessions/activeSessionAbort.js"
 import type { ClientSession } from "./types.js";
 import type { TerminalInfo } from "./terminals/terminalService.js";
 import type { GitStatusResponse } from "../shared/apiTypes.js";
+import type { ExtensionInteraction } from "./sessions/extensionInteractionService.js";
 
 export const RUNTIME_COMMAND_KINDS = {
 	abortActiveWork: "abort-active-work",
@@ -18,6 +19,7 @@ export const RUNTIME_COMMAND_KINDS = {
 	stageGitPaths: "stage-git-paths",
 	unstageGitPaths: "unstage-git-paths",
 	commitGit: "commit-git",
+	respondExtensionInteraction: "respond-extension-interaction",
 } as const;
 
 export type RuntimeCommandKind =
@@ -89,6 +91,11 @@ export interface RuntimeGitMutationCommandResult {
 	status: GitStatusResponse;
 }
 
+export interface RuntimeExtensionInteractionResponseCommandResult {
+	responded: true;
+	interaction: ExtensionInteraction;
+}
+
 export type RuntimeCommandResult =
 	| ActiveSessionAbortResult
 	| RuntimePromptCommandResult
@@ -100,7 +107,8 @@ export type RuntimeCommandResult =
 	| RuntimeImportSessionCommandResult
 	| RuntimeCreateTerminalCommandResult
 	| RuntimeContinueTerminalCommandResult
-	| RuntimeGitMutationCommandResult;
+	| RuntimeGitMutationCommandResult
+	| RuntimeExtensionInteractionResponseCommandResult;
 
 export interface RuntimeCommandReceipt {
 	commandId: string;

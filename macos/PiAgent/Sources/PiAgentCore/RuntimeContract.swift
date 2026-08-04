@@ -533,6 +533,54 @@ public protocol RuntimeGitClient: Sendable {
     func commitGit(cwd: String, message: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
 }
 
+/// Product projection of a pending Pi extension dialog. The App does not see
+/// the SDK callback; it renders this data and returns a kind-compatible value.
+public struct RuntimeExtensionInteraction: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let sessionId: String
+    public let cwd: String
+    public let kind: String
+    public let title: String
+    public let message: String?
+    public let options: [String]?
+    public let placeholder: String?
+    public let prefill: String?
+    public let createdAt: Date
+    public let timeoutAt: Date?
+}
+
+public enum RuntimeExtensionInteractionResponse: Encodable, Equatable, Sendable {
+    case cancelled
+    case selected(String)
+    case confirmed(Bool)
+    case text(String)
+
+    private enum CodingKeys: String, CodingKey { case cancelled, selected, confirmed, text }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .cancelled: try container.encode(true, forKey: .cancelled)
+        case let .selected(value): try container.encode(value, forKey: .selected)
+        case let .confirmed(value): try container.encode(value, forKey: .confirmed)
+        case let .text(value): try container.encode(value, forKey: .text)
+        }
+    }
+}
+
+public protocol RuntimeExtensionInteractionClient: Sendable {
+    func listExtensionInteractions(sessionId: String, cwd: String, runtimeId: String?) async throws -> [RuntimeExtensionInteraction]
+    func respondToExtensionInteraction(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        interactionId: String,
+        response: RuntimeExtensionInteractionResponse,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
+}
+
 /// Epoch-bound response for a native Runtime mutation. Repeating the same
 /// command id returns this same receipt, letting the App safely recover from a
 /// socket timeout without sending a second agent-level mutation.
@@ -572,7 +620,9 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
 		public let paths: [String]?
 		public let hash: String?
 		public let subject: String?
-		public let status: RuntimeGitStatus?
+        public let status: RuntimeGitStatus?
+		public let responded: Bool?
+		public let interaction: RuntimeExtensionInteraction?
         public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?
         public let cwd: String?

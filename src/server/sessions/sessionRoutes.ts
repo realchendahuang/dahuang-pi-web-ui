@@ -21,12 +21,16 @@ import {
 	type RuntimeDeleteArchivedSessionCommandResult,
 	type RuntimeForkSessionCommandResult,
 	type RuntimeImportSessionCommandResult,
+	type RuntimeExtensionInteractionResponseCommandResult,
 	type RuntimeRestoreSessionCommandResult,
 	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
 	runtimeCommandErrorStatus,
 	runtimeCommandFingerprint,
 } from "../runtimeCommandReceipts.js";
+import type {
+	ExtensionInteractionResponse,
+} from "./extensionInteractionService.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type {
@@ -77,6 +81,17 @@ interface ImportSessionRequestBody {
 	inputPath?: unknown;
 	commandId?: unknown;
 	runtimeEpoch?: unknown;
+}
+
+interface ExtensionInteractionResponseRequestBody {
+	cwd?: unknown;
+	runtimeId?: unknown;
+	commandId?: unknown;
+	runtimeEpoch?: unknown;
+	cancelled?: unknown;
+	selected?: unknown;
+	confirmed?: unknown;
+	text?: unknown;
 }
 
 interface AttachmentsRequestBody {
@@ -219,6 +234,63 @@ export function registerSessionRoutes(
 				return await sessions.acknowledgeUnread(sessionId, acknowledgement);
 			} catch (error) {
 				return reply.code(503).send({ error: errorMessage(error) });
+			}
+		},
+	);
+
+	app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(
+		`${prefix}/sessions/:sessionId/interactions`,
+		async (request, reply) => {
+			try {
+				if (request.query.cwd === undefined || request.query.cwd === "")
+					throw new Error("cwd query parameter is required");
+				return {
+					interactions: await sessions.listExtensionInteractions(
+						sessionLookupFromQuery(request.params.sessionId, request.query),
+					),
+				};
+			} catch (error) {
+				return reply
+					.code(mutationErrorStatus(error))
+					.send({ error: errorMessage(error) });
+			}
+		},
+	);
+
+	app.post<{
+		Params: { sessionId: string; interactionId: string };
+		Body: ExtensionInteractionResponseRequestBody | undefined;
+	}>(
+		`${prefix}/sessions/:sessionId/interactions/:interactionId/respond`,
+		async (request, reply) => {
+			try {
+				const body = requireRecord(request.body);
+				if (body["cwd"] === undefined || body["cwd"] === "")
+					throw new Error("cwd field is required");
+				const ref = sessionLookupFromBody(request.params.sessionId, body);
+				const response = extensionInteractionResponseFromBody(body);
+				const nativeCommand = nativeExtensionInteractionResponseCommand(
+					request.params.sessionId,
+					request.params.interactionId,
+					ref,
+					response,
+					body,
+				);
+				const receipts = options.runtimeCommandReceipts;
+				if (receipts === undefined)
+					throw new Error("Native Runtime command receipts are unavailable");
+				return await receipts.execute(nativeCommand, async () => ({
+					responded: true,
+					interaction: await sessions.respondToExtensionInteraction(
+						ref,
+						request.params.interactionId,
+						response,
+					),
+				} satisfies RuntimeExtensionInteractionResponseCommandResult));
+			} catch (error) {
+				return reply
+					.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
+					.send({ error: errorMessage(error) });
 			}
 		},
 	);
@@ -1120,6 +1192,59 @@ function nativeImportSessionCommand(
 			inputPath,
 		}),
 	};
+}
+
+function nativeExtensionInteractionResponseCommand(
+	sessionId: string,
+	interactionId: string,
+	ref: SessionRouteLookup,
+	response: ExtensionInteractionResponse,
+	body: Record<string, unknown>,
+) {
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind: RUNTIME_COMMAND_KINDS.respondExtensionInteraction,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({
+			sessionId,
+			interactionId,
+			cwd,
+			runtimeId,
+			response,
+		}),
+	};
+}
+
+function extensionInteractionResponseFromBody(
+	body: Record<string, unknown>,
+): ExtensionInteractionResponse {
+	const responseFields = ["cancelled", "selected", "confirmed", "text"].filter(
+		(field) => body[field] !== undefined,
+	);
+	if (responseFields.length !== 1)
+		throw new Error("Provide exactly one extension interaction response field");
+	const responseField = responseFields[0];
+	if (responseField === undefined)
+		throw new Error("Extension interaction response field is required");
+	switch (responseField) {
+		case "cancelled":
+			if (body["cancelled"] === true) return { cancelled: true };
+			break;
+		case "selected":
+			if (typeof body["selected"] === "string")
+				return { selected: body["selected"] };
+			break;
+		case "confirmed":
+			if (typeof body["confirmed"] === "boolean")
+				return { confirmed: body["confirmed"] };
+			break;
+		case "text":
+			if (typeof body["text"] === "string") return { text: body["text"] };
+			break;
+	}
+	throw new Error("Invalid extension interaction response");
 }
 
 function sessionMutationResult(

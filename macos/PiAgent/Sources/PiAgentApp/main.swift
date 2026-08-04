@@ -101,7 +101,10 @@ final class AppModel: ObservableObject {
 	@Published var isGitLoading = false
 	@Published var isGitMutationInFlight = false
 	@Published var showGitCommitSheet = false
-	@Published var gitCommitMessage = ""
+    @Published var gitCommitMessage = ""
+	@Published var extensionInteractions: [RuntimeExtensionInteraction] = []
+	@Published var isExtensionInteractionMutationInFlight = false
+	@Published var extensionInteractionText = ""
 
     let runtimeClient: any RuntimeClient
     let terminalSurfaceController = TerminalSurfaceController()
@@ -167,6 +170,11 @@ final class AppModel: ObservableObject {
     var archivedSessions: [RuntimeSession] {
         sessions.filter { $0.archived == true }
     }
+
+	var activeExtensionInteraction: RuntimeExtensionInteraction? {
+		guard let session = selectedSession else { return nil }
+		return extensionInteractions.first { $0.sessionId == session.id && $0.cwd == session.cwd }
+	}
 
     var runtimeLabel: String {
         switch runtimeState {
@@ -357,6 +365,8 @@ final class AppModel: ObservableObject {
         stopSessionEventStream()
         selectedSessionID = sessionID
         transcriptMessages = []
+		extensionInteractions = []
+		extensionInteractionText = ""
         streamingMessage = nil
         lastSessionSequence = 0
         errorMessage = nil
@@ -1239,6 +1249,7 @@ final class AppModel: ObservableObject {
                         return
                     }
                     self.applyStreamSnapshot(snapshot, sessionID: session.id)
+					self.refreshExtensionInteractions(for: session)
                     reconnectDelay = 250_000_000
 
                     for try await event in subscription.events {
@@ -1299,6 +1310,10 @@ final class AppModel: ObservableObject {
         }
 
         switch event.type {
+		case "extension.interaction.opened", "extension.interaction.closed":
+			if let session = selectedSession, session.id == sessionID {
+				refreshExtensionInteractions(for: session)
+			}
         case "message.append":
             if let message = event.message { upsertTranscript(message) }
         case "assistant.delta":
@@ -1352,6 +1367,82 @@ final class AppModel: ObservableObject {
             break
         }
     }
+
+	func refreshExtensionInteractions(for session: RuntimeSession? = nil) {
+		guard let session = session ?? selectedSession,
+			  session.archived != true,
+			  let client = runtimeClient as? any RuntimeExtensionInteractionClient
+		else {
+			extensionInteractions = []
+			return
+		}
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let interactions = try await client.listExtensionInteractions(
+					sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId
+				)
+				guard self.selectedSessionID == session.id else { return }
+				self.extensionInteractions = interactions
+				if let active = interactions.first, active.kind == "editor" || active.kind == "input" {
+					self.extensionInteractionText = active.prefill ?? ""
+				}
+			} catch {
+				guard self.selectedSessionID == session.id else { return }
+				self.errorMessage = "Unable to refresh extension dialog: \(error.localizedDescription)"
+			}
+		}
+	}
+
+	func respondToExtensionInteraction(
+		_ interaction: RuntimeExtensionInteraction,
+		response: RuntimeExtensionInteractionResponse
+	) {
+		guard !isExtensionInteractionMutationInFlight,
+			  let session = selectedSession,
+			  session.id == interaction.sessionId,
+			  let client = runtimeClient as? any RuntimeExtensionInteractionClient,
+			  let expectedRuntimeEpoch = runtimeEpoch
+		else {
+			errorMessage = "Reconnect the Runtime before answering the extension dialog."
+			return
+		}
+		let commandId = UUID().uuidString
+		isExtensionInteractionMutationInFlight = true
+		errorMessage = nil
+		Task { [weak self] in
+			guard let self else { return }
+			do {
+				let receipt: RuntimeCommandReceipt
+				do {
+					receipt = try await client.respondToExtensionInteraction(
+						sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId,
+						interactionId: interaction.id, response: response,
+						commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
+					)
+				} catch {
+					receipt = try await self.commandReceiptAfterUnknownTransport(
+						client: self.runtimeClient, commandId: commandId, originalError: error
+					)
+				}
+				try self.requireCompletedReceipt(
+					receipt,
+					kind: "respond-extension-interaction",
+					expectedRuntimeEpoch: expectedRuntimeEpoch
+				)
+				guard receipt.result?.responded == true,
+					  receipt.result?.interaction?.id == interaction.id
+				else {
+					throw RuntimeClientError.serverError(500, "Runtime interaction receipt was incomplete.")
+				}
+				self.isExtensionInteractionMutationInFlight = false
+				self.refreshExtensionInteractions(for: session)
+			} catch {
+				self.errorMessage = error.localizedDescription
+				self.isExtensionInteractionMutationInFlight = false
+			}
+		}
+	}
 
     private func appendAssistantDelta(_ delta: String) {
         guard !delta.isEmpty else { return }
@@ -1579,8 +1670,14 @@ struct ContentView: View {
         .sheet(item: $model.sessionPendingFork, onDismiss: model.cancelFork) { session in
             ForkThreadSheet(model: model, session: session)
         }
-		.sheet(isPresented: $model.showGitCommitSheet) {
+        .sheet(isPresented: $model.showGitCommitSheet) {
 			GitCommitSheet(model: model)
+		}
+		.sheet(item: Binding(
+			get: { model.activeExtensionInteraction },
+			set: { _ in }
+		)) { interaction in
+			ExtensionInteractionSheet(model: model, interaction: interaction)
 		}
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -2024,6 +2121,68 @@ struct GitDiffView: View {
 				}
 			}
 		}
+	}
+}
+
+struct ExtensionInteractionSheet: View {
+	@ObservedObject var model: AppModel
+	let interaction: RuntimeExtensionInteraction
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 16) {
+			Text(interaction.title)
+				.font(.title3.weight(.semibold))
+			if let message = interaction.message, !message.isEmpty {
+				Text(message)
+					.foregroundStyle(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+			}
+			switch interaction.kind {
+			case "select":
+				ScrollView {
+					VStack(alignment: .leading, spacing: 8) {
+						ForEach(interaction.options ?? [], id: \.self) { option in
+							Button(option) {
+								model.respondToExtensionInteraction(interaction, response: .selected(option))
+							}
+							.frame(maxWidth: .infinity, alignment: .leading)
+						}
+					}
+				}
+				.frame(minHeight: 100, maxHeight: 300)
+			case "input":
+				TextField(interaction.placeholder ?? "", text: $model.extensionInteractionText)
+					.textFieldStyle(.roundedBorder)
+			case "editor":
+				TextEditor(text: $model.extensionInteractionText)
+					.font(.body.monospaced())
+					.frame(minHeight: 180)
+					.overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+			default:
+				EmptyView()
+			}
+			HStack {
+				Spacer()
+				Button("Cancel") {
+					model.respondToExtensionInteraction(interaction, response: .cancelled)
+				}
+				.keyboardShortcut(.cancelAction)
+				if interaction.kind == "confirm" {
+					Button("Confirm") {
+						model.respondToExtensionInteraction(interaction, response: .confirmed(true))
+					}
+					.buttonStyle(.borderedProminent)
+				} else if interaction.kind == "input" || interaction.kind == "editor" {
+					Button("Submit") {
+						model.respondToExtensionInteraction(interaction, response: .text(model.extensionInteractionText))
+					}
+					.buttonStyle(.borderedProminent)
+				}
+			}
+		}
+		.padding(20)
+		.frame(minWidth: 380, idealWidth: 480, minHeight: 160)
+		.disabled(model.isExtensionInteractionMutationInFlight)
 	}
 }
 

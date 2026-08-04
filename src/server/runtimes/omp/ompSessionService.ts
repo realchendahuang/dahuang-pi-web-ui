@@ -50,6 +50,9 @@ import {
 	type OmpRuntimeIdentity,
 	type OmpSessionRuntimeOptions,
 } from "./ompSessionRuntime.js";
+import type {
+	ExtensionInteraction,
+} from "../../sessions/extensionInteractionService.js";
 import { resolveOmpExecutable } from "./ompExecutable.js";
 import { listOmpSessionFiles } from "./ompSessionStore.js";
 
@@ -401,6 +404,18 @@ export class OmpSessionService implements SessionRouteService {
 	): Promise<CommandResult> {
 		await (await this.getOrOpen(ref)).respondToExtension(requestId, value);
 		return { type: "done" };
+	}
+
+	listExtensionInteractions(): Promise<ExtensionInteraction[]> {
+		return Promise.reject(
+			new Error("Native extension dialogs are currently available only for the Pi runtime"),
+		);
+	}
+
+	respondToExtensionInteraction(): Promise<ExtensionInteraction> {
+		return Promise.reject(
+			new Error("Native extension dialogs are currently available only for the Pi runtime"),
+		);
 	}
 
 	forkCandidates(): Promise<SessionForkCandidate[]> {

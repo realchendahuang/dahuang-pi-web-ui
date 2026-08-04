@@ -8,6 +8,7 @@ struct PiAgentContractCheck {
         try checkRuntimeHelloDecoding()
         try checkRuntimeCommandReceiptDecoding()
 		try checkGitContractDecoding()
+		try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkSessionAndMessageDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -196,6 +197,24 @@ struct PiAgentContractCheck {
 		precondition(receipt.result?.committed == true)
 		precondition(receipt.result?.hash == "deadbeef")
 		precondition(receipt.result?.status?.files.isEmpty == true)
+	}
+
+	private static func checkExtensionInteractionContractDecoding() throws {
+		let decoder = JSONDecoder()
+		decoder.dateDecodingStrategy = .iso8601
+		let projection = try decoder.decode(
+			RuntimeExtensionInteraction.self,
+			from: Data(#"{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"select","title":"Choose","options":["one","two"],"createdAt":"2026-08-04T00:00:00Z","timeoutAt":"2026-08-04T00:01:00Z"}"#.utf8)
+		)
+		precondition(projection.kind == "select")
+		precondition(projection.options == ["one", "two"])
+
+		let receipt = try decoder.decode(
+			RuntimeCommandReceipt.self,
+			from: Data(#"{"commandId":"interaction-command","kind":"respond-extension-interaction","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"responded":true,"interaction":{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"confirm","title":"Proceed","message":"Continue?","createdAt":"2026-08-04T00:00:00Z"}}}"#.utf8)
+		)
+		precondition(receipt.result?.responded == true)
+		precondition(receipt.result?.interaction?.id == "interaction-1")
 	}
 
     private static func checkProjectAuthorization() throws {

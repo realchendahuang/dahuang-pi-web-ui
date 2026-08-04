@@ -41,6 +41,11 @@ import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { SessionCommandService } from "./sessionCommandService.js";
 import {
+	ExtensionInteractionService,
+	type ExtensionInteraction,
+	type ExtensionInteractionResponse,
+} from "./extensionInteractionService.js";
+import {
 	projectSessionTree,
 	type ProjectableSessionTreeNode,
 } from "./sessionTreeProjection.js";
@@ -943,6 +948,8 @@ export class PiSessionService implements SessionRouteService {
 	>();
 	private readonly heartbeat: NodeJS.Timeout;
 	private readonly commandService: SessionCommandService<PiAgentSession>;
+	/** Daemon-owned pending Pi extension dialogs; App clients receive projections only. */
+	private readonly extensionInteractions: ExtensionInteractionService;
 	/** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
 	private readonly treeNavigations = new WeakSet<PiAgentSession>();
 	/** Counts async operations that may append an entry before they settle. */
@@ -1038,6 +1045,23 @@ export class PiSessionService implements SessionRouteService {
 			deps.unreadPublicationRetryDelayMs ?? DEFAULT_UNREAD_PUBLICATION_RETRY_MS,
 		);
 		this.unreadPublicationRetryDelayMs = this.unreadPublicationRetryInitialMs;
+		this.extensionInteractions = new ExtensionInteractionService({
+			onOpened: (interaction) => {
+				this.events.publish(interaction.sessionId, {
+					type: "extension.interaction.opened",
+					interactionId: interaction.id,
+					interactionKind: interaction.kind,
+				});
+			},
+			onClosed: (interaction, reason) => {
+				this.events.publish(interaction.sessionId, {
+					type: "extension.interaction.closed",
+					interactionId: interaction.id,
+					interactionKind: interaction.kind,
+					reason,
+				});
+			},
+		});
 		// Subsessions are a beta capability gated behind their own flag, and they
 		// also require the spawn capability (they share its project-scope resolver).
 		const subsessionsActive =
@@ -1336,6 +1360,7 @@ export class PiSessionService implements SessionRouteService {
 		this.subsessionHydratedParents.clear();
 		this.subsessionNotifyArmed.clear();
 		this.notificationStore.clearAll("service-dispose");
+		this.extensionInteractions.dispose();
 		await Promise.all(
 			activeSessions.map((active) => this.disposeActiveRuntime(active)),
 		);
@@ -3478,6 +3503,7 @@ export class PiSessionService implements SessionRouteService {
 			this.publishNotificationMutations(mutations);
 		}
 		if (!active) return;
+		this.extensionInteractions.cancelSession(sessionId, notificationPolicy.kind === "clear" ? notificationPolicy.reason : "session-close");
 		this.forgetUnreadActivity(active.runtime.session);
 		this.active.delete(sessionId);
 		this.activities.delete(sessionId);
@@ -3813,6 +3839,10 @@ export class PiSessionService implements SessionRouteService {
 		session: PiAgentSession,
 		generation: SessionNotificationGeneration | undefined,
 	): Promise<void> {
+		this.extensionInteractions.cancelSession(
+			session.sessionId,
+			"extensions-rebound",
+		);
 		const uiContext = this.sessionUiContext(session, generation);
 		await session.bindExtensions({
 			uiContext,
@@ -3843,6 +3873,9 @@ export class PiSessionService implements SessionRouteService {
 		generation: SessionNotificationGeneration | undefined,
 	): ExtensionUIContext {
 		const baseUiContext = session.extensionRunner.getUIContext();
+		const sessionId = session.sessionId;
+		const cwd = session.sessionManager.getCwd();
+		const extensionInteractions = this.extensionInteractions;
 		const notify: ExtensionUIContext["notify"] = (message, type) => {
 			if (generation === undefined) {
 				this.events.publish(session.sessionId, {
@@ -3866,17 +3899,87 @@ export class PiSessionService implements SessionRouteService {
 				notificationId: added.notification.id,
 			});
 		};
-		// PI WEB owns the browser-facing notification and text-formatting
-		// boundaries. Delegate every other UI method to Pi's headless defaults so
-		// unsupported dialogs cancel safely instead of hanging.
+		// PI WEB owns native-capable dialog lifetimes. Every remaining UI method
+		// delegates to Pi's headless defaults so unsupported extensions still
+		// cancel safely rather than retaining an unowned callback.
 		return new Proxy(baseUiContext, {
 			get(target, property, receiver): unknown {
 				if (property === "notify") return notify;
 				if (property === "theme") return plainTextTheme;
+				if (property === "select")
+					return (
+						title: string,
+						options: string[],
+						dialogOptions?: Parameters<ExtensionUIContext["select"]>[2],
+					) =>
+						extensionInteractions.select(
+							sessionId,
+							cwd,
+							title,
+							options,
+							dialogOptions,
+						);
+				if (property === "confirm")
+					return (
+						title: string,
+						message: string,
+						dialogOptions?: Parameters<ExtensionUIContext["confirm"]>[2],
+					) =>
+						extensionInteractions.confirm(
+							sessionId,
+							cwd,
+							title,
+							message,
+							dialogOptions,
+						);
+				if (property === "input")
+					return (
+						title: string,
+						placeholder?: string,
+						dialogOptions?: Parameters<ExtensionUIContext["input"]>[2],
+					) =>
+						extensionInteractions.input(
+							sessionId,
+							cwd,
+							title,
+							placeholder,
+							dialogOptions,
+						);
+				if (property === "editor")
+					return (title: string, prefill?: string) =>
+						extensionInteractions.editor(sessionId, cwd, title, prefill);
 				const value: unknown = Reflect.get(target, property, receiver);
 				return value;
 			},
 		});
+	}
+
+	async listExtensionInteractions(
+		ref: SessionRouteLookup,
+	): Promise<ExtensionInteraction[]> {
+		const { id, cwd } = await this.extensionInteractionContext(ref);
+		return this.extensionInteractions.list(id, cwd);
+	}
+
+	async respondToExtensionInteraction(
+		ref: SessionRouteLookup,
+		interactionId: string,
+		response: ExtensionInteractionResponse,
+	): Promise<ExtensionInteraction> {
+		const { id, cwd } = await this.extensionInteractionContext(ref);
+		const pending = this.extensionInteractions
+			.list(id, cwd)
+			.find((interaction) => interaction.id === interactionId);
+		if (pending === undefined) throw new Error("Extension interaction not found");
+		return this.extensionInteractions.respond(interactionId, response);
+	}
+
+	private async extensionInteractionContext(
+		ref: SessionRouteLookup,
+	): Promise<{ id: string; cwd: string }> {
+		if (isPiSessionRef(ref)) return { id: ref.id, cwd: ref.cwd };
+		const session = await this.getOrOpen(ref);
+		return { id: session.sessionId, cwd: session.sessionManager.getCwd() };
 	}
 
 	private publishNotificationMutations(
