@@ -424,14 +424,21 @@ public protocol RuntimeClient: RuntimeHealthClient {
     func startSession(cwd: String, runtimeId: String?) async throws -> RuntimeSession
     func messages(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeMessagePage
     func status(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
-    func prompt(sessionId: String, cwd: String, runtimeId: String?, text: String) async throws
-    func abortActiveWork(commandId: String) async throws -> RuntimeCommandReceipt
+    func prompt(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        text: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt
+    func abortActiveWork(commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt
     func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt
 }
 
 /// Epoch-bound response for a native Runtime mutation. Repeating the same
 /// command id returns this same receipt, letting the App safely recover from a
-/// socket timeout without sending a second agent-level abort.
+/// socket timeout without sending a second agent-level mutation.
 public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
     public struct AbortTarget: Decodable, Equatable, Sendable {
         public let sessionId: String
@@ -444,18 +451,25 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let error: String
     }
 
-    public struct AbortResult: Decodable, Equatable, Sendable {
-        public let requested: Int
-        public let aborted: [AbortTarget]
-        public let failures: [AbortFailure]
+    /// The result is intentionally an open product projection: an abort has
+    /// target counts while an accepted prompt carries a session identifier.
+    /// Unknown future fields remain harmless to an older native shell.
+    public struct Result: Decodable, Equatable, Sendable {
+        public let requested: Int?
+        public let aborted: [AbortTarget]?
+        public let failures: [AbortFailure]?
+        public let accepted: Bool?
+        public let sessionId: String?
+        public let runtimeId: String?
     }
 
     public let commandId: String
     public let kind: String
+    public let runtimeEpoch: String
     public let status: String
     public let startedAt: Date
     public let completedAt: Date
-    public let result: AbortResult?
+    public let result: Result?
     public let error: String?
 }
 

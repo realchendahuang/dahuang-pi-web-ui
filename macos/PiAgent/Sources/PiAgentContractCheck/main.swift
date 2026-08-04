@@ -106,13 +106,21 @@ struct PiAgentContractCheck {
 		let decoder = JSONDecoder()
 		decoder.dateDecodingStrategy = .iso8601
 		let data = Data(
-			#"{"commandId":"command-1","kind":"abort-active-work","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"requested":1,"aborted":[{"sessionId":"s1","runtimeId":"pi"}],"failures":[]}}"#.utf8
+			#"{"commandId":"command-1","kind":"abort-active-work","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"requested":1,"aborted":[{"sessionId":"s1","runtimeId":"pi"}],"failures":[]}}"#.utf8
 		)
 		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: data)
 		precondition(receipt.commandId == "command-1")
+		precondition(receipt.runtimeEpoch == "epoch-1")
 		precondition(receipt.status == "completed")
 		precondition(receipt.result?.requested == 1)
-		precondition(receipt.result?.failures.isEmpty == true)
+		precondition(receipt.result?.failures?.isEmpty == true)
+
+		let promptData = Data(
+			#"{"commandId":"command-2","kind":"prompt","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"accepted":true,"sessionId":"s1","runtimeId":"pi"}}"#.utf8
+		)
+		let promptReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: promptData)
+		precondition(promptReceipt.result?.accepted == true)
+		precondition(promptReceipt.result?.sessionId == "s1")
 	}
 
     private static func checkProjectAuthorization() throws {

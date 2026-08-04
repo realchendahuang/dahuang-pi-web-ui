@@ -47,7 +47,10 @@ import {
 import {
 	RUNTIME_COMMAND_KINDS,
 	RuntimeCommandReceipts,
+	requireRuntimeCommandEpoch,
 	requireRuntimeCommandId,
+	runtimeCommandErrorStatus,
+	runtimeCommandFingerprint,
 } from "./runtimeCommandReceipts.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
@@ -127,7 +130,9 @@ await runSessionDaemonStartup({
 			ompSessions,
 			defaultRuntimeValue,
 		);
-		const runtimeCommandReceipts = new RuntimeCommandReceipts();
+		const runtimeCommandReceipts = new RuntimeCommandReceipts(
+			nativeRuntimeIdentity.runtimeEpoch,
+		);
 		auth.subscribe((change) => {
 			sessions.applyAuthChange(change);
 		});
@@ -159,7 +164,9 @@ await runSessionDaemonStartup({
 	}) {
 		registerWorkspaceActivityRoutes(app, workspaceActivity);
 		registerAuthRoutes(app, auth);
-		registerSessionRoutes(app, sessions, eventHub);
+		registerSessionRoutes(app, sessions, eventHub, "", {
+			runtimeCommandReceipts,
+		});
 		registerTerminalRoutes(app, terminals);
 
 		app.get("/health", () => ({
@@ -197,18 +204,26 @@ await runSessionDaemonStartup({
 				}
 			},
 		);
-		app.post<{ Body: { commandId?: unknown } }>(
+		app.post<{ Body: { commandId?: unknown; runtimeEpoch?: unknown } }>(
 			"/runtime/commands/abort-active-work",
 			async (request, reply) => {
 				try {
 					const commandId = requireRuntimeCommandId(request.body.commandId);
 					return await runtimeCommandReceipts.execute(
-						commandId,
-						RUNTIME_COMMAND_KINDS.abortActiveWork,
+						{
+							commandId,
+							kind: RUNTIME_COMMAND_KINDS.abortActiveWork,
+							expectedRuntimeEpoch: requireRuntimeCommandEpoch(
+								request.body.runtimeEpoch,
+							),
+							fingerprint: runtimeCommandFingerprint({
+								kind: RUNTIME_COMMAND_KINDS.abortActiveWork,
+							}),
+						},
 						() => sessions.abortActiveWork(),
 					);
 				} catch (error) {
-					return reply.code(400).send({
+					return reply.code(runtimeCommandErrorStatus(error) ?? 400).send({
 						error: error instanceof Error ? error.message : String(error),
 					});
 				}

@@ -93,6 +93,7 @@ final class AppModel: ObservableObject {
     private var terminationActiveSessionCount: Int?
     private var terminationAbortInFlight = false
     private var terminationAbortError: String?
+    private var runtimeEpoch: String?
 
     init(
         runtimeClient: (any RuntimeClient)? = nil,
@@ -204,7 +205,16 @@ final class AppModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let receipt = try await client.abortActiveWork(commandId: commandId)
+                let epoch = try await self.currentRuntimeEpoch(using: client)
+                let receipt = try await client.abortActiveWork(
+                    commandId: commandId,
+                    expectedRuntimeEpoch: epoch
+                )
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "abort-active-work",
+                    expectedRuntimeEpoch: epoch
+                )
                 guard receipt.status == "completed" else {
                     throw RuntimeClientError.serverError(
                         500,
@@ -249,6 +259,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         runtimeState = .connecting
         Task { [weak self] in
+            guard let self else { return }
             do {
                 let health: RuntimeHealth
                 if let supervisor,
@@ -258,15 +269,21 @@ final class AppModel: ObservableObject {
                 } else {
                     health = try await client.health()
                 }
+                if let helloClient = client as? any RuntimeHelloClient {
+                    let hello = try await helloClient.hello()
+                    try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
+                    self.runtimeEpoch = hello.runtimeEpoch
+                } else {
+                    self.runtimeEpoch = nil
+                }
                 let sessions = try await client.listSessions(cwd: cwd)
-                guard let self else { return }
                 self.runtimeState = .connected(health)
                 self.replaceSessions(sessions)
                 self.isLoading = false
             } catch {
-                guard let self else { return }
                 self.runtimeState = .failed(error.localizedDescription)
                 self.errorMessage = error.localizedDescription
+                self.runtimeEpoch = nil
                 self.isLoading = false
             }
         }
@@ -312,9 +329,9 @@ final class AppModel: ObservableObject {
         isSending = true
         errorMessage = nil
         Task { [weak self] in
+            guard let self else { return }
             do {
                 let session = try await client.startSession(cwd: cwd, runtimeId: nil)
-                guard let self else { return }
                 self.sessions.removeAll { $0.id == session.id }
                 self.sessions.insert(session, at: 0)
                 self.selectedSessionID = session.id
@@ -324,7 +341,6 @@ final class AppModel: ObservableObject {
                 self.isSending = false
                 self.startSessionEventStream()
             } catch {
-                guard let self else { return }
                 self.errorMessage = error.localizedDescription
                 self.isSending = false
             }
@@ -341,24 +357,103 @@ final class AppModel: ObservableObject {
 
         let client = runtimeClient
         let cwd = projectPath
+        guard let expectedRuntimeEpoch = runtimeEpoch else {
+            errorMessage = "Reconnect the Runtime before sending a prompt."
+            return
+        }
+        let commandId = UUID().uuidString
         isSending = true
         errorMessage = nil
         Task { [weak self] in
+            guard let self else { return }
             do {
-                try await client.prompt(
-                    sessionId: session.id,
-                    cwd: cwd,
-                    runtimeId: session.runtimeId,
-                    text: text
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.prompt(
+                        sessionId: session.id,
+                        cwd: cwd,
+                        runtimeId: session.runtimeId,
+                        text: text,
+                        commandId: commandId,
+                        expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: client,
+                        commandId: commandId,
+                        originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "prompt",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
                 )
-                guard let self else { return }
+                guard receipt.result?.accepted == true,
+                      receipt.result?.sessionId == session.id
+                else {
+                    throw RuntimeClientError.serverError(
+                        500,
+                        "Runtime prompt receipt was missing its accepted session result."
+                    )
+                }
                 self.prompt = ""
                 self.isSending = false
             } catch {
-                guard let self else { return }
                 self.errorMessage = error.localizedDescription
                 self.isSending = false
             }
+        }
+    }
+
+    private func currentRuntimeEpoch(using client: any RuntimeClient) async throws -> String {
+        guard let helloClient = client as? any RuntimeHelloClient else {
+            throw RuntimeClientError.incompatibleRuntime(
+                "The connected Runtime does not expose a native identity handshake."
+            )
+        }
+        let hello = try await helloClient.hello()
+        try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
+        runtimeEpoch = hello.runtimeEpoch
+        return hello.runtimeEpoch
+    }
+
+    private func commandReceiptAfterUnknownTransport(
+        client: any RuntimeClient,
+        commandId: String,
+        originalError: Error
+    ) async throws -> RuntimeCommandReceipt {
+        guard isUnknownCommandTransportError(originalError) else { throw originalError }
+        return try await client.commandReceipt(commandId: commandId)
+    }
+
+    private func isUnknownCommandTransportError(_ error: Error) -> Bool {
+        switch error {
+        case RuntimeClientError.connectionFailed, RuntimeClientError.invalidHTTPResponse:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func requireCompletedReceipt(
+        _ receipt: RuntimeCommandReceipt,
+        kind: String,
+        expectedRuntimeEpoch: String
+    ) throws {
+        guard receipt.kind == kind else {
+            throw RuntimeClientError.serverError(500, "Runtime returned a receipt for the wrong command kind.")
+        }
+        guard receipt.runtimeEpoch == expectedRuntimeEpoch else {
+            throw RuntimeClientError.incompatibleRuntime(
+                "Runtime restarted while this command was in flight. Reconnect before trying again."
+            )
+        }
+        guard receipt.status == "completed" else {
+            throw RuntimeClientError.serverError(
+                500,
+                receipt.error ?? "Runtime command failed."
+            )
         }
     }
 
@@ -818,8 +913,18 @@ private struct UnavailableRuntimeClient: RuntimeClient {
     func startSession(cwd _: String, runtimeId _: String?) async throws -> RuntimeSession { throw RuntimeClientError.connectionFailed(message) }
     func messages(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeMessagePage { throw RuntimeClientError.connectionFailed(message) }
     func status(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
-    func prompt(sessionId _: String, cwd _: String, runtimeId _: String?, text _: String) async throws { throw RuntimeClientError.connectionFailed(message) }
-    func abortActiveWork(commandId _: String) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func prompt(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        text _: String,
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
+    func abortActiveWork(
+        commandId _: String,
+        expectedRuntimeEpoch _: String
+    ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func commandReceipt(commandId _: String) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
 }
 

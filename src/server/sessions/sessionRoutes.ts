@@ -14,6 +14,14 @@ import {
 } from "../../shared/apiTypes.js";
 import { requireAgentRuntimeId } from "../../shared/agentRuntime.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
+import {
+	RUNTIME_COMMAND_KINDS,
+	type RuntimeCommandReceipts,
+	requireRuntimeCommandEpoch,
+	requireRuntimeCommandId,
+	runtimeCommandErrorStatus,
+	runtimeCommandFingerprint,
+} from "../runtimeCommandReceipts.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type {
@@ -39,6 +47,8 @@ interface PromptRequestBody {
 	text?: unknown;
 	streamingBehavior?: unknown;
 	attachments?: unknown;
+	commandId?: unknown;
+	runtimeEpoch?: unknown;
 }
 
 interface AttachmentsRequestBody {
@@ -52,11 +62,20 @@ const MAX_NOTIFICATION_CWD_LENGTH = 32 * 1024;
 const MAX_NOTIFICATION_DAEMON_ID_LENGTH = 512;
 const MAX_NOTIFICATION_ID_LENGTH = 1024;
 
+export interface SessionRouteOptions {
+	/**
+	 * Present only in the long-lived Runtime. Web/API compatibility routes may
+	 * continue to submit legacy prompts without a native command receipt.
+	 */
+	runtimeCommandReceipts?: RuntimeCommandReceipts;
+}
+
 export function registerSessionRoutes(
 	app: FastifyInstance,
 	sessions: SessionRouteService,
 	eventHub: SessionEventHub,
 	prefix = "",
+	options: SessionRouteOptions = {},
 ): void {
 	app.get(`${prefix}/runtimes`, async (_request, reply) => {
 		try {
@@ -463,16 +482,38 @@ export function registerSessionRoutes(
 	}>(`${prefix}/sessions/:sessionId/prompt`, async (request, reply) => {
 		try {
 			const body = optionalRecord(request.body);
-			await sessions.prompt(
-				sessionLookupFromBody(request.params.sessionId, body),
-				body["text"],
-				body["streamingBehavior"],
-				body["attachments"],
+			const ref = sessionLookupFromBody(request.params.sessionId, body);
+			const nativeCommand = nativePromptCommand(
+				request.params.sessionId,
+				ref,
+				body,
 			);
+			if (nativeCommand !== undefined) {
+				const receipts = options.runtimeCommandReceipts;
+				if (receipts === undefined) {
+					throw new Error("Native Runtime command receipts are unavailable");
+				}
+				return await receipts.execute(nativeCommand, async () => {
+					await sessions.prompt(
+						ref,
+						body["text"],
+						body["streamingBehavior"],
+						body["attachments"],
+					);
+					return {
+						accepted: true,
+						sessionId: request.params.sessionId,
+						...(typeof ref === "string" || ref.runtimeId === undefined
+							? {}
+							: { runtimeId: ref.runtimeId }),
+					};
+				});
+			}
+			await sessions.prompt(ref, body["text"], body["streamingBehavior"], body["attachments"]);
 			return { accepted: true };
 		} catch (error) {
 			return reply
-				.code(mutationErrorStatus(error))
+				.code(runtimeCommandErrorStatus(error) ?? mutationErrorStatus(error))
 				.send({ error: errorMessage(error) });
 		}
 	});
@@ -775,6 +816,34 @@ export function registerSessionRoutes(
 	app.get(`${prefix}/events`, { websocket: true }, (socket) => {
 		eventHub.addGlobal(socket);
 	});
+}
+
+function nativePromptCommand(
+	sessionId: string,
+	ref: SessionRouteLookup,
+	body: Record<string, unknown>,
+) {
+	const hasCommandId = body["commandId"] !== undefined;
+	const hasRuntimeEpoch = body["runtimeEpoch"] !== undefined;
+	if (!hasCommandId && !hasRuntimeEpoch) return undefined;
+	if (!hasCommandId || !hasRuntimeEpoch) {
+		throw new Error("commandId and runtimeEpoch must be provided together");
+	}
+	const runtimeId = typeof ref === "string" ? undefined : ref.runtimeId;
+	const cwd = typeof ref === "string" ? undefined : ref.cwd;
+	return {
+		commandId: requireRuntimeCommandId(body["commandId"]),
+		kind: RUNTIME_COMMAND_KINDS.prompt,
+		expectedRuntimeEpoch: requireRuntimeCommandEpoch(body["runtimeEpoch"]),
+		fingerprint: runtimeCommandFingerprint({
+			sessionId,
+			cwd,
+			runtimeId,
+			text: body["text"],
+			streamingBehavior: body["streamingBehavior"],
+			attachments: body["attachments"],
+		}),
+	};
 }
 
 function bulkMutationRefsFromBody(

@@ -66,21 +66,35 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         sessionId: String,
         cwd: String,
         runtimeId: String?,
-        text: String
-    ) async throws {
-        let _: EmptyResponse = try await request(
+        text: String,
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
+        try await request(
             method: "POST",
             path: "/sessions/\(Self.pathSegment(sessionId))/prompt",
             query: nil,
-            body: PromptPayload(cwd: cwd, text: text, runtimeId: runtimeId)
+            body: PromptPayload(
+                cwd: cwd,
+                text: text,
+                runtimeId: runtimeId,
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
         )
     }
 
-    public func abortActiveWork(commandId: String) async throws -> RuntimeCommandReceipt {
+    public func abortActiveWork(
+        commandId: String,
+        expectedRuntimeEpoch: String
+    ) async throws -> RuntimeCommandReceipt {
         try await request(
             method: "POST",
             path: "/runtime/commands/abort-active-work",
-            body: RuntimeCommandPayload(commandId: commandId)
+            body: RuntimeCommandPayload(
+                commandId: commandId,
+                runtimeEpoch: expectedRuntimeEpoch
+            )
         )
     }
 
@@ -217,23 +231,30 @@ private struct PromptPayload: Encodable {
     let cwd: String
     let text: String
     let runtimeId: String?
+    let commandId: String
+    let runtimeEpoch: String
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(cwd, forKey: .cwd)
         try container.encode(text, forKey: .text)
         try container.encodeIfPresent(runtimeId, forKey: .runtimeId)
+        try container.encode(commandId, forKey: .commandId)
+        try container.encode(runtimeEpoch, forKey: .runtimeEpoch)
     }
 
     private enum CodingKeys: String, CodingKey {
         case cwd
         case text
         case runtimeId
+        case commandId
+        case runtimeEpoch
     }
 }
 
 private struct RuntimeCommandPayload: Encodable {
     let commandId: String
+    let runtimeEpoch: String
 }
 
 private struct TerminalCreatePayload: Encodable {

@@ -28,6 +28,7 @@ import type {
 	SessionTreeNavigateResult,
 } from "../../shared/apiTypes.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
+import { RuntimeCommandReceipts } from "../runtimeCommandReceipts.js";
 import {
 	PiSessionService,
 	type PiSessionManagerGateway,
@@ -677,6 +678,72 @@ describe("session routes", () => {
 					{ path: "uploads/shot.png", mimeType: "image/png", size: 3 },
 				],
 			});
+		} finally {
+			await routeService.dispose();
+			await routeApp.close();
+		}
+	});
+
+	it("executes a native prompt once per command id and returns its epoch-bound receipt", async () => {
+		const routeApp = Fastify({ logger: false });
+		await routeApp.register(fastifyWebsocket);
+		const routeService = new CapturingRouteSessionService();
+		registerSessionRoutes(
+			routeApp,
+			routeService,
+			new SessionEventHub(),
+			"",
+			{ runtimeCommandReceipts: new RuntimeCommandReceipts("epoch-1") },
+		);
+
+		const payload = {
+			text: "make this receipt-safe",
+			commandId: "prompt-command-1",
+			runtimeEpoch: "epoch-1",
+		};
+		try {
+			const first = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/prompt",
+				payload,
+			});
+			const retry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/prompt",
+				payload,
+			});
+
+			expect(first.statusCode).toBe(200);
+			expect(first.json()).toMatchObject({
+				commandId: "prompt-command-1",
+				kind: "prompt",
+				runtimeEpoch: "epoch-1",
+				status: "completed",
+				result: { accepted: true, sessionId: "session-1" },
+			});
+			expect(retry.json()).toEqual(first.json());
+			expect(routeService.calls).toEqual([
+				{ lookup: "session-1", text: "make this receipt-safe" },
+			]);
+
+			const conflictingRetry = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/prompt",
+				payload: { ...payload, text: "a different mutation" },
+			});
+			expect(conflictingRetry.statusCode).toBe(409);
+
+			const staleEpoch = await routeApp.inject({
+				method: "POST",
+				url: "/sessions/session-1/prompt",
+				payload: {
+					text: "do not send",
+					commandId: "prompt-command-2",
+					runtimeEpoch: "epoch-0",
+				},
+			});
+			expect(staleEpoch.statusCode).toBe(409);
+			expect(routeService.calls).toHaveLength(1);
 		} finally {
 			await routeService.dispose();
 			await routeApp.close();
