@@ -96,13 +96,13 @@ struct PiAgentApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup("Pi Agent", id: "pi-agent-main") {
+        WindowGroup("Pi Agent") {
             PiAgentWindowRoot(connection: runtime.connection, lifecycle: lifecycleDelegate)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Window") {
-                    openWindow(id: "pi-agent-main")
+                    openWindow()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
                 Divider()
@@ -136,7 +136,7 @@ struct PiAgentApp: App {
         // implies stopping the Runtime, and this menu gives users a way back.
         MenuBarExtra("Pi Agent", systemImage: "sparkles") {
             Button("Open Pi Agent") {
-                openWindow(id: "pi-agent-main")
+                openWindow()
                 NSApp.activate(ignoringOtherApps: true)
             }
             Divider()
