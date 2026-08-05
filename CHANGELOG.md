@@ -1,5 +1,34 @@
 # @realchendahuang/dahuang-pi-web-ui
 
+## 0.202608.1
+
+### Patch Changes
+
+- 7e3336f: Add the native macOS Pi Agent app shell: project and thread navigation, transcript, SwiftTerm terminal, and workspace panels over a supervised bundled Pi Runtime, with a menu-bar entry to reopen windows.
+- 2e6c199: Keep legacy archived-session files intact when the bundled macOS Runtime safely copies them into Pi Agent data, so migration has a recoverable source.
+- 6406721: Add a typed-confirmation native reset that safely trashes Pi Agent filesystem state and clears only Pi Agent credentials after active sessions have stopped.
+- 01aa9df: Add a receipt-safe native Git push flow that previews and confirms only the current branch's configured tracking upstream.
+- 9829f4f: Add confirmed native Git discard and latest-commit revert actions through the Pi Agent Runtime.
+- 1fc04a2: Allow the native Pi Agent Git inspector to stage, unstage, and confirmed-discard ordinary files inside direct submodules without exposing submodule HEAD resets.
+- e3e67e8: Store bundled Pi Agent Runtime credentials in the macOS Keychain instead of the Runtime auth file.
+- 8527cf7: Add a native macOS flow to review and explicitly migrate compatible legacy Pi credentials into Keychain with readback verification and safe rollback.
+- c2151f3: Show redacted legacy Pi credential migration eligibility alongside projects and session archives in native macOS migration settings.
+- ca40b6d: Add a redacted native macOS migration overview that shows which legacy PI WEB data can be safely migrated, retained, or requires project re-authorization.
+- d5ef39e: Keep a visible native macOS menu-bar entry for reopening Pi Agent after its windows close.
+- 2263eb8: Add native Pi Agent image attachments and transcript image previews through the bundled Runtime.
+- 4d23903: Add native macOS multi-window support with independent project and thread selections while sharing one long-lived Pi Runtime.
+- 62ce963: Preserve native project authorization when Pi Agent reconnects to a Runtime that survived an app or window restart.
+- d1fc83f: Persist native Runtime command receipts across restarts so an interrupted retry cannot silently repeat a session, terminal, Git, or workspace side effect.
+- 575206d: Include a verified CycloneDX SBOM and third-party license inventory in unsigned Pi Agent.app Runtime builds.
+- f4cfbb0: Add a bundled macOS Pi Runtime with verified local socket startup, streamed native client recovery, and safer session daemon ownership.
+- 6759bc9: Verify that the bundled Pi Agent Runtime answering the native hello handshake was launched by the current app-managed Runtime boundary.
+- 7e15845: Verify bundled Pi Agent Runtime socket ownership, file type, permissions, parent directory, and connected peer before native HTTP or terminal/event streaming connections.
+- a3e64e6: Add opt-in native macOS alerts for explicit Runtime task notifications in authorized Pi Agent projects.
+- bc36177: Add Runtime-owned native Thread Git checkpoints for bounded, read-only review of staged and unstaged changes.
+- 48753bc: Add receipt-safe native workspace text editing, creation, move/rename, and deletion for Pi Agent.
+- 1ddbbf8: Add bounded, Runtime-owned image previews to the native Pi Agent workspace inspector.
+- 7517459: Add Runtime-owned native workspace file browsing and text previews for Pi Agent.
+
 ## 0.202608.0
 
 ### Patch Changes
