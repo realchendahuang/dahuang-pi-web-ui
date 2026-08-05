@@ -5,148 +5,6 @@ import SwiftTerm
 import UniformTypeIdentifiers
 import UserNotifications
 
-private let nativeInlineImageLimit = Int(4.5 * 1024 * 1024)
-private let nativePromptAttachmentLimit = 16
-private let nativePromptImageContentTypes: [UTType] = [.png, .jpeg, .gif]
-    + (UTType(filenameExtension: "webp").map { [$0] } ?? [])
-
-private func nativeImageMimeType(for url: URL) -> String? {
-    switch url.pathExtension.lowercased() {
-    case "jpg", "jpeg": return "image/jpeg"
-    case "png": return "image/png"
-    case "gif": return "image/gif"
-    case "webp": return "image/webp"
-    default: return nil
-    }
-}
-
-/// One App process must supervise at most one bundled Runtime. Each window
-/// receives this immutable connection but owns its own project/thread/UI state.
-@MainActor
-private final class SharedRuntimeConnection: ObservableObject {
-    let connection: AppModel.RuntimeConnection
-
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        connection = AppModel.makeRuntimeConnection(environment: environment)
-    }
-}
-
-private struct PiAgentWindowRoot: View {
-    @StateObject private var model: AppModel
-    private let lifecycle: AppLifecycleDelegate
-
-    init(connection: AppModel.RuntimeConnection, lifecycle: AppLifecycleDelegate) {
-        let windowIdentifier = UUID().uuidString
-        _model = StateObject(wrappedValue: AppModel(
-            projectAuthorizationStore: ProjectAuthorizationStore(
-                key: "com.realchendahuang.pi-agent.authorized-project.\(windowIdentifier)"
-            ),
-            connection: connection,
-            taskNotifications: lifecycle.taskNotifications
-        ))
-        self.lifecycle = lifecycle
-    }
-
-    var body: some View {
-        ContentView(model: model)
-            .frame(minWidth: 980, minHeight: 680)
-            .onAppear { lifecycle.register(model) }
-            .onDisappear { lifecycle.unregister(model) }
-            .alert(
-                "Agent sessions are still active",
-                isPresented: $model.showTerminationConfirmation
-            ) {
-                Button("Keep Running and Quit") { model.keepRuntimeRunningAndTerminate() }
-                Button("Stop Runtime and Quit", role: .destructive) { model.stopOwnedRuntimeAndTerminate() }
-                Button("Cancel", role: .cancel) { model.cancelTermination() }
-            } message: {
-                Text(model.terminationConfirmationMessage)
-            }
-            .alert(
-                "Delete archived thread permanently?",
-                isPresented: Binding(
-                    get: { model.sessionPendingPermanentDeletion != nil },
-                    set: { if !$0 { model.cancelPermanentDelete() } }
-                )
-            ) {
-                Button("Delete Permanently", role: .destructive) { model.confirmPermanentDelete() }
-                Button("Cancel", role: .cancel) { model.cancelPermanentDelete() }
-            } message: {
-                Text("This removes the archived transcript from Pi Agent storage and cannot be undone.")
-            }
-            .alert(
-                "Delete workspace file?",
-                isPresented: Binding(
-                    get: { model.workspaceFilePendingDeletion != nil },
-                    set: { if !$0 { model.cancelWorkspaceFileDeletion() } }
-                )
-            ) {
-                Button("Delete File", role: .destructive) { model.confirmWorkspaceFileDeletion() }
-                Button("Cancel", role: .cancel) { model.cancelWorkspaceFileDeletion() }
-            } message: {
-                Text("This permanently removes the selected file from the authorized project.")
-            }
-    }
-}
-
-@main
-struct PiAgentApp: App {
-    @StateObject private var runtime = SharedRuntimeConnection()
-    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycleDelegate
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some Scene {
-        WindowGroup("Pi Agent", id: "pi-agent-main") {
-            PiAgentWindowRoot(connection: runtime.connection, lifecycle: lifecycleDelegate)
-        }
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Window") {
-                    openWindow(id: "pi-agent-main")
-                }
-                .keyboardShortcut("n", modifiers: [.command])
-                Divider()
-                Button("New Thread") {
-                    lifecycleDelegate.activeModel?.startNewSession()
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
-            CommandGroup(after: .toolbar) {
-                Button("Open Project") {
-                    lifecycleDelegate.activeModel?.openProject()
-                }
-                .keyboardShortcut("o", modifiers: [.command])
-                Button("Reconnect Runtime") {
-                    lifecycleDelegate.activeModel?.refreshRuntime()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-            }
-        }
-
-        Settings {
-            if let model = lifecycleDelegate.activeModel {
-                SettingsView(model: model)
-            } else {
-                Text("Open a Pi Agent window to configure its project and Runtime.")
-                    .padding()
-            }
-        }
-
-        // A visible background affordance: closing all document windows never
-        // implies stopping the Runtime, and this menu gives users a way back.
-        MenuBarExtra("Pi Agent", systemImage: "sparkles") {
-            Button("Open Pi Agent") {
-                openWindow(id: "pi-agent-main")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            Divider()
-            Button("Quit Pi Agent") {
-                NSApp.terminate(nil)
-            }
-        }
-    }
-}
-
 @MainActor
 final class AppModel: ObservableObject {
 	private enum ProjectRuntimeAuthorization: Equatable {
@@ -157,10 +15,10 @@ final class AppModel: ObservableObject {
 
 		var label: String {
 			switch self {
-			case .notRequired: return "Not required for this Runtime"
-			case .authorizing: return "Authorizing…"
-			case let .authorized(path): return "Authorized: \(path)"
-			case let .failed(message): return "Authorization failed: \(message)"
+			case .notRequired: return "此 Runtime 无需授权"
+			case .authorizing: return "正在授权…"
+			case let .authorized(path): return "已授权：\(path)"
+			case let .failed(message): return "授权失败：\(message)"
 			}
 		}
 
@@ -185,6 +43,8 @@ final class AppModel: ObservableObject {
 	@Published var showLegacyProjectMigrationRollbackConfirmation = false
     @Published var selectedSessionID: String?
     @Published var showInspector = true
+    /// Settings is an in-app page inside the main window, not a separate scene.
+    @Published var showSettingsPage = false
     @Published var prompt = ""
     @Published var promptImageAttachments: [RuntimePromptImageAttachment] = []
     @Published var sessions: [RuntimeSession] = []
@@ -358,13 +218,13 @@ final class AppModel: ObservableObject {
     var runtimeLabel: String {
         switch runtimeState {
         case .disconnected:
-            return "Runtime disconnected"
+            return "Runtime 已断开连接"
         case .connecting:
-            return "Connecting…"
+            return "正在连接…"
         case let .connected(health):
             return health.version.label
         case let .failed(message):
-            return "Runtime unavailable: \(message)"
+            return "Runtime 不可用：\(message)"
         }
     }
 
@@ -378,12 +238,12 @@ final class AppModel: ObservableObject {
 
     var terminationConfirmationMessage: String {
 		if let terminationAbortError {
-			return "The Runtime could not stop every active session: \(terminationAbortError) Keep it running and quit, try stopping it again, or cancel."
+			return "Runtime 未能停止所有活跃会话：\(terminationAbortError) 可以保持运行并退出、重试停止，或取消。"
 		}
         if let terminationActiveSessionCount {
-            return "(terminationActiveSessionCount) active session\(terminationActiveSessionCount == 1 ? " is" : "s are") still running. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
+            return "\(terminationActiveSessionCount) 个活跃会话仍在运行。可以保持捆绑 Runtime 运行并退出、仅停止此 App 拥有的 Runtime，或取消退出。"
         }
-        return "The Runtime status could not be refreshed. Keep the bundled Runtime alive, stop only the Runtime this app owns, or cancel quitting."
+        return "无法刷新 Runtime 状态。可以保持捆绑 Runtime 运行、仅停止此 App 拥有的 Runtime，或取消退出。"
     }
 
 	var nativeAppDataPath: String {
@@ -465,7 +325,7 @@ final class AppModel: ObservableObject {
                 guard receipt.status == "completed" else {
                     throw RuntimeClientError.serverError(
                         500,
-                        receipt.error ?? "Runtime abort command failed."
+                        receipt.error ?? "Runtime 中止命令失败。"
                     )
                 }
                 if let failures = receipt.result?.failures, !failures.isEmpty {
@@ -551,7 +411,7 @@ final class AppModel: ObservableObject {
                     else {
                         throw RuntimeClientError.serverError(
                             500,
-                            "Runtime did not authorize the selected project."
+                            "Runtime 未授权所选项目。"
                         )
                     }
                     guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }
@@ -584,13 +444,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func openSettingsPage() {
+        showSettingsPage = true
+    }
+
+    func closeSettingsPage() {
+        showSettingsPage = false
+    }
+
     func openProject() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use Project"
-        panel.message = "Choose the checkout Pi Agent should use for new and existing sessions."
+        panel.prompt = "使用项目"
+        panel.message = "选择 Pi Agent 用于新建和继续对话的项目目录。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
 			let activation = try projectCatalog.rememberAndAccess(url)
@@ -607,7 +475,7 @@ final class AppModel: ObservableObject {
 			activateProject(try projectCatalog.access(project))
 			knownProjects = projectCatalog.list()
 		} catch {
-			errorMessage = "Re-authorize \(project.displayName) to use this project: \(error.localizedDescription)"
+			errorMessage = "重新授权 \(project.displayName) 以使用此项目：\(error.localizedDescription)"
 		}
 	}
 
@@ -692,11 +560,11 @@ final class AppModel: ObservableObject {
 		panel.canChooseDirectories = true
 		panel.allowsMultipleSelection = false
 		panel.directoryURL = URL(fileURLWithPath: candidate.path)
-		panel.prompt = "Authorize Project"
-		panel.message = "Choose the original directory for \(candidate.name). Pi Agent will only add it if this is the exact same path."
+		panel.prompt = "授权项目"
+		panel.message = "选择 \(candidate.name) 的原始目录。只有路径完全一致时 Pi Agent 才会添加它。"
 		guard panel.runModal() == .OK, let url = panel.url else { return }
 		guard url.standardizedFileURL.path == URL(fileURLWithPath: candidate.path).standardizedFileURL.path else {
-			errorMessage = "Choose the original legacy project path exactly: \(candidate.path)"
+			errorMessage = "请精确选择原遗留项目路径：\(candidate.path)"
 			return
 		}
 		isLegacyProjectMigrationInFlight = true
@@ -794,11 +662,11 @@ final class AppModel: ObservableObject {
         let client = runtimeClient
         let cwd = projectPath
 		guard canUseProjectRuntime else {
-			errorMessage = "Authorize the selected project before creating a thread."
+			errorMessage = "请先授权所选项目，再创建对话。"
 			return
 		}
         guard let expectedRuntimeEpoch = runtimeEpoch else {
-            errorMessage = "Reconnect the Runtime before creating a session."
+            errorMessage = "请先重新连接 Runtime，再创建对话。"
             return
         }
         let commandId = UUID().uuidString
@@ -832,7 +700,7 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime session receipt was missing its created session result."
+                        "Runtime 会话回执缺少新建会话结果。"
                     )
                 }
                 let createdCWD = receipt.result?.cwd ?? cwd
@@ -840,7 +708,7 @@ final class AppModel: ObservableObject {
                 guard let session = sessions.first(where: { $0.id == createdSessionID }) else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime created the session, but it was not present in the session projection. Reconnect to refresh it."
+                        "Runtime 已创建对话，但会话投影中未找到它。请重新连接以刷新。"
                     )
                 }
                 self.replaceSessions(sessions)
@@ -855,25 +723,25 @@ final class AppModel: ObservableObject {
 
     func sendPrompt() {
         guard let session = selectedSession else {
-            errorMessage = "Select a session before sending a prompt."
+            errorMessage = "请先选择一个对话，再发送消息。"
             return
         }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = promptImageAttachments
         guard !text.isEmpty || !attachments.isEmpty, !isSending else { return }
 		guard canUseProjectRuntime else {
-			errorMessage = "Authorize the selected project before sending a prompt."
+			errorMessage = "请先授权所选项目，再发送消息。"
 			return
 		}
 		guard session.archived != true else {
-			errorMessage = "Restore this archived thread before sending a prompt."
+			errorMessage = "请先恢复此已归档对话，再发送消息。"
 			return
 		}
 
         let client = runtimeClient
         let cwd = projectPath
         guard let expectedRuntimeEpoch = runtimeEpoch else {
-            errorMessage = "Reconnect the Runtime before sending a prompt."
+            errorMessage = "请先重新连接 Runtime，再发送消息。"
             return
         }
         let commandId = UUID().uuidString
@@ -910,7 +778,7 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime prompt receipt was missing its accepted session result."
+                        "Runtime 消息回执缺少已接受的会话结果。"
                     )
                 }
                 self.prompt = ""
@@ -930,8 +798,8 @@ final class AppModel: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = nativePromptImageContentTypes
-        panel.prompt = "Attach Images"
-        panel.message = "Pi Agent sends supported images inline to the selected Thread. Each image must be at most 4.5 MB."
+        panel.prompt = "添加图片"
+        panel.message = "Pi Agent 会将支持的图片内联发送到所选对话。每张图片不得超过 4.5 MB。"
         guard panel.runModal() == .OK else { return }
 
         var accepted: [RuntimePromptImageAttachment] = []
@@ -941,12 +809,12 @@ final class AppModel: ObservableObject {
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             do {
                 let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                guard data.count > 0 else { throw RuntimeClientError.serverError(400, "Image is empty.") }
+                guard data.count > 0 else { throw RuntimeClientError.serverError(400, "图片为空。") }
                 guard data.count <= nativeInlineImageLimit else {
-                    throw RuntimeClientError.serverError(400, "Image exceeds Pi's 4.5 MB inline limit.")
+                    throw RuntimeClientError.serverError(400, "图片超过 Pi 的 4.5 MB 内联上限。")
                 }
                 guard let mimeType = nativeImageMimeType(for: url) else {
-                    throw RuntimeClientError.serverError(400, "Only PNG, JPEG, GIF, and WebP images are supported.")
+                    throw RuntimeClientError.serverError(400, "仅支持 PNG、JPEG、GIF 和 WebP 图片。")
                 }
                 accepted.append(RuntimePromptImageAttachment(
                     name: url.lastPathComponent,
@@ -960,9 +828,9 @@ final class AppModel: ObservableObject {
         }
         let capacity = max(0, nativePromptAttachmentLimit - promptImageAttachments.count)
         promptImageAttachments.append(contentsOf: accepted.prefix(capacity))
-        if accepted.count > capacity { rejected.append("more than \(nativePromptAttachmentLimit) images") }
+        if accepted.count > capacity { rejected.append("超过 \(nativePromptAttachmentLimit) 张图片") }
         if !rejected.isEmpty {
-            errorMessage = "Could not attach: \(rejected.joined(separator: ", "))."
+            errorMessage = "无法添加：\(rejected.joined(separator: "，"))。"
         }
     }
 
@@ -1016,7 +884,7 @@ final class AppModel: ObservableObject {
     func requestFork(_ session: RuntimeSession) {
         guard session.archived != true, !isSending else { return }
         guard runtimeEpoch != nil else {
-            errorMessage = "Reconnect the Runtime before forking a thread."
+            errorMessage = "请先重新连接 Runtime，再分叉对话。"
             return
         }
         let client = runtimeClient
@@ -1036,7 +904,7 @@ final class AppModel: ObservableObject {
                 guard !candidates.isEmpty else {
                     throw RuntimeClientError.serverError(
                         400,
-                        "This thread has no user message to fork from."
+                        "此对话没有可用于分叉的用户消息。"
                     )
                 }
                 self.forkCandidates = candidates
@@ -1057,7 +925,7 @@ final class AppModel: ObservableObject {
     func forkSession(_ session: RuntimeSession, from candidate: RuntimeForkCandidate) {
         guard !isSending else { return }
         guard let expectedRuntimeEpoch = runtimeEpoch else {
-            errorMessage = "Reconnect the Runtime before forking a thread."
+            errorMessage = "请先重新连接 Runtime，再分叉对话。"
             return
         }
         let client = runtimeClient
@@ -1096,14 +964,14 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime fork receipt was missing its forked session result."
+                        "Runtime 分叉回执缺少分叉会话结果。"
                     )
                 }
                 let refreshed = try await client.listSessions(cwd: forked.cwd)
                 guard refreshed.contains(where: { $0.id == forked.id }) else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime forked the thread, but it was not present in the session projection. Reconnect to refresh it."
+                        "Runtime 已分叉对话，但会话投影中未找到它。请重新连接以刷新。"
                     )
                 }
                 self.replaceSessions(refreshed)
@@ -1118,11 +986,11 @@ final class AppModel: ObservableObject {
 
     func importSessionFromFile() {
         guard let session = selectedSession else {
-            errorMessage = "Select an active thread before importing a session."
+            errorMessage = "请先选择一个未归档的对话，再导入会话。"
             return
         }
         guard session.archived != true else {
-            errorMessage = "Restore this archived thread before importing a session."
+            errorMessage = "请先恢复此已归档对话，再导入会话。"
             return
         }
         guard !isSending else { return }
@@ -1132,15 +1000,15 @@ final class AppModel: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.data]
-        panel.prompt = "Import Thread"
-        panel.message = "Choose a Pi session JSONL file. Pi Agent imports a copy into this project's session storage."
+        panel.prompt = "导入对话"
+        panel.message = "选择一个 Pi 会话 JSONL 文件。Pi Agent 会将其副本导入此项目的会话存储。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         performSessionImport(session, inputPath: url.path)
     }
 
     private func performSessionImport(_ session: RuntimeSession, inputPath: String) {
         guard let expectedRuntimeEpoch = runtimeEpoch else {
-            errorMessage = "Reconnect the Runtime before importing a session."
+            errorMessage = "请先重新连接 Runtime，再导入会话。"
             return
         }
         let client = runtimeClient
@@ -1177,14 +1045,14 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime import receipt was missing its imported session result."
+                        "Runtime 导入回执缺少导入会话结果。"
                     )
                 }
                 let refreshed = try await client.listSessions(cwd: imported.cwd)
                 guard refreshed.contains(where: { $0.id == imported.id }) else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime imported the thread, but it was not present in the session projection. Reconnect to refresh it."
+                        "Runtime 已导入对话，但会话投影中未找到它。请重新连接以刷新。"
                     )
                 }
                 self.replaceSessions(refreshed)
@@ -1226,7 +1094,7 @@ final class AppModel: ObservableObject {
     ) {
         guard !isSending else { return }
         guard let expectedRuntimeEpoch = runtimeEpoch else {
-            errorMessage = "Reconnect the Runtime before changing a thread."
+            errorMessage = "请先重新连接 Runtime，再修改对话。"
             return
         }
         let client = runtimeClient
@@ -1257,7 +1125,7 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime thread mutation receipt was missing its completed result."
+                        "Runtime 对话变更回执缺少完成结果。"
                     )
                 }
                 let refreshed = try await client.listSessions(cwd: session.cwd)
@@ -1276,7 +1144,7 @@ final class AppModel: ObservableObject {
     private func currentRuntimeEpoch(using client: any RuntimeClient) async throws -> String {
         guard let helloClient = client as? any RuntimeHelloClient else {
             throw RuntimeClientError.incompatibleRuntime(
-                "The connected Runtime does not expose a native identity handshake."
+                "已连接的 Runtime 不提供原生身份握手。"
             )
         }
         let hello = try await helloClient.hello()
@@ -1309,17 +1177,17 @@ final class AppModel: ObservableObject {
         expectedRuntimeEpoch: String
     ) throws {
         guard receipt.kind == kind else {
-            throw RuntimeClientError.serverError(500, "Runtime returned a receipt for the wrong command kind.")
+            throw RuntimeClientError.serverError(500, "Runtime 返回了错误命令类型的回执。")
         }
         guard receipt.runtimeEpoch == expectedRuntimeEpoch || receipt.recoveredAfterRuntimeRestart == true else {
             throw RuntimeClientError.incompatibleRuntime(
-                "Runtime restarted while this command was in flight. Reconnect before trying again."
+                "命令执行期间 Runtime 已重启。请重新连接后重试。"
             )
         }
         guard receipt.status == "completed" else {
             throw RuntimeClientError.serverError(
                 500,
-                receipt.error ?? "Runtime command failed."
+                receipt.error ?? "Runtime 命令失败。"
             )
         }
     }
@@ -1400,7 +1268,7 @@ final class AppModel: ObservableObject {
 			  let session = selectedSession,
 			  let expectedRuntimeEpoch = runtimeEpoch,
 			  !isGitMutationInFlight
-		else { errorMessage = "Select a thread and reconnect the Runtime before creating a checkpoint."; return }
+		else { errorMessage = "请先选择对话并重新连接 Runtime，再创建检查点。"; return }
 		let commandId = UUID().uuidString
 		let cwd = session.cwd
 		let sessionId = session.id
@@ -1417,7 +1285,7 @@ final class AppModel: ObservableObject {
 				}
 				try self.requireCompletedReceipt(receipt, kind: "create-git-checkpoint", expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard receipt.result?.checkpointed == true, let checkpoint = receipt.result?.checkpoint else {
-					throw RuntimeClientError.serverError(500, "Runtime checkpoint receipt was missing its review snapshot.")
+					throw RuntimeClientError.serverError(500, "Runtime 检查点回执缺少审查快照。")
 				}
 				guard self.selectedSessionID == sessionId, self.projectPath == cwd else { return }
 				self.gitCheckpoints = [checkpoint] + self.gitCheckpoints.filter { $0.id != checkpoint.id }
@@ -1483,7 +1351,7 @@ final class AppModel: ObservableObject {
 			  let expectedRuntimeEpoch = runtimeEpoch,
 			  canDiscardGitFile(file),
 			  !isGitMutationInFlight
-		else { errorMessage = "Reconnect the Runtime before discarding a Git change."; return }
+		else { errorMessage = "请先重新连接 Runtime，再放弃 Git 更改。"; return }
 		let cwd = projectPath
 		let commandId = UUID().uuidString
 		isGitMutationInFlight = true
@@ -1500,7 +1368,7 @@ final class AppModel: ObservableObject {
 				}
 				try self.requireCompletedReceipt(receipt, kind: "discard-git-paths", expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard receipt.result?.discarded == true, let status = receipt.result?.status else {
-					throw RuntimeClientError.serverError(500, "Runtime discard receipt was missing its Git status projection.")
+					throw RuntimeClientError.serverError(500, "Runtime 放弃更改回执缺少 Git 状态投影。")
 				}
 				guard self.projectPath == cwd else { return }
 				self.gitStatus = status
@@ -1524,7 +1392,7 @@ final class AppModel: ObservableObject {
 	func requestGitPush() {
 		guard let client = runtimeClient as? any RuntimeGitClient,
 			  !isGitMutationInFlight
-		else { errorMessage = "Reconnect the Runtime before pushing changes."; return }
+		else { errorMessage = "请先重新连接 Runtime，再推送更改。"; return }
 		let cwd = projectPath
 		Task { [weak self] in
 			guard let self else { return }
@@ -1533,7 +1401,7 @@ final class AppModel: ObservableObject {
 				guard self.projectPath == cwd else { return }
 				self.gitPushPreview = preview
 				guard preview.canPush else {
-					self.errorMessage = preview.reason ?? "The current branch cannot be pushed."
+					self.errorMessage = preview.reason ?? "当前分支无法推送。"
 					return
 				}
 				self.showGitPushConfirmation = true
@@ -1551,7 +1419,7 @@ final class AppModel: ObservableObject {
 	func requestGitRevert() {
 		guard let client = runtimeClient as? any RuntimeGitClient,
 			  !isGitMutationInFlight
-		else { errorMessage = "Reconnect the Runtime before undoing a Git commit."; return }
+		else { errorMessage = "请先重新连接 Runtime，再撤销 Git 提交。"; return }
 		let cwd = projectPath
 		Task { [weak self] in
 			guard let self else { return }
@@ -1560,7 +1428,7 @@ final class AppModel: ObservableObject {
 				guard self.projectPath == cwd else { return }
 				self.gitRevertPreview = preview
 				guard preview.canRevert else {
-					self.errorMessage = preview.reason ?? "The latest commit cannot be undone."
+					self.errorMessage = preview.reason ?? "最新提交无法撤销。"
 					return
 				}
 				self.showGitRevertConfirmation = true
@@ -1578,7 +1446,7 @@ final class AppModel: ObservableObject {
 			  let expectedRuntimeEpoch = runtimeEpoch,
 			  gitRevertPreview?.canRevert == true,
 			  !isGitMutationInFlight
-		else { errorMessage = "Refresh the latest-commit undo preview before continuing."; return }
+		else { errorMessage = "请先刷新最新提交的撤销预览，再继续。"; return }
 		let cwd = projectPath
 		let commandId = UUID().uuidString
 		isGitMutationInFlight = true
@@ -1595,7 +1463,7 @@ final class AppModel: ObservableObject {
 				}
 				try self.requireCompletedReceipt(receipt, kind: "revert-git-head", expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard receipt.result?.reverted == true, let status = receipt.result?.status else {
-					throw RuntimeClientError.serverError(500, "Runtime revert receipt was missing its Git status projection.")
+					throw RuntimeClientError.serverError(500, "Runtime 撤销回执缺少 Git 状态投影。")
 				}
 				guard self.projectPath == cwd else { return }
 				self.gitStatus = status
@@ -1619,9 +1487,9 @@ final class AppModel: ObservableObject {
 	func commitGit() {
 		guard let client = runtimeClient as? any RuntimeGitClient,
 			  let expectedRuntimeEpoch = runtimeEpoch
-		else { errorMessage = "Reconnect the Runtime before committing changes."; return }
+		else { errorMessage = "请先重新连接 Runtime，再提交更改。"; return }
 		let message = gitCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard !message.isEmpty else { errorMessage = "Commit message is required."; return }
+		guard !message.isEmpty else { errorMessage = "请输入提交信息。"; return }
 		let cwd = projectPath
 		let commandId = UUID().uuidString
 		isGitMutationInFlight = true
@@ -1635,7 +1503,7 @@ final class AppModel: ObservableObject {
 				catch { receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error) }
 				try self.requireCompletedReceipt(receipt, kind: "commit-git", expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard receipt.result?.committed == true, let status = receipt.result?.status else {
-					throw RuntimeClientError.serverError(500, "Runtime commit receipt was missing its Git status projection.")
+					throw RuntimeClientError.serverError(500, "Runtime 提交回执缺少 Git 状态投影。")
 				}
 				self.gitStatus = status
 				self.gitCommitMessage = ""
@@ -1654,7 +1522,7 @@ final class AppModel: ObservableObject {
 			  let preview = gitPushPreview,
 			  preview.canPush,
 			  !isGitMutationInFlight
-		else { errorMessage = "Refresh the Git push preview before pushing changes."; return }
+		else { errorMessage = "请先刷新 Git 推送预览，再推送更改。"; return }
 		let cwd = projectPath
 		let commandId = UUID().uuidString
 		isGitMutationInFlight = true
@@ -1680,7 +1548,7 @@ final class AppModel: ObservableObject {
 				}
 				try self.requireCompletedReceipt(receipt, kind: "push-git", expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard receipt.result?.pushed == true, let status = receipt.result?.status else {
-					throw RuntimeClientError.serverError(500, "Runtime push receipt was missing its Git status projection.")
+					throw RuntimeClientError.serverError(500, "Runtime 推送回执缺少 Git 状态投影。")
 				}
 				guard self.projectPath == cwd else { return }
 				self.gitStatus = status
@@ -1703,7 +1571,7 @@ final class AppModel: ObservableObject {
 		guard let client = runtimeClient as? any RuntimeGitClient,
 			  let expectedRuntimeEpoch = runtimeEpoch,
 			  !isGitMutationInFlight
-		else { errorMessage = "Reconnect the Runtime before changing Git state."; return }
+		else { errorMessage = "请先重新连接 Runtime，再更改 Git 状态。"; return }
 		let cwd = projectPath
 		let commandId = UUID().uuidString
 		isGitMutationInFlight = true
@@ -1716,10 +1584,10 @@ final class AppModel: ObservableObject {
 				catch { receipt = try await self.commandReceiptAfterUnknownTransport(client: self.runtimeClient, commandId: commandId, originalError: error) }
 				try self.requireCompletedReceipt(receipt, kind: kind, expectedRuntimeEpoch: expectedRuntimeEpoch)
 				guard let result = receipt.result, accepted(result) else {
-					throw RuntimeClientError.serverError(500, "Runtime Git receipt was missing its completion result.")
+					throw RuntimeClientError.serverError(500, "Runtime Git 回执缺少完成结果。")
 				}
 				guard let status = receipt.result?.status else {
-					throw RuntimeClientError.serverError(500, "Runtime Git receipt was missing its Git status projection.")
+					throw RuntimeClientError.serverError(500, "Runtime Git 回执缺少 Git 状态投影。")
 				}
 				self.gitStatus = status
 				self.isGitMutationInFlight = false
@@ -1798,7 +1666,7 @@ final class AppModel: ObservableObject {
 		panel.allowedContentTypes = [.json]
 		panel.canCreateDirectories = true
 		panel.nameFieldStringValue = "Pi-Agent-Support-Report.json"
-		panel.message = "The report includes app and Runtime version/status metadata only. It never includes prompts, transcripts, project file contents, credentials, or capability tokens."
+		panel.message = "报告仅包含 App 与 Runtime 的版本和状态元数据，绝不包含提示词、对话记录、项目文件内容、凭据或能力令牌。"
 		guard panel.runModal() == .OK, let url = panel.url else { return }
 		isSupportReportExporting = true
 		supportReportMessage = nil
@@ -1838,9 +1706,9 @@ final class AppModel: ObservableObject {
 			)
 			do {
 				try report.encodedJSON().write(to: url, options: .atomic)
-				self.supportReportMessage = "Saved redacted report to \(url.path)"
+				self.supportReportMessage = "已将脱敏报告保存到 \(url.path)"
 			} catch {
-				self.supportReportMessage = "Could not save support report: \(error.localizedDescription)"
+				self.supportReportMessage = "无法保存支持报告：\(error.localizedDescription)"
 			}
 			self.isSupportReportExporting = false
 		}
@@ -1861,7 +1729,7 @@ final class AppModel: ObservableObject {
 	func requestUninstallKeepingData() {
 		guard !isUninstallPreparing, !maintenanceHelperLaunched else { return }
 		guard runtimeSupervisor != nil else {
-			uninstallMessage = "Automatic uninstall is available only from the bundled Pi Agent.app Runtime. This connection is external, so Pi Agent will not stop or remove it."
+			uninstallMessage = "仅当使用 Pi Agent.app 捆绑的 Runtime 时才能自动卸载。此连接为外部连接，Pi Agent 不会停止或移除它。"
 			return
 		}
 		do {
@@ -1886,13 +1754,13 @@ final class AppModel: ObservableObject {
 			do {
 				let health = try await self.runtimeClient.health()
 				guard health.activeSessions == 0 else {
-					throw RuntimeClientError.serverError(409, "Finish or stop the \(health.activeSessions) active session\(health.activeSessions == 1 ? "" : "s") before uninstalling Pi Agent.")
+					throw RuntimeClientError.serverError(409, "请先结束或停止 \(health.activeSessions) 个活跃会话，再卸载 Pi Agent。")
 				}
 				self.isUninstallPreparing = false
 				self.showUninstallConfirmation = true
 			} catch {
 				self.isUninstallPreparing = false
-				self.uninstallMessage = "Pi Agent did not begin uninstalling: \(error.localizedDescription)"
+				self.uninstallMessage = "Pi Agent 未能开始卸载：\(error.localizedDescription)"
 			}
 		}
 	}
@@ -1911,7 +1779,7 @@ final class AppModel: ObservableObject {
 			do {
 				let health = try await self.runtimeClient.health()
 				guard health.activeSessions == 0 else {
-					throw RuntimeClientError.serverError(409, "An active session started before uninstall. Pi Agent left the app bundle untouched.")
+					throw RuntimeClientError.serverError(409, "卸载前有会话开始运行。Pi Agent 未改动应用包。")
 				}
 				let process = Process()
 				process.executableURL = uninstallPlan.helperURL
@@ -1922,7 +1790,7 @@ final class AppModel: ObservableObject {
 				NSApp.terminate(nil)
 			} catch {
 				self.isUninstallPreparing = false
-				self.uninstallMessage = "Pi Agent did not begin uninstalling: \(error.localizedDescription)"
+				self.uninstallMessage = "Pi Agent 未能开始卸载：\(error.localizedDescription)"
 			}
 		}
 	}
@@ -1930,7 +1798,7 @@ final class AppModel: ObservableObject {
 	func requestDataErase() {
 		guard !isDataErasePreparing, !maintenanceHelperLaunched else { return }
 		guard runtimeSupervisor != nil else {
-			dataEraseMessage = "Automatic data erase is available only from the bundled Pi Agent.app Runtime. This connection is external, so Pi Agent will not remove any data."
+			dataEraseMessage = "仅当使用 Pi Agent.app 捆绑的 Runtime 时才能自动抹掉数据。此连接为外部连接，Pi Agent 不会移除任何数据。"
 			return
 		}
 		do {
@@ -1955,14 +1823,14 @@ final class AppModel: ObservableObject {
 			do {
 				let health = try await self.runtimeClient.health()
 				guard health.activeSessions == 0 else {
-					throw RuntimeClientError.serverError(409, "An active session is running. Pi Agent left all data unchanged.")
+					throw RuntimeClientError.serverError(409, "有会话正在运行。Pi Agent 未改动任何数据。")
 				}
 				self.isDataErasePreparing = false
 				self.dataEraseConfirmationText = ""
 				self.showDataEraseConfirmation = true
 			} catch {
 				self.isDataErasePreparing = false
-				self.dataEraseMessage = "Pi Agent did not begin data erase: \(error.localizedDescription)"
+				self.dataEraseMessage = "Pi Agent 未能开始抹掉数据：\(error.localizedDescription)"
 			}
 		}
 	}
@@ -1986,7 +1854,7 @@ final class AppModel: ObservableObject {
 			do {
 				let health = try await self.runtimeClient.health()
 				guard health.activeSessions == 0 else {
-					throw RuntimeClientError.serverError(409, "An active session started before data erase. Pi Agent left all data unchanged.")
+					throw RuntimeClientError.serverError(409, "抹掉数据前有会话开始运行。Pi Agent 未改动任何数据。")
 				}
 				let process = Process()
 				process.executableURL = dataErasePlan.helperURL
@@ -1997,7 +1865,7 @@ final class AppModel: ObservableObject {
 				NSApp.terminate(nil)
 			} catch {
 				self.isDataErasePreparing = false
-				self.dataEraseMessage = "Pi Agent did not begin data erase: \(error.localizedDescription)"
+				self.dataEraseMessage = "Pi Agent 未能开始抹掉数据：\(error.localizedDescription)"
 			}
 		}
 	}
@@ -2051,7 +1919,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "migrate-legacy-auth", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.migrated == true, let migration = receipt.result?.migration else {
-                    throw RuntimeClientError.serverError(500, "Runtime migration receipt was missing its completed result.")
+                    throw RuntimeClientError.serverError(500, "Runtime 迁移回执缺少完成结果。")
                 }
                 self.legacyAuthMigration = migration
                 self.isLegacyAuthMigrationLoading = false
@@ -2085,7 +1953,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "rollback-legacy-auth-migration", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.rolledBack == true, let updated = receipt.result?.migration else {
-                    throw RuntimeClientError.serverError(500, "Runtime rollback receipt was missing its completed result.")
+                    throw RuntimeClientError.serverError(500, "Runtime 回滚回执缺少完成结果。")
                 }
                 self.legacyAuthMigration = updated
                 self.isLegacyAuthMigrationLoading = false
@@ -2267,7 +2135,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "write-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.written == true else {
-                    throw RuntimeClientError.serverError(500, "Runtime file write receipt was incomplete.")
+                    throw RuntimeClientError.serverError(500, "Runtime 文件写入回执不完整。")
                 }
                 self.isWorkspaceMutationInFlight = false
                 self.loadWorkspaceFile(path: file.path)
@@ -2306,7 +2174,7 @@ final class AppModel: ObservableObject {
         else { return }
         let destination = workspaceMoveDestination.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !destination.isEmpty else {
-            workspaceErrorMessage = "A destination path is required."
+            workspaceErrorMessage = "请输入目标路径。"
             return
         }
         guard destination != file.path else {
@@ -2340,7 +2208,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "move-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.moved == true else {
-                    throw RuntimeClientError.serverError(500, "Runtime file move receipt was incomplete.")
+                    throw RuntimeClientError.serverError(500, "Runtime 文件移动回执不完整。")
                 }
                 self.workspaceFile = nil
                 self.workspaceEditorText = ""
@@ -2372,7 +2240,7 @@ final class AppModel: ObservableObject {
         else { return }
         let path = workspaceNewFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty else {
-            workspaceErrorMessage = "A file path is required."
+            workspaceErrorMessage = "请输入文件路径。"
             return
         }
         let cwd = projectPath
@@ -2401,7 +2269,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "write-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.written == true else {
-                    throw RuntimeClientError.serverError(500, "Runtime file create receipt was incomplete.")
+                    throw RuntimeClientError.serverError(500, "Runtime 文件创建回执不完整。")
                 }
                 self.showWorkspaceNewFileSheet = false
                 self.workspaceNewFilePath = ""
@@ -2445,7 +2313,7 @@ final class AppModel: ObservableObject {
                 }
                 try self.requireCompletedReceipt(receipt, kind: "delete-workspace-file", expectedRuntimeEpoch: expectedRuntimeEpoch)
                 guard receipt.result?.deletedFile == true else {
-                    throw RuntimeClientError.serverError(500, "Runtime file delete receipt was incomplete.")
+                    throw RuntimeClientError.serverError(500, "Runtime 文件删除回执不完整。")
                 }
                 self.workspaceFile = nil
                 self.workspaceEditorText = ""
@@ -2461,7 +2329,7 @@ final class AppModel: ObservableObject {
     func ensureTerminalConnection() {
         guard canUseProjectRuntime else { return }
         guard let client = runtimeClient as? any RuntimeTerminalClient else {
-            terminalErrorMessage = "This Runtime does not expose a terminal surface."
+            terminalErrorMessage = "此 Runtime 不提供终端界面。"
             return
         }
         if terminalCWD == projectPath && (terminalSubscription != nil || terminalTask != nil) { return }
@@ -2481,7 +2349,7 @@ final class AppModel: ObservableObject {
                 } else {
                     guard let expectedRuntimeEpoch = self.runtimeEpoch else {
                         throw RuntimeClientError.incompatibleRuntime(
-                            "Reconnect the Runtime before creating a terminal."
+                            "请先重新连接 Runtime，再创建终端。"
                         )
                     }
                     let commandId = UUID().uuidString
@@ -2489,7 +2357,7 @@ final class AppModel: ObservableObject {
                     do {
                         receipt = try await client.createTerminal(
                             cwd: cwd,
-                            name: "Pi Agent Terminal",
+                            name: "Pi Agent 终端",
                             cols: 120,
                             rows: 32,
                             commandId: commandId,
@@ -2512,7 +2380,7 @@ final class AppModel: ObservableObject {
                     else {
                         throw RuntimeClientError.serverError(
                             500,
-                            "Runtime terminal receipt was missing its created terminal result."
+                            "Runtime 终端回执缺少新建终端结果。"
                         )
                     }
                     terminal = createdTerminal
@@ -2548,7 +2416,7 @@ final class AppModel: ObservableObject {
                                     commandRunId: terminal.commandRunId
                                 )
                             case "error":
-                                self.terminalErrorMessage = event.message ?? "Terminal stream failed."
+                                self.terminalErrorMessage = event.message ?? "终端流已失败。"
                             default:
                                 break
                             }
@@ -2561,7 +2429,7 @@ final class AppModel: ObservableObject {
                         subscription.cancel()
                         guard self.terminalCWD == cwd else { return }
                         self.terminalSubscription = nil
-                        self.terminalErrorMessage = "Terminal reconnecting: \(error.localizedDescription)"
+                        self.terminalErrorMessage = "终端正在重新连接：\(error.localizedDescription)"
                         self.scheduleOwnedRuntimeRecovery()
                         do {
                             try await Task.sleep(nanoseconds: reconnectDelay)
@@ -2632,7 +2500,7 @@ final class AppModel: ObservableObject {
                 else {
                     throw RuntimeClientError.serverError(
                         500,
-                        "Runtime terminal receipt was missing its continued terminal result."
+                        "Runtime 终端回执缺少继续终端结果。"
                     )
                 }
                 self.terminalInfo = continuedTerminal
@@ -2729,7 +2597,7 @@ final class AppModel: ObservableObject {
                 } catch {
                     subscription.cancel()
                     guard self.isCurrentSessionStream(generation, sessionID: session.id) else { return }
-                    self.errorMessage = "Session stream reconnecting: \(error.localizedDescription)"
+                    self.errorMessage = "会话流正在重新连接：\(error.localizedDescription)"
                     self.scheduleOwnedRuntimeRecovery()
                     do {
                         try await Task.sleep(nanoseconds: reconnectDelay)
@@ -2851,7 +2719,7 @@ final class AppModel: ObservableObject {
                 upsertSession(session)
             }
         case "session.error":
-            errorMessage = event.errorMessage ?? event.text ?? "The session reported an error."
+            errorMessage = event.errorMessage ?? event.text ?? "会话报告了一个错误。"
         case "tool.start":
             if let toolCallId = event.toolCallId {
                 upsertTranscript(RuntimeMessage(
@@ -2902,7 +2770,7 @@ final class AppModel: ObservableObject {
 				}
 			} catch {
 				guard self.selectedSessionID == session.id else { return }
-				self.errorMessage = "Unable to refresh extension dialog: \(error.localizedDescription)"
+				self.errorMessage = "无法刷新扩展对话框：\(error.localizedDescription)"
 			}
 		}
 	}
@@ -2917,7 +2785,7 @@ final class AppModel: ObservableObject {
 			  let client = runtimeClient as? any RuntimeExtensionInteractionClient,
 			  let expectedRuntimeEpoch = runtimeEpoch
 		else {
-			errorMessage = "Reconnect the Runtime before answering the extension dialog."
+			errorMessage = "请先重新连接 Runtime，再回应扩展对话框。"
 			return
 		}
 		let commandId = UUID().uuidString
@@ -2946,7 +2814,7 @@ final class AppModel: ObservableObject {
 				guard receipt.result?.responded == true,
 					  receipt.result?.interaction?.id == interaction.id
 				else {
-					throw RuntimeClientError.serverError(500, "Runtime interaction receipt was incomplete.")
+					throw RuntimeClientError.serverError(500, "Runtime 交互回执不完整。")
 				}
 				self.isExtensionInteractionMutationInFlight = false
 				self.refreshExtensionInteractions(for: session)
@@ -3079,7 +2947,7 @@ final class AppModel: ObservableObject {
         }
 
         if Bundle.main.bundleURL.pathExtension.lowercased() == "app" {
-            let message = "Pi Agent.app is missing its bundled Runtime. Rebuild the app instead of connecting to a global daemon."
+            let message = "Pi Agent.app 缺少其捆绑的 Runtime。请重新构建 App，而不是连接全局守护进程。"
             return RuntimeConnection(
                 client: UnavailableRuntimeClient(message: message),
                 supervisor: nil,
@@ -3096,355 +2964,6 @@ final class AppModel: ObservableObject {
             startupError: nil
         )
     }
-}
-
-/// App-lifetime bridge from Runtime-owned explicit notifications to macOS.
-/// It deliberately owns one project subscription per authorized project, not
-/// one per window, so reconnecting or opening another window cannot duplicate
-/// alerts. Notification text comes only from the bounded Runtime inbox.
-@MainActor
-final class NativeTaskNotificationCoordinator: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
-    private static let enabledDefaultsKey = "com.realchendahuang.pi-agent.task-notifications.enabled"
-    private static let maximumSeenNotificationIDs = 2_048
-
-    @Published private(set) var enabled: Bool
-    @Published private(set) var authorizationLabel = "Not requested"
-
-    var onOpenSession: ((String, String) -> Void)?
-
-    private let notificationCenter: UNUserNotificationCenter
-    private var projects: [String: ProjectState] = [:]
-    private var seenNotificationIDs = Set<String>()
-    private var seenNotificationOrder: [String] = []
-
-    override init() {
-        notificationCenter = UNUserNotificationCenter.current()
-        enabled = UserDefaults.standard.bool(forKey: Self.enabledDefaultsKey)
-        super.init()
-        notificationCenter.delegate = self
-        refreshAuthorizationStatus()
-    }
-
-    func setEnabled(_ requested: Bool) {
-        guard requested else {
-            enabled = false
-            UserDefaults.standard.set(false, forKey: Self.enabledDefaultsKey)
-            pauseStreams()
-            return
-        }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound])
-                let settings = await notificationCenter.notificationSettings()
-                authorizationLabel = Self.authorizationLabel(for: settings.authorizationStatus)
-                enabled = granted && Self.permitsDelivery(settings.authorizationStatus)
-                UserDefaults.standard.set(enabled, forKey: Self.enabledDefaultsKey)
-                if enabled {
-                    projects.values.forEach { startStreamIfNeeded(for: $0) }
-                }
-            } catch {
-                enabled = false
-                UserDefaults.standard.set(false, forKey: Self.enabledDefaultsKey)
-                authorizationLabel = "Unavailable"
-            }
-        }
-    }
-
-    func reconcile(
-        client: any RuntimeNotificationClient,
-        cwd: String,
-        sessions: [RuntimeSession]
-    ) {
-        let state: ProjectState
-        if let existing = projects[cwd] {
-            state = existing
-            state.client = client
-            state.sessions = sessions
-        } else {
-            state = ProjectState(client: client, cwd: cwd, sessions: sessions)
-            projects[cwd] = state
-        }
-        if enabled { startStreamIfNeeded(for: state) }
-    }
-
-    func pauseStreams() {
-        for state in projects.values {
-            state.generation += 1
-            state.task?.cancel()
-            state.subscription?.cancel()
-            state.task = nil
-            state.subscription = nil
-        }
-    }
-
-    func stop() {
-        pauseStreams()
-        projects.removeAll()
-    }
-
-    private func refreshAuthorizationStatus() {
-        Task { [weak self] in
-            guard let self else { return }
-            let settings = await notificationCenter.notificationSettings()
-            authorizationLabel = Self.authorizationLabel(for: settings.authorizationStatus)
-            if enabled, !Self.permitsDelivery(settings.authorizationStatus) {
-                enabled = false
-                UserDefaults.standard.set(false, forKey: Self.enabledDefaultsKey)
-                pauseStreams()
-            }
-        }
-    }
-
-    private func startStreamIfNeeded(for state: ProjectState) {
-        guard enabled, state.task == nil else { return }
-        state.generation += 1
-        let generation = state.generation
-        state.task = Task { [weak self, weak state] in
-            guard let self, let state else { return }
-            var reconnectDelay: UInt64 = 250_000_000
-            while !Task.isCancelled, isCurrent(state, generation: generation) {
-                let subscription = state.client.subscribeNotificationSummaries(cwd: state.cwd)
-                state.subscription = subscription
-                do {
-                    var connected = false
-                    for try await _ in subscription.ready {
-                        connected = true
-                        break
-                    }
-                    guard connected else {
-                        throw RuntimeClientError.connectionFailed("notification socket closed before handshake")
-                    }
-                    try await seedExistingNotifications(for: state)
-                    reconnectDelay = 250_000_000
-                    for try await event in subscription.events {
-                        guard isCurrent(state, generation: generation) else {
-                            subscription.cancel()
-                            return
-                        }
-                        try await consume(event, from: state)
-                    }
-                    throw RuntimeClientError.connectionFailed("notification socket closed")
-                } catch is CancellationError {
-                    subscription.cancel()
-                    return
-                } catch {
-                    subscription.cancel()
-                    state.subscription = nil
-                    guard isCurrent(state, generation: generation) else { return }
-                    do {
-                        try await Task.sleep(nanoseconds: reconnectDelay)
-                    } catch {
-                        return
-                    }
-                    reconnectDelay = min(reconnectDelay * 2, 5_000_000_000)
-                }
-            }
-            if state.generation == generation {
-                state.task = nil
-                state.subscription = nil
-            }
-        }
-    }
-
-    private func isCurrent(_ state: ProjectState, generation: Int) -> Bool {
-        enabled && state.generation == generation && projects[state.cwd] === state
-    }
-
-    private func seedExistingNotifications(for state: ProjectState) async throws {
-        for session in state.sessions where session.cwd == state.cwd {
-            let inbox = try await state.client.notificationInbox(
-                sessionId: session.id,
-                cwd: state.cwd,
-                runtimeId: session.runtimeId
-            )
-            guard inbox.summary.cwd == state.cwd, inbox.summary.sessionId == session.id else { continue }
-            for notification in inbox.notifications {
-                _ = remember(notificationID(inbox: inbox, notification: notification))
-            }
-        }
-    }
-
-    private func consume(
-        _ event: RuntimeNotificationSummaryEvent,
-        from state: ProjectState
-    ) async throws {
-        guard event.type == "notifications.summary",
-              event.summary.cwd == state.cwd,
-              let session = state.sessions.first(where: {
-                  $0.id == event.summary.sessionId && $0.cwd == state.cwd
-              })
-        else { return }
-        let inbox = try await state.client.notificationInbox(
-            sessionId: session.id,
-            cwd: state.cwd,
-            runtimeId: session.runtimeId
-        )
-        guard inbox.summary.cwd == state.cwd, inbox.summary.sessionId == session.id else { return }
-        for notification in inbox.notifications {
-            let identifier = notificationID(inbox: inbox, notification: notification)
-            guard remember(identifier) else { continue }
-            guard !NSApp.isActive else { continue }
-            deliver(notification, sessionID: session.id, cwd: state.cwd, identifier: identifier)
-        }
-    }
-
-    /// Returns false for an already-seen Runtime item. The bounded cache makes
-    /// reconnects idempotent without retaining a transcript or notification body.
-    private func remember(_ identifier: String) -> Bool {
-        guard seenNotificationIDs.insert(identifier).inserted else { return false }
-        seenNotificationOrder.append(identifier)
-        if seenNotificationOrder.count > Self.maximumSeenNotificationIDs {
-            let removed = seenNotificationOrder.removeFirst()
-            seenNotificationIDs.remove(removed)
-        }
-        return true
-    }
-
-    private func notificationID(
-        inbox: RuntimeSessionNotificationInbox,
-        notification: RuntimeSessionNotification
-    ) -> String {
-        "\(inbox.daemonInstanceId):\(inbox.summary.cwd):\(inbox.summary.sessionId):\(notification.id)"
-    }
-
-    private func deliver(
-        _ notification: RuntimeSessionNotification,
-        sessionID: String,
-        cwd: String,
-        identifier: String
-    ) {
-        let content = UNMutableNotificationContent()
-        content.title = "Pi Agent task needs attention"
-        content.body = notification.message
-        content.sound = .default
-        // Keep userInfo capability-free. The callback may only select an
-        // already-open model for this exact project/session pair.
-        content.userInfo = ["version": 1, "sessionId": sessionID, "cwd": cwd]
-        notificationCenter.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
-    }
-
-    nonisolated func userNotificationCenter(
-        _: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let userInfo = response.notification.request.content.userInfo
-        guard let sessionID = userInfo["sessionId"] as? String,
-              let cwd = userInfo["cwd"] as? String
-        else {
-            completionHandler()
-            return
-        }
-        Task { @MainActor [weak self] in
-            self?.onOpenSession?(sessionID, cwd)
-        }
-        completionHandler()
-    }
-
-    private static func permitsDelivery(_ status: UNAuthorizationStatus) -> Bool {
-        status == .authorized || status == .provisional
-    }
-
-    private static func authorizationLabel(for status: UNAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined: return "Not requested"
-        case .denied: return "Denied in System Settings"
-        case .authorized: return "Allowed"
-        case .provisional: return "Provisional"
-        @unknown default: return "Unknown"
-        }
-    }
-
-    private final class ProjectState {
-        var client: any RuntimeNotificationClient
-        let cwd: String
-        var sessions: [RuntimeSession]
-        var subscription: RuntimeNotificationSubscription?
-        var task: Task<Void, Never>?
-        var generation = 0
-
-        init(client: any RuntimeNotificationClient, cwd: String, sessions: [RuntimeSession]) {
-            self.client = client
-            self.cwd = cwd
-            self.sessions = sessions
-        }
-    }
-}
-
-@MainActor
-private final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
-    private let models = NSHashTable<AppModel>.weakObjects()
-    weak var activeModel: AppModel?
-    let taskNotifications = NativeTaskNotificationCoordinator()
-    private var willSleepObserver: NSObjectProtocol?
-    private var didWakeObserver: NSObjectProtocol?
-
-    override init() {
-        super.init()
-        taskNotifications.onOpenSession = { [weak self] sessionID, cwd in
-            guard let self else { return }
-            if let model = self.allModels.first(where: {
-                $0.selectNotificationSession(sessionID: sessionID, cwd: cwd)
-            }) {
-                self.activeModel = model
-            }
-            NSApp.activate(ignoringOtherApps: true)
-        }
-    }
-
-    func applicationDidFinishLaunching(_: Notification) {
-        let notificationCenter = NSWorkspace.shared.notificationCenter
-        willSleepObserver = notificationCenter.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.allModels.forEach { $0.systemWillSleep() }
-            }
-        }
-        didWakeObserver = notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.allModels.forEach { $0.systemDidWake() }
-            }
-        }
-    }
-
-    func register(_ model: AppModel) {
-        models.add(model)
-        activeModel = model
-    }
-
-    func unregister(_ model: AppModel) {
-        models.remove(model)
-        if activeModel === model {
-            activeModel = allModels.last
-        }
-    }
-
-    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        activeModel?.requestApplicationTermination() ?? .terminateNow
-    }
-
-    func applicationWillTerminate(_: Notification) {
-        let notificationCenter = NSWorkspace.shared.notificationCenter
-        if let willSleepObserver {
-            notificationCenter.removeObserver(willSleepObserver)
-        }
-        if let didWakeObserver {
-            notificationCenter.removeObserver(didWakeObserver)
-        }
-        willSleepObserver = nil
-        didWakeObserver = nil
-        taskNotifications.stop()
-    }
-
-    private var allModels: [AppModel] { models.allObjects }
 }
 
 private struct UnavailableRuntimeClient: RuntimeClient {
@@ -3518,1585 +3037,9 @@ private struct UnavailableRuntimeClient: RuntimeClient {
     func commandReceipt(commandId _: String) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
 }
 
-struct ContentView: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        NavigationSplitView {
-            SidebarView(model: model)
-        } detail: {
-            TranscriptView(model: model)
-        }
-        .inspector(isPresented: $model.showInspector) {
-            InspectorView(model: model)
-                .inspectorColumnWidth(min: 280, ideal: 340, max: 480)
-        }
-        .sheet(item: $model.sessionPendingFork, onDismiss: model.cancelFork) { session in
-            ForkThreadSheet(model: model, session: session)
-        }
-        .sheet(isPresented: $model.showGitCommitSheet) {
-			GitCommitSheet(model: model)
-		}
-		.sheet(isPresented: $model.showGitPushConfirmation) {
-			GitPushConfirmationSheet(model: model)
-		}
-		.sheet(item: Binding(
-			get: { model.gitPathPendingDiscard },
-			set: { if $0 == nil { model.cancelGitDiscard() } }
-		)) { file in
-			GitDiscardConfirmationSheet(model: model, file: file)
-		}
-		.sheet(isPresented: $model.showGitRevertConfirmation) {
-			GitRevertConfirmationSheet(model: model)
-		}
-        .sheet(item: Binding(
-            get: { model.workspaceFilePendingMove },
-            set: { if $0 == nil { model.cancelWorkspaceFileMove() } }
-        )) { file in
-            WorkspaceMoveSheet(model: model, file: file)
-        }
-        .sheet(isPresented: $model.showWorkspaceNewFileSheet, onDismiss: model.cancelWorkspaceFileCreation) {
-            WorkspaceNewFileSheet(model: model)
-        }
-        .sheet(item: $model.activeAuthFlow) { flow in
-            NativeAuthFlowSheet(model: model, flow: flow)
-        }
-		.sheet(item: Binding(
-			get: { model.activeExtensionInteraction },
-			set: { _ in }
-		)) { interaction in
-			ExtensionInteractionSheet(model: model, interaction: interaction)
-		}
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                runtimeStatusButton
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.showInspector.toggle()
-                } label: {
-                    Image(systemName: "sidebar.trailing")
-                }
-                .help("Toggle Inspector")
-            }
-        }
-        .task {
-            model.refreshRuntime()
-        }
-    }
-
-    private var runtimeStatusButton: some View {
-        Button {
-            model.refreshRuntime()
-        } label: {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(runtimeStatusColor)
-                    .frame(width: 8, height: 8)
-                Text(model.runtimeLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .help("Runtime status — click to reconnect")
-        .disabled(model.isLoading)
-    }
-
-    private var runtimeStatusColor: SwiftUI.Color {
-        switch model.runtimeState {
-        case .connected: return .green
-        case .connecting: return .orange
-        case .disconnected: return .gray
-        case .failed: return .red
-        }
-    }
-}
-struct SidebarView: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        List(selection: Binding(
-            get: { model.selectedSessionID },
-            set: { model.selectSession($0) }
-        )) {
-            Section("Projects") {
-                ForEach(model.knownProjects) { project in
-                    Button {
-                        model.openKnownProject(project)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: project.displayPath == model.projectPath ? "folder.fill" : "folder")
-                                .foregroundStyle(project.displayPath == model.projectPath ? Color.accentColor : Color.secondary)
-                            Text(project.displayName)
-                                .lineLimit(1)
-                                .foregroundStyle(project.displayPath == model.projectPath ? Color.primary : Color.secondary)
-                            Spacer()
-                            if project.displayPath == model.projectPath {
-                                Image(systemName: "checkmark")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(project.displayPath)
-                    .contextMenu {
-                        Button("Remove from Project Library", role: .destructive) {
-                            model.removeKnownProject(project)
-                        }
-                    }
-                }
-                Button {
-                    model.openProject()
-                } label: {
-                    Label("Add Project", systemImage: "plus")
-                }
-            }
-            Section("Threads") {
-                if model.isLoading && model.activeSessions.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Loading…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 2)
-                } else if model.activeSessions.isEmpty && model.archivedSessions.isEmpty {
-                    Text("No threads yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.activeSessions) { session in
-                        SessionRow(session: session, status: model.statusBySession[session.id])
-                            .tag(Optional(session.id))
-                            .contextMenu {
-                                Button("Fork Thread…") {
-                                    model.requestFork(session)
-                                }
-                                .disabled(model.isSending)
-                                Button("Archive Thread") {
-                                    model.archiveSession(session)
-                                }
-                                .disabled(model.isSending)
-                                Divider()
-                                Button("Import Thread…") {
-                                    model.importSessionFromFile()
-                                }
-                                .disabled(model.isSending)
-                            }
-                    }
-                    if !model.archivedSessions.isEmpty {
-                        DisclosureGroup {
-                            ForEach(model.archivedSessions) { session in
-                                SessionRow(session: session, status: nil)
-                                    .tag(Optional(session.id))
-                                    .contextMenu {
-                                        Button("Restore Thread") {
-                                            model.restoreSession(session)
-                                        }
-                                        .disabled(model.isSending)
-                                        Divider()
-                                        Button("Delete Permanently…", role: .destructive) {
-                                            model.requestPermanentDelete(session)
-                                        }
-                                        .disabled(model.isSending)
-                                    }
-                            }
-                        } label: {
-                            Text("Archived (\(model.archivedSessions.count))")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("Pi Agent")
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 10) {
-                Button {
-                    model.startNewSession()
-                } label: {
-                    Label("New Thread", systemImage: "plus.circle.fill")
-                        .font(.callout.weight(.medium))
-                }
-                .buttonStyle(.borderless)
-                .disabled(model.isSending || model.projectPath.isEmpty || !model.canUseProjectRuntime)
-                Spacer()
-                Button {
-                    model.importSessionFromFile()
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
-                }
-                .buttonStyle(.borderless)
-                .help("Import Thread…")
-                .disabled(model.isSending || !model.canUseProjectRuntime || model.selectedSession == nil || model.selectedSession?.archived == true)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.bar)
-        }
-    }
-}
-struct ForkThreadSheet: View {
-    @ObservedObject var model: AppModel
-    let session: RuntimeSession
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Fork Thread")
-                .font(.title2.weight(.semibold))
-            Text("Start a new Pi thread from a previous user message in \(session.displayTitle). The original thread stays unchanged.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            List(model.forkCandidates) { candidate in
-                Button {
-                    model.forkSession(session, from: candidate)
-                } label: {
-                    Text(candidate.label)
-                        .lineLimit(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(minHeight: 220)
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    model.cancelFork()
-                }
-                .keyboardShortcut(.cancelAction)
-            }
-        }
-        .padding(24)
-        .frame(width: 560, height: 420)
-    }
-}
-
-struct SessionRow: View {
-    let session: RuntimeSession
-    let status: RuntimeSessionStatus?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            statusIndicator
-            Text(session.displayTitle)
-                .lineLimit(2)
-        }
-        .help(sessionRowHelp)
-    }
-
-    private var statusIndicator: some View {
-        Group {
-            if session.archived == true {
-                Image(systemName: "archivebox")
-                    .foregroundStyle(.secondary)
-            } else if status?.isStreaming == true {
-                Circle()
-                    .fill(.orange)
-                    .frame(width: 7, height: 7)
-            } else if status?.isCompacting == true {
-                ProgressView()
-                    .controlSize(.mini)
-            } else {
-                Circle()
-                    .fill(.gray.opacity(0.4))
-                    .frame(width: 7, height: 7)
-            }
-        }
-        .frame(width: 16, alignment: .center)
-    }
-
-    private var sessionRowHelp: String {
-        if session.archived == true { return "Archived" }
-        if status?.isStreaming == true { return "Running" }
-        if status?.isCompacting == true { return "Compacting" }
-        return "Ready"
-    }
-}
-struct TranscriptView: View {
-    @ObservedObject var model: AppModel
-    @FocusState private var composerFocused: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if let errorMessage = model.errorMessage {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                    Text(errorMessage)
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        model.errorMessage = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.borderless)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.yellow.opacity(0.12))
-            }
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        if let session = model.selectedSession {
-                            if session.archived == true {
-                                Label("Archived — read-only", systemImage: "archivebox")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if model.transcriptMessages.isEmpty {
-                                ContentUnavailableView(
-                                    session.firstMessage.isEmpty ? "No messages yet" : "Start the conversation",
-                                    systemImage: "bubble.left",
-                                    description: Text(session.firstMessage.isEmpty ? "Send the first message below." : session.firstMessage)
-                                )
-                                .frame(maxWidth: .infinity)
-                            } else {
-                                ForEach(Array(model.transcriptMessages.enumerated()), id: \.offset) { _, message in
-                                    MessageRow(message: message)
-                                }
-                            }
-                        } else {
-                            ContentUnavailableView(
-                                "Select a thread",
-                                systemImage: "bubble.left.and.bubble.right",
-                                description: Text("Choose a thread from the sidebar or start a new one.")
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("transcript-bottom")
-                    }
-                    .frame(maxWidth: 780, alignment: .leading)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 24)
-                }
-                .onChange(of: model.transcriptMessages.count) {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                    }
-                }
-            }
-
-            Divider()
-            ComposerBar(model: model, focused: $composerFocused)
-        }
-        .onChange(of: model.selectedSessionID) {
-            composerFocused = true
-        }
-        .task {
-            composerFocused = true
-        }
-    }
-}
-
-struct ComposerBar: View {
-    @ObservedObject var model: AppModel
-    @FocusState.Binding var focused: Bool
-
-    private var isReadOnly: Bool {
-        model.selectedSession == nil
-            || model.selectedSession?.archived == true
-            || !model.canUseProjectRuntime
-    }
-
-    private var canSend: Bool {
-        !isReadOnly
-            && !model.isSending
-            && (!model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.promptImageAttachments.isEmpty)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !model.promptImageAttachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.promptImageAttachments) { attachment in
-                            PromptImageAttachmentChip(attachment: attachment) {
-                                model.removePromptImage(attachment)
-                            }
-                        }
-                    }
-                }
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    model.choosePromptImages()
-                } label: {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 22, height: 22)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(isReadOnly ? Color.secondary : Color.accentColor)
-                .help("Attach images…")
-                .disabled(
-                    isReadOnly
-                        || model.isSending
-                        || model.promptImageAttachments.count >= nativePromptAttachmentLimit
-                )
-
-                TextField(placeholder, text: $model.prompt, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .lineLimit(1...8)
-                    .focused($focused)
-                    .disabled(isReadOnly || model.isSending)
-                    .onSubmit {
-                        if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
-                    }
-
-                if model.isSending {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 26, height: 26)
-                } else {
-                    Button {
-                        model.sendPrompt()
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 26))
-                            .foregroundStyle(canSend ? Color.accentColor : Color.gray.opacity(0.35))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Send (Return)")
-                    .disabled(!canSend)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(.quaternary, lineWidth: 1)
-            }
-        }
-        .padding(16)
-    }
-
-    private var placeholder: String {
-        if model.selectedSession == nil { return "Select a thread to continue" }
-        if model.selectedSession?.archived == true { return "Archived threads are read-only" }
-        return "Message Pi…"
-    }
-}
-struct MessageRow: View {
-    let message: RuntimeMessage
-
-    private var isUser: Bool { message.role == "user" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: isUser ? "person.crop.circle" : "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isUser ? Color.secondary : Color.accentColor)
-                Text(isUser ? "You" : "Pi")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            if !message.text.isEmpty {
-                Text(message.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if !message.images.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 8) {
-                        ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                            MessageImagePreview(image: image)
-                        }
-                    }
-                }
-                .frame(maxHeight: 260)
-            }
-        }
-    }
-}
-struct PromptImageAttachmentChip: View {
-    let attachment: RuntimePromptImageAttachment
-    let remove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "photo")
-            VStack(alignment: .leading, spacing: 1) {
-                Text(attachment.name).lineLimit(1)
-                Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.size), countStyle: .file))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Button(action: remove) { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Remove \(attachment.name)")
-        }
-        .font(.caption)
-        .padding(6)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
-    }
-}
-
-struct MessageImagePreview: View {
-    let image: RuntimeMessageImage
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let data = image.imageData, let nsImage = NSImage(data: data) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 360, maxHeight: 220)
-            } else {
-                Label("This image format cannot be rendered by this macOS version.", systemImage: "photo.badge.exclamationmark")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(image.mimeType)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-struct InspectorView: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section("Environment") {
-                LabeledContent("Project", value: model.projectName)
-                LabeledContent("Path", value: model.projectPath)
-                LabeledContent("Runtime", value: model.runtimeLabel)
-				LabeledContent("Project access", value: model.projectRuntimeAuthorizationLabel)
-            }
-            Section("Session") {
-                LabeledContent("Count", value: String(model.sessions.count))
-                if let session = model.selectedSession {
-                    LabeledContent("Runtime", value: session.runtimeId.uppercased())
-                    LabeledContent("Messages", value: String(session.messageCount))
-                    if let status = model.statusBySession[session.id] {
-                        LabeledContent("State", value: status.isStreaming ? "Running" : "Ready")
-                        LabeledContent("Queued", value: String(status.pendingMessageCount))
-                    }
-                } else {
-                    Text("No session selected")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section("Workspace") {
-                WorkspaceFilesView(model: model)
-                Divider()
-				GitChangesView(model: model)
-            }
-            Section("Terminal") {
-                if let terminal = model.terminalInfo {
-                    HStack {
-                        Label(terminal.name, systemImage: "terminal")
-                            .lineLimit(1)
-                        Spacer()
-                        if terminal.exited {
-                            Button("Continue") { model.continueTerminal() }
-                                .buttonStyle(.borderless)
-                                .disabled(model.isTerminalMutationInFlight)
-                        }
-                    }
-                    TerminalSurfaceView(
-                        controller: model.terminalSurfaceController,
-                        onInput: model.sendTerminalInput,
-                        onResize: model.resizeTerminal(cols:rows:)
-                    )
-                    .frame(minHeight: 220, idealHeight: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    Label(
-                        model.terminalErrorMessage ?? "Connecting…",
-                        systemImage: "terminal"
-                    )
-                    .foregroundStyle(.secondary)
-                }
-                if let terminalErrorMessage = model.terminalErrorMessage {
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(terminalErrorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Reconnect") { model.reconnectTerminal() }
-                            .buttonStyle(.borderless)
-                    }
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Inspector")
-        .task { model.ensureTerminalConnection() }
-    }
-}
-
-struct WorkspaceFilesView: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Label(
-                    model.workspacePath.isEmpty ? "Project files" : model.workspacePath,
-                    systemImage: "folder"
-                )
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                Spacer()
-                if !model.workspacePath.isEmpty {
-                    Button("Back") { model.openWorkspaceParent() }
-                        .buttonStyle(.borderless)
-                }
-                Button("Refresh") { model.refreshWorkspace() }
-                    .buttonStyle(.borderless)
-                Button("New File…") { model.startWorkspaceFileCreation() }
-                    .buttonStyle(.borderless)
-                    .disabled(model.isWorkspaceMutationInFlight || !model.canUseProjectRuntime)
-            }
-
-            if model.isWorkspaceLoading {
-                ProgressView("Loading files…")
-                    .controlSize(.small)
-            } else if let tree = model.workspaceTree {
-                if tree.entries.isEmpty {
-                    Text("This folder is empty")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(tree.entries) { entry in
-                        Button {
-                            model.openWorkspaceEntry(entry)
-                        } label: {
-                            Label(entry.name, systemImage: iconName(for: entry))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                if tree.truncated {
-                    Text("Only the first 1,000 entries are shown.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("Files will load when the Runtime connects.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let error = model.workspaceErrorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            if let file = model.workspaceFile {
-                Divider()
-                LabeledContent("File", value: file.path)
-                    .font(.caption)
-                HStack {
-                    Button("Move/Rename…") { model.requestWorkspaceFileMove() }
-                    Button("Delete…", role: .destructive) {
-                        model.requestWorkspaceFileDeletion()
-                    }
-                    Spacer()
-                }
-                .disabled(model.isWorkspaceMutationInFlight)
-                if file.mediaType == "image" {
-                    WorkspaceImagePreviewView(
-                        file: file,
-                        preview: model.workspaceImagePreview,
-                        errorMessage: model.workspaceImagePreviewError
-                    )
-                } else if file.binary {
-                    Label("Binary or image preview is not available yet.", systemImage: "doc.richtext")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    if file.truncated {
-                        ScrollView([.horizontal, .vertical]) {
-                            Text(file.content)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxHeight: 220)
-                        Text("Preview is truncated at 512 KB.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        TextEditor(text: $model.workspaceEditorText)
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(minHeight: 160, maxHeight: 260)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                        HStack {
-                            Button("Save") { model.saveWorkspaceFile() }
-                                .buttonStyle(.borderedProminent)
-                            Spacer()
-                        }
-                        .disabled(model.isWorkspaceMutationInFlight)
-                    }
-                }
-            }
-        }
-        .task { model.refreshWorkspace() }
-    }
-
-    private func iconName(for entry: RuntimeWorkspaceEntry) -> String {
-        if entry.isDirectory { return "folder" }
-        if entry.type == "symlink" { return "arrow.triangle.branch" }
-        return "doc"
-    }
-}
-
-private struct WorkspaceImagePreviewView: View {
-    let file: RuntimeWorkspaceFile
-    let preview: RuntimeWorkspaceImagePreview?
-    let errorMessage: String?
-
-    var body: some View {
-        if let preview, preview.path == file.path,
-           let data = preview.imageData,
-           let image = NSImage(data: data)
-        {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: 280)
-                    .accessibilityLabel("Image preview for \(file.path)")
-                Text("\(preview.mimeType) · \(ByteCountFormatter.string(fromByteCount: Int64(preview.size), countStyle: .file))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } else if let errorMessage {
-            Label(errorMessage, systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(.red)
-        } else if preview != nil {
-            Label("macOS cannot render this image format.", systemImage: "photo.badge.exclamationmark")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else {
-            ProgressView("Loading image preview…")
-                .controlSize(.small)
-        }
-    }
-}
-
-struct GitChangesView: View {
-	@ObservedObject var model: AppModel
-
-	var body: some View {
-		if model.isGitLoading {
-			ProgressView("Loading changes…")
-		} else if let status = model.gitStatus, status.isGitRepo {
-			VStack(alignment: .leading, spacing: 8) {
-				HStack {
-					Label(status.branch ?? "Detached HEAD", systemImage: "arrow.triangle.branch")
-						.font(.caption.weight(.semibold))
-					Spacer()
-					Button("Refresh") { model.refreshGit() }
-						.buttonStyle(.borderless)
-					Button("Save Checkpoint") { model.createGitCheckpoint() }
-						.buttonStyle(.borderless)
-						.disabled(model.isGitMutationInFlight || model.selectedSessionID == nil)
-				}
-				if status.files.isEmpty {
-					Text("Working tree clean")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				} else {
-					ForEach(status.files) { file in
-						VStack(alignment: .leading, spacing: 4) {
-							HStack(spacing: 6) {
-								Button {
-									model.selectGitPath(file.path)
-								} label: {
-									Text(file.path)
-										.lineLimit(1)
-										.frame(maxWidth: .infinity, alignment: .leading)
-								}
-								.buttonStyle(.plain)
-								Text(gitFileStateLabel(file))
-									.font(.caption.monospaced())
-									.foregroundStyle(.secondary)
-							}
-							HStack(spacing: 8) {
-								if file.index == "unmodified" || file.index == "untracked" {
-									Button("Stage") { model.stageGitPath(file.path) }
-								} else {
-									Button("Unstage") { model.unstageGitPath(file.path) }
-								}
-								if model.canDiscardGitFile(file) {
-									Button("Discard…") { model.requestGitDiscard(file) }
-										.foregroundStyle(.red)
-								}
-								Spacer()
-							}
-							.buttonStyle(.borderless)
-							.disabled(model.isGitMutationInFlight)
-						}
-					}
-				}
-				if let selectedPath = model.gitSelectedPath {
-					GitDiffView(path: selectedPath, unstaged: model.gitUnstagedDiff, staged: model.gitStagedDiff)
-				}
-				Button("Commit Staged Changes…") { model.requestGitCommit() }
-					.disabled(model.isGitMutationInFlight || !status.files.contains(where: { $0.index != "unmodified" && $0.index != "untracked" }))
-				Button("Undo Latest Commit…") { model.requestGitRevert() }
-					.disabled(model.isGitMutationInFlight)
-				if let preview = model.gitPushPreview, preview.canPush {
-					Button("Push \(preview.status.ahead ?? 0) Commit\(preview.status.ahead == 1 ? "" : "s")…") { model.requestGitPush() }
-						.disabled(model.isGitMutationInFlight)
-				} else if let reason = model.gitPushPreview?.reason {
-					Text(reason)
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
-				GitCheckpointsView(model: model)
-			}
-		} else if model.gitStatus?.isGitRepo == false {
-			Label("This project is not a Git repository", systemImage: "exclamationmark.triangle")
-				.foregroundStyle(.secondary)
-		} else {
-			Label("Git changes will load when the Runtime connects", systemImage: "arrow.triangle.branch")
-				.foregroundStyle(.secondary)
-		}
-	}
-}
-
-struct GitCheckpointsView: View {
-	@ObservedObject var model: AppModel
-
-	var body: some View {
-		DisclosureGroup("Thread checkpoints") {
-			if model.isGitCheckpointLoading {
-				ProgressView("Loading checkpoints…")
-			} else if model.gitCheckpoints.isEmpty {
-				Text("Save a checkpoint to keep this Thread's current Git status and bounded staged/unstaged diff for review. It does not create a Git ref or enable restore.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-			} else {
-				ForEach(model.gitCheckpoints) { checkpoint in
-					VStack(alignment: .leading, spacing: 4) {
-						Text(checkpoint.createdAt.formatted(date: .abbreviated, time: .shortened))
-							.font(.caption.weight(.semibold))
-						Text("\(checkpoint.status.files.count) changed file\(checkpoint.status.files.count == 1 ? "" : "s") · \(checkpoint.status.branch ?? "Detached HEAD")")
-							.font(.caption)
-							.foregroundStyle(.secondary)
-						CheckpointDiffView(label: "Staged", diff: checkpoint.staged)
-						CheckpointDiffView(label: "Unstaged", diff: checkpoint.unstaged)
-					}
-					.padding(.vertical, 4)
-				}
-			}
-		}
-	}
-}
-
-struct CheckpointDiffView: View {
-	let label: String
-	let diff: RuntimeGitCheckpointDiff
-
-	var body: some View {
-		if !diff.diff.isEmpty {
-			DisclosureGroup("\(label) diff\(diff.truncated ? " (bounded)" : "")") {
-				ScrollView(.horizontal) {
-					Text(diff.diff)
-						.font(.system(.caption, design: .monospaced))
-						.textSelection(.enabled)
-				}
-				.frame(maxHeight: 150)
-			}
-		}
-	}
-}
-
-private func gitFileStateLabel(_ file: RuntimeGitFile) -> String {
-	let index = file.index == "unmodified" ? "" : "I:\(file.index)"
-	let worktree = file.workingTree == "unmodified" ? "" : "W:\(file.workingTree)"
-	return [index, worktree].filter { !$0.isEmpty }.joined(separator: " ")
-}
-
-struct GitDiffView: View {
-	let path: String
-	let unstaged: RuntimeGitDiff?
-	let staged: RuntimeGitDiff?
-
-	var body: some View {
-		let diffs = [staged, unstaged].compactMap { $0 }.filter { !$0.diff.isEmpty }
-		if diffs.isEmpty {
-			Text("No textual diff for \(path)")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-		} else {
-			ForEach(Array(diffs.enumerated()), id: \.offset) { _, diff in
-				VStack(alignment: .leading, spacing: 4) {
-					Text(diff.staged ? "Staged diff" : "Unstaged diff")
-						.font(.caption.weight(.semibold))
-					ScrollView(.horizontal) {
-						Text(diff.diff)
-							.font(.system(.caption, design: .monospaced))
-							.textSelection(.enabled)
-					}
-					.frame(maxHeight: 180)
-				}
-			}
-		}
-	}
-}
-
-struct ExtensionInteractionSheet: View {
-	@ObservedObject var model: AppModel
-	let interaction: RuntimeExtensionInteraction
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 16) {
-			Text(interaction.title)
-				.font(.title3.weight(.semibold))
-			if let message = interaction.message, !message.isEmpty {
-				Text(message)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-			}
-			switch interaction.kind {
-			case "select":
-				ScrollView {
-					VStack(alignment: .leading, spacing: 8) {
-						ForEach(interaction.options ?? [], id: \.self) { option in
-							Button(option) {
-								model.respondToExtensionInteraction(interaction, response: .selected(option))
-							}
-							.frame(maxWidth: .infinity, alignment: .leading)
-						}
-					}
-				}
-				.frame(minHeight: 100, maxHeight: 300)
-			case "input":
-				TextField(interaction.placeholder ?? "", text: $model.extensionInteractionText)
-					.textFieldStyle(.roundedBorder)
-			case "editor":
-				TextEditor(text: $model.extensionInteractionText)
-					.font(.body.monospaced())
-					.frame(minHeight: 180)
-					.overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-			default:
-				EmptyView()
-			}
-			HStack {
-				Spacer()
-				Button("Cancel") {
-					model.respondToExtensionInteraction(interaction, response: .cancelled)
-				}
-				.keyboardShortcut(.cancelAction)
-				if interaction.kind == "confirm" {
-					Button("Confirm") {
-						model.respondToExtensionInteraction(interaction, response: .confirmed(true))
-					}
-					.buttonStyle(.borderedProminent)
-				} else if interaction.kind == "input" || interaction.kind == "editor" {
-					Button("Submit") {
-						model.respondToExtensionInteraction(interaction, response: .text(model.extensionInteractionText))
-					}
-					.buttonStyle(.borderedProminent)
-				}
-			}
-		}
-		.padding(20)
-		.frame(minWidth: 380, idealWidth: 480, minHeight: 160)
-		.disabled(model.isExtensionInteractionMutationInFlight)
-	}
-}
-
-struct GitCommitSheet: View {
-	@ObservedObject var model: AppModel
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 16) {
-			Text("Commit Staged Changes")
-				.font(.title2.weight(.semibold))
-			Text("Only the files already staged by the Runtime will be committed. Git hooks remain enabled.")
-				.foregroundStyle(.secondary)
-			TextEditor(text: $model.gitCommitMessage)
-				.font(.body)
-				.frame(minHeight: 120)
-				.overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-			HStack {
-				Spacer()
-				Button("Cancel") { model.cancelGitCommit() }
-				Button("Commit") { model.commitGit() }
-					.buttonStyle(.borderedProminent)
-					.disabled(model.gitCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-			}
-		}
-		.padding(24)
-		.frame(width: 520)
-	}
-}
-
-struct GitPushConfirmationSheet: View {
-	@ObservedObject var model: AppModel
-
-	var body: some View {
-		let preview = model.gitPushPreview
-		VStack(alignment: .leading, spacing: 16) {
-			Text("Push Commits")
-				.font(.title2.weight(.semibold))
-			if let preview {
-				Text("Push \(preview.status.ahead ?? 0) local commit\(preview.status.ahead == 1 ? "" : "s") from \(preview.status.branch ?? "the current branch") to \(preview.status.upstream ?? "its configured upstream").")
-					.foregroundStyle(.secondary)
-			}
-			Text("Pi Agent will push only the current branch to its configured tracking upstream. It cannot force-push, set an upstream, choose another remote or branch, push tags, or alter your working tree.")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-			HStack {
-				Spacer()
-				Button("Cancel") { model.cancelGitPush() }
-				Button("Push") { model.pushGit() }
-					.buttonStyle(.borderedProminent)
-					.disabled(preview?.canPush != true || model.isGitMutationInFlight)
-			}
-		}
-		.padding(24)
-		.frame(width: 520)
-	}
-}
-
-struct GitDiscardConfirmationSheet: View {
-	@ObservedObject var model: AppModel
-	let file: RuntimeGitFile
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 16) {
-			Text("Discard Unstaged Change")
-				.font(.title2.weight(.semibold))
-			Text("Discard the unstaged changes in \(file.path)? This restores that tracked file to the current HEAD and cannot be undone from Pi Agent.")
-				.foregroundStyle(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
-			Text("Untracked files, staged changes, renamed files, and submodule pointer changes are intentionally unavailable here. A tracked file inside a submodule can be restored in that submodule's own worktree.")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-			HStack {
-				Spacer()
-				Button("Cancel") { model.cancelGitDiscard() }
-				Button("Discard Changes") { model.discardGitPath(file) }
-					.buttonStyle(.borderedProminent)
-					.tint(.red)
-					.disabled(model.isGitMutationInFlight)
-			}
-		}
-		.padding(24)
-		.frame(width: 520)
-	}
-}
-
-struct GitRevertConfirmationSheet: View {
-	@ObservedObject var model: AppModel
-
-	var body: some View {
-		let preview = model.gitRevertPreview
-		VStack(alignment: .leading, spacing: 16) {
-			Text("Undo Latest Commit")
-				.font(.title2.weight(.semibold))
-			if let commit = preview?.commit {
-				Text("Create a new commit that reverses \(commit.hash.prefix(12)): \(commit.subject)")
-					.foregroundStyle(.secondary)
-			}
-			Text("This preserves history. Pi Agent will not reset or amend commits, change branches, force-push, select another commit, or alter an upstream. The working tree and index must remain clean when you confirm.")
-				.font(.caption)
-				.foregroundStyle(.secondary)
-			HStack {
-				Spacer()
-				Button("Cancel") { model.cancelGitRevert() }
-				Button("Create Revert Commit") { model.revertGitHead() }
-					.buttonStyle(.borderedProminent)
-					.disabled(preview?.canRevert != true || model.isGitMutationInFlight)
-			}
-		}
-		.padding(24)
-		.frame(width: 520)
-	}
-}
-
-struct WorkspaceMoveSheet: View {
-    @ObservedObject var model: AppModel
-    let file: RuntimeWorkspaceFile
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Move or Rename File")
-                .font(.title2.weight(.semibold))
-            Text("Move \(file.path) within the authorized project. Existing files will not be overwritten.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("Destination relative path", text: $model.workspaceMoveDestination)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Spacer()
-                Button("Cancel") { model.cancelWorkspaceFileMove() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Move") { model.confirmWorkspaceFileMove() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.workspaceMoveDestination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 480)
-        .disabled(model.isWorkspaceMutationInFlight)
-    }
-}
-
-struct WorkspaceNewFileSheet: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("New File")
-                .font(.title2.weight(.semibold))
-            Text("Create an empty UTF-8 text file inside the authorized project. Existing files will not be overwritten.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("Relative path", text: $model.workspaceNewFilePath)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Spacer()
-                Button("Cancel") { model.cancelWorkspaceFileCreation() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Create") { model.createWorkspaceFile() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.workspaceNewFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 480)
-        .disabled(model.isWorkspaceMutationInFlight)
-    }
-}
-
-struct SettingsView: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section("Runtime") {
-                Text("The native shell connects to its App-managed Runtime through a private Unix socket.")
-                    .foregroundStyle(.secondary)
-                LabeledContent("Status", value: model.runtimeLabel)
-                LabeledContent("Socket", value: model.runtimeClientSocketDescription)
-				Button("Export Redacted Support Report…") { model.exportSupportReport() }
-					.disabled(model.isSupportReportExporting)
-				if model.isSupportReportExporting {
-					ProgressView("Collecting Runtime metadata…")
-				} else if let message = model.supportReportMessage {
-					Text(message)
-						.font(.caption)
-						.foregroundStyle(message.hasPrefix("Saved") ? Color.secondary : Color.red)
-						.textSelection(.enabled)
-				}
-				Text("The JSON report is redacted: it excludes prompts, transcripts, workspace content, terminal output, credentials, and capability tokens.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-            }
-            Section("Project") {
-                LabeledContent("Current", value: model.projectPath)
-				LabeledContent("Runtime access", value: model.projectRuntimeAuthorizationLabel)
-                Button("Choose Project…") { model.openProject() }
-            }
-			Section("Installation and Data") {
-				LabeledContent("Pi Agent data", value: model.nativeAppDataPath)
-				Text("Uninstall moves only Pi Agent.app to the Trash. It keeps this App-owned state, saved project bookmarks, migration records, sessions, and Keychain credentials. Your project directories and legacy PI WEB data are never changed.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				Button("Reveal Pi Agent Data") { model.revealNativeAppData() }
-				Button("Uninstall Pi Agent, Keep Data…", role: .destructive) {
-					model.requestUninstallKeepingData()
-				}
-				.disabled(model.isUninstallPreparing)
-				Button("Erase All Native Pi Agent Data…", role: .destructive) {
-					model.requestDataErase()
-				}
-				.disabled(model.isDataErasePreparing)
-				if model.isUninstallPreparing {
-					ProgressView("Checking active sessions before uninstall…")
-				} else if let message = model.uninstallMessage {
-					Text(message)
-						.font(.caption)
-						.foregroundStyle(.red)
-					.fixedSize(horizontal: false, vertical: true)
-				}
-				if model.isDataErasePreparing {
-					ProgressView("Checking active sessions before erasing data…")
-				} else if let message = model.dataEraseMessage {
-					Text(message)
-						.font(.caption)
-						.foregroundStyle(.red)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-				Text("Erase All moves Pi Agent Application Support data to the Trash and clears native project bookmarks, migration records, sessions, Runtime state, preferences, and Pi Agent Keychain credentials. It keeps Pi Agent.app, your project directories, and legacy PI WEB files. Keychain credentials cannot be recovered.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-			}
-			Section("Legacy PI WEB migration") {
-				Text("This inventory is read-only. It distinguishes data Pi Agent can migrate now from legacy state that remains in place because the native product has no safe target for it yet.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				if model.isLegacyMigrationOverviewLoading {
-					ProgressView("Inspecting legacy PI WEB state…")
-				} else if let overview = model.legacyMigrationOverview {
-					LabeledContent("Legacy data", value: overview.legacyDataDir)
-					ForEach(overview.items) { item in
-						VStack(alignment: .leading, spacing: 2) {
-							LabeledContent(legacyMigrationItemLabel(item.id), value: legacyMigrationActionLabel(item.action))
-							Text(item.source)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-							if let count = item.itemCount {
-								Text("\(count) item\(count == 1 ? "" : "s") discovered")
-									.font(.caption)
-									.foregroundStyle(.secondary)
-							}
-							if let issue = item.issue {
-								Text(issue)
-									.font(.caption)
-									.foregroundStyle(.orange)
-							}
-						}
-					}
-				}
-				if let error = model.legacyMigrationOverviewError {
-					Text("Could not inspect legacy PI WEB state: \(error)")
-						.font(.caption)
-						.foregroundStyle(.orange)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-				Button("Review Legacy Migration") { model.refreshLegacyMigrationOverview() }
-					.disabled(model.isLegacyMigrationOverviewLoading)
-			}
-			Section("Legacy PI WEB projects") {
-				Text("Each migration is read back into the native Project Library before Pi Agent records it. Rolling back removes only a bookmark created by that exact migration; it never changes the legacy projects.json, your directory, sessions, or manually added projects.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.fixedSize(horizontal: false, vertical: true)
-				if model.isLegacyProjectPreviewLoading {
-					ProgressView("Inspecting legacy projects…")
-				} else if let preview = model.legacyProjectPreview {
-					if let issue = preview.issue { Text(issue).font(.caption).foregroundStyle(.orange) }
-					else if preview.candidates.isEmpty { Text(preview.sourceExists ? "No valid legacy projects found." : "No legacy projects.json found.").foregroundStyle(.secondary) }
-					else {
-						Text("Select each original directory again to create a new macOS bookmark. PI WEB paths alone do not grant Pi Agent access.").font(.caption).foregroundStyle(.secondary)
-						ForEach(preview.candidates) { candidate in
-							HStack { VStack(alignment: .leading) { Text(candidate.name); Text(candidate.path).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Button("Re-authorize…") { model.reauthorizeLegacyProject(candidate) } }
-						}
-					}
-				}
-				if model.isLegacyProjectMigrationInFlight {
-					ProgressView("Updating native project migration…")
-				} else if let migration = model.legacyProjectMigration {
-					LabeledContent("Last migration", value: migration.state.rawValue)
-					if migration.rollbackEligible {
-						Button("Roll Back Last Project Migration…", role: .destructive) {
-							model.requestLegacyProjectMigrationRollback()
-						}
-					}
-				}
-				Button("Review Legacy Projects") { model.refreshLegacyProjectPreview() }
-					.disabled(model.isLegacyProjectPreviewLoading || model.isLegacyProjectMigrationInFlight)
-			}
-            if let taskNotifications = model.taskNotifications {
-                NativeTaskNotificationsSection(coordinator: taskNotifications)
-            }
-            Section("Providers") {
-                if model.isAuthLoading {
-                    ProgressView("Loading provider status…")
-                } else if model.authProviders.isEmpty {
-                    Text("No interactive provider configuration is available from this Runtime.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.authProviders, id: \.displayID) { provider in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(provider.name)
-                                Text(providerStatusLabel(provider)).font(.caption).foregroundStyle(provider.status.configured ? .green : .secondary)
-                            }
-                            Spacer()
-                            Button(provider.status.configured ? "Reconfigure…" : "Configure…") { model.startAuthFlow(provider) }
-                        }
-                    }
-                }
-                if let error = model.authErrorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                Button("Refresh Provider Status") { model.refreshAuthProviders() }
-                    .disabled(model.isAuthLoading || !model.canUseProjectRuntime)
-            }
-            Section("Legacy credentials") {
-                Text("Pi Agent can copy compatible credentials from the existing auth.json into this Mac's Keychain. Values are never shown here, and the source file remains unchanged.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if model.isLegacyAuthMigrationLoading {
-                    ProgressView("Checking legacy credentials…")
-                } else if let preview = model.legacyAuthMigrationPreview {
-                    if preview.credentials.isEmpty {
-                        Text(preview.issue ?? "No legacy credentials found.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(preview.credentials) { credential in
-                            LabeledContent(credential.providerId, value: credential.type == "oauth" ? "OAuth" : "API key")
-                            if credential.status != "ready" {
-                                Text("Already in Keychain — migration will not overwrite it.")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                        if let issue = preview.issue {
-                            Text(issue).font(.caption).foregroundStyle(.orange)
-                        }
-                    }
-                    Button("Migrate to Keychain…") { model.requestLegacyAuthMigration() }
-                        .disabled(!preview.eligible)
-                } else {
-                    Text("This Runtime has not reported a legacy credential migration capability.")
-                        .foregroundStyle(.secondary)
-                }
-                if let migration = model.legacyAuthMigration {
-                    LabeledContent("Last migration", value: migration.state)
-                    if migration.rollbackEligible {
-                        Button("Roll Back Last Migration", role: .destructive) { model.rollbackLegacyAuthMigration() }
-                    }
-                }
-                Button("Review Legacy Credentials") { model.refreshLegacyAuthMigrationPreview() }
-                    .disabled(model.isLegacyAuthMigrationLoading || !model.canUseProjectRuntime)
-            }
-        }
-        .padding()
-        .frame(width: 520)
-        .confirmationDialog(
-			"Uninstall Pi Agent and keep data?",
-			isPresented: $model.showUninstallConfirmation,
-			titleVisibility: .visible
-		) {
-			Button("Move Pi Agent.app to Trash", role: .destructive) { model.confirmUninstallKeepingData() }
-			Button("Cancel", role: .cancel) { model.cancelUninstallKeepingData() }
-		} message: {
-			Text("Pi Agent verifies that no session is active, exits, then moves only its own bundle-ID-verified app to the Trash. It keeps Pi Agent data, project folders, legacy PI WEB state, and Keychain credentials.")
-		}
-		.sheet(isPresented: $model.showDataEraseConfirmation, onDismiss: model.cancelDataErase) {
-			NativeDataEraseSheet(model: model)
-		}
-		.confirmationDialog(
-			"Roll back the last project migration?",
-			isPresented: $model.showLegacyProjectMigrationRollbackConfirmation,
-			titleVisibility: .visible
-		) {
-			Button("Roll Back Native Bookmark", role: .destructive) { model.rollbackLegacyProjectMigration() }
-			Button("Cancel", role: .cancel) { model.cancelLegacyProjectMigrationRollback() }
-		} message: {
-			Text("This removes only the native Project Library bookmark that this migration newly created. It does not alter the old PI WEB projects.json, the selected directory, sessions, credentials, or manually added projects.")
-		}
-		.confirmationDialog(
-            "Migrate legacy credentials to Keychain?",
-            isPresented: $model.showLegacyAuthMigrationConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Migrate to Keychain") { model.migrateLegacyAuth() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Only the listed providers will be copied. Existing Keychain credentials will not be overwritten, and the old auth.json will remain unchanged.")
-        }
-    }
-}
-
-private func legacyMigrationItemLabel(_ id: String) -> String {
-	switch id {
-	case "projects": return "Projects"
-	case "credentials": return "Provider credentials"
-	case "archived-sessions": return "Archived sessions"
-	case "machines": return "Remote machines"
-	case "unread": return "Unread state"
-	default: return id
-	}
-}
-
-private func legacyMigrationActionLabel(_ action: String) -> String {
-	switch action {
-	case "reauthorize-projects": return "Re-authorize in Projects"
-	case "migrate-to-keychain": return "Migrate to Keychain"
-	case "copied-and-retained": return "Copied, source retained"
-	case "retained": return "Retained; no native target"
-	default: return action
-	}
-}
-
-private struct NativeTaskNotificationsSection: View {
-    @ObservedObject var coordinator: NativeTaskNotificationCoordinator
-
-    var body: some View {
-        Section("Notifications") {
-            Toggle(
-                "Notify when a task needs attention",
-                isOn: Binding(
-                    get: { coordinator.enabled },
-                    set: { coordinator.setEnabled($0) }
-                )
-            )
-            LabeledContent("macOS permission", value: coordinator.authorizationLabel)
-            if coordinator.enabled {
-                Text("Only explicit Pi task notifications from authorized projects can create alerts while Pi Agent is inactive.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("The Runtime keeps running, but Pi Agent will not create macOS alerts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-struct NativeAuthFlowSheet: View {
-    @ObservedObject var model: AppModel
-    let flow: RuntimeAuthFlow
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Connect \(flow.providerName)").font(.title2.weight(.semibold))
-            if let auth = flow.auth {
-                Button("Open authorization in browser") { openURL(URL(string: auth.url)!) }
-                if let instructions = auth.instructions { Text(instructions).foregroundStyle(.secondary) }
-                if let code = auth.deviceCode?.userCode { Text("Device code: \(code)").textSelection(.enabled) }
-            }
-            ForEach(flow.progress, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
-            if let prompt = flow.prompt {
-                if prompt.promptType == "secret" { SecureField(prompt.message, text: $model.authInput).textFieldStyle(.roundedBorder) }
-                else { TextField(prompt.message, text: $model.authInput).textFieldStyle(.roundedBorder) }
-                Button("Continue") { model.respondToAuthFlow() }.buttonStyle(.borderedProminent)
-            }
-            if let select = flow.select {
-                Text(select.message)
-                ForEach(select.options) { option in Button(option.label) { model.respondToAuthFlow(option.value) } }
-            }
-            if let error = flow.error { Text(error).foregroundStyle(.red) }
-            HStack { Spacer(); Button("Refresh") { model.refreshAuthFlow() }; Button("Cancel") { model.cancelAuthFlow() }.keyboardShortcut(.cancelAction) }
-        }
-        .padding(24)
-        .frame(width: 500)
-        .onChange(of: flow.prompt?.requestId) { _, _ in model.authInput = "" }
-    }
-}
-
-private func providerStatusLabel(_ provider: RuntimeAuthProvider) -> String {
-    guard provider.status.configured else { return "Not configured" }
-    if let label = provider.status.label, !label.isEmpty { return label }
-    if let source = provider.status.source, !source.isEmpty { return "Configured via \(source)" }
-    return "Configured"
-}
-
-private extension AppModel {
+extension AppModel {
     var runtimeClientSocketDescription: String {
         if let client = runtimeClient as? UnixSocketRuntimeClient { return client.socketPath }
-        return "Configured Runtime client"
-    }
-}
-
-@MainActor
-final class TerminalSurfaceController: ObservableObject {
-    weak var view: TerminalView?
-    private var pendingOutput: [String] = []
-
-    func attach(_ view: TerminalView) {
-        self.view = view
-        flush()
-    }
-
-    func feed(_ output: String) {
-        guard !output.isEmpty else { return }
-        if view == nil {
-            pendingOutput.append(output)
-            if pendingOutput.count > 64 { pendingOutput.removeFirst(pendingOutput.count - 64) }
-            return
-        }
-        view?.feed(byteArray: Array(output.utf8)[...])
-    }
-
-    private func flush() {
-        guard view != nil else { return }
-        let output = pendingOutput
-        pendingOutput.removeAll(keepingCapacity: false)
-        for chunk in output { view?.feed(byteArray: Array(chunk.utf8)[...]) }
-    }
-}
-
-struct TerminalSurfaceView: NSViewRepresentable {
-    @ObservedObject var controller: TerminalSurfaceController
-    let onInput: (String) -> Void
-    let onResize: (Int, Int) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onInput: onInput, onResize: onResize)
-    }
-
-    func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
-        view.configureNativeColors()
-        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        view.terminalDelegate = context.coordinator
-        controller.attach(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: TerminalView, context: Context) {
-        nsView.terminalDelegate = context.coordinator
-        controller.attach(nsView)
-    }
-
-    final class Coordinator: NSObject, TerminalViewDelegate {
-        private let onInput: (String) -> Void
-        private let onResize: (Int, Int) -> Void
-
-        init(onInput: @escaping (String) -> Void, onResize: @escaping (Int, Int) -> Void) {
-            self.onInput = onInput
-            self.onResize = onResize
-        }
-
-        func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-            onResize(newCols, newRows)
-        }
-
-        func setTerminalTitle(source: TerminalView, title: String) {}
-
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-
-        func send(source: TerminalView, data: ArraySlice<UInt8>) {
-            onInput(String(decoding: data, as: UTF8.self))
-        }
-
-        func scrolled(source: TerminalView, position: Double) {}
-
-        func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
-
-        func clipboardCopy(source: TerminalView, content: Data) {}
+        return "已配置的 Runtime 客户端"
     }
 }

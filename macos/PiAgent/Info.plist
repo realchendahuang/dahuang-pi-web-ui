@@ -8,6 +8,8 @@
 	<string>PiAgent</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.realchendahuang.pi-agent</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
