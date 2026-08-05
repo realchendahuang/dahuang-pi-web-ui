@@ -3568,37 +3568,50 @@ struct ContentView: View {
 			ExtensionInteractionSheet(model: model, interaction: interaction)
 		}
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(model.projectName)
-                        .font(.subheadline.weight(.semibold))
-                    Text(model.runtimeLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.refreshRuntime()
-                } label: {
-                    Label("Reconnect Runtime", systemImage: "arrow.clockwise")
-                }
-                .disabled(model.isLoading)
+                runtimeStatusButton
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     model.showInspector.toggle()
                 } label: {
-                    Label("Toggle Inspector", systemImage: "sidebar.trailing")
+                    Image(systemName: "sidebar.trailing")
                 }
+                .help("Toggle Inspector")
             }
         }
         .task {
             model.refreshRuntime()
         }
     }
-}
 
+    private var runtimeStatusButton: some View {
+        Button {
+            model.refreshRuntime()
+        } label: {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(runtimeStatusColor)
+                    .frame(width: 8, height: 8)
+                Text(model.runtimeLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Runtime status — click to reconnect")
+        .disabled(model.isLoading)
+    }
+
+    private var runtimeStatusColor: SwiftUI.Color {
+        switch model.runtimeState {
+        case .connected: return .green
+        case .connecting: return .orange
+        case .disconnected: return .gray
+        case .failed: return .red
+        }
+    }
+}
 struct SidebarView: View {
     @ObservedObject var model: AppModel
 
@@ -3608,106 +3621,127 @@ struct SidebarView: View {
             set: { model.selectSession($0) }
         )) {
             Section("Projects") {
-				ForEach(model.knownProjects) { project in
-					Button {
-						model.openKnownProject(project)
-					} label: {
-						HStack(spacing: 8) {
-							Image(systemName: project.displayPath == model.projectPath ? "folder.fill" : "folder")
-							VStack(alignment: .leading, spacing: 1) {
-								Text(project.displayName).lineLimit(1)
-								Text(project.displayPath).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-							}
-							Spacer()
-						}
-					}
-					.buttonStyle(.plain)
-					.contextMenu {
-						Button("Remove from Project Library", role: .destructive) {
-							model.removeKnownProject(project)
-						}
-					}
-				}
-				Button("Add Project…") { model.openProject() }
-			}
-			Section("Threads") {
-                DisclosureGroup(isExpanded: $model.isProjectExpanded) {
-                    if model.activeSessions.isEmpty {
-                        Label(
-                            model.isLoading ? "Loading…" : "No active threads yet",
-                            systemImage: "bubble.left.and.bubble.right"
-                        )
-                        .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.activeSessions) { session in
-                            SessionRow(session: session, status: model.statusBySession[session.id])
-                                .padding(.leading, 12)
-                                .tag(Optional(session.id))
-                                .contextMenu {
-                                    Button("Fork Thread…") {
-                                        model.requestFork(session)
-                                    }
-                                    .disabled(model.isSending)
-                                    Button("Archive Thread") {
-                                        model.archiveSession(session)
-                                    }
-                                    .disabled(model.isSending)
-                                }
+                ForEach(model.knownProjects) { project in
+                    Button {
+                        model.openKnownProject(project)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: project.displayPath == model.projectPath ? "folder.fill" : "folder")
+                                .foregroundStyle(project.displayPath == model.projectPath ? Color.accentColor : Color.secondary)
+                            Text(project.displayName)
+                                .lineLimit(1)
+                                .foregroundStyle(project.displayPath == model.projectPath ? Color.primary : Color.secondary)
+                            Spacer()
+                            if project.displayPath == model.projectPath {
+                                Image(systemName: "checkmark")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(project.displayPath)
+                    .contextMenu {
+                        Button("Remove from Project Library", role: .destructive) {
+                            model.removeKnownProject(project)
+                        }
+                    }
+                }
+                Button {
+                    model.openProject()
+                } label: {
+                    Label("Add Project", systemImage: "plus")
+                }
+            }
+            Section("Threads") {
+                if model.isLoading && model.activeSessions.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                } else if model.activeSessions.isEmpty && model.archivedSessions.isEmpty {
+                    Text("No threads yet")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.activeSessions) { session in
+                        SessionRow(session: session, status: model.statusBySession[session.id])
+                            .tag(Optional(session.id))
+                            .contextMenu {
+                                Button("Fork Thread…") {
+                                    model.requestFork(session)
+                                }
+                                .disabled(model.isSending)
+                                Button("Archive Thread") {
+                                    model.archiveSession(session)
+                                }
+                                .disabled(model.isSending)
+                                Divider()
+                                Button("Import Thread…") {
+                                    model.importSessionFromFile()
+                                }
+                                .disabled(model.isSending)
+                            }
                     }
                     if !model.archivedSessions.isEmpty {
-                        Divider()
-                        Text("Archived")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 12)
-                        ForEach(model.archivedSessions) { session in
-                            SessionRow(session: session, status: nil)
-                                .padding(.leading, 12)
-                                .tag(Optional(session.id))
-                                .contextMenu {
-                                    Button("Restore Thread") {
-                                        model.restoreSession(session)
+                        DisclosureGroup {
+                            ForEach(model.archivedSessions) { session in
+                                SessionRow(session: session, status: nil)
+                                    .tag(Optional(session.id))
+                                    .contextMenu {
+                                        Button("Restore Thread") {
+                                            model.restoreSession(session)
+                                        }
+                                        .disabled(model.isSending)
+                                        Divider()
+                                        Button("Delete Permanently…", role: .destructive) {
+                                            model.requestPermanentDelete(session)
+                                        }
+                                        .disabled(model.isSending)
                                     }
-                                    .disabled(model.isSending)
-                                    Divider()
-                                    Button("Delete Permanently…", role: .destructive) {
-                                        model.requestPermanentDelete(session)
-                                    }
-                                    .disabled(model.isSending)
-                                }
+                            }
+                        } label: {
+                            Text("Archived (\(model.archivedSessions.count))")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
                         }
                     }
-                } label: {
-					VStack(alignment: .leading, spacing: 2) {
-						Label(model.projectName, systemImage: "folder.fill")
-						Text(model.projectRuntimeAuthorizationLabel)
-							.font(.caption2)
-							.foregroundStyle(.secondary)
-							.lineLimit(1)
-					}
                 }
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("Pi Agent")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: model.startNewSession) {
-                    Label("New Thread", systemImage: "plus")
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 10) {
+                Button {
+                    model.startNewSession()
+                } label: {
+                    Label("New Thread", systemImage: "plus.circle.fill")
+                        .font(.callout.weight(.medium))
                 }
+                .buttonStyle(.borderless)
                 .disabled(model.isSending || model.projectPath.isEmpty || !model.canUseProjectRuntime)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: model.importSessionFromFile) {
-                    Label("Import Thread", systemImage: "square.and.arrow.down")
+                Spacer()
+                Button {
+                    model.importSessionFromFile()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
                 }
+                .buttonStyle(.borderless)
+                .help("Import Thread…")
                 .disabled(model.isSending || !model.canUseProjectRuntime || model.selectedSession == nil || model.selectedSession?.archived == true)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
     }
 }
-
 struct ForkThreadSheet: View {
     @ObservedObject var model: AppModel
     let session: RuntimeSession
@@ -3748,143 +3782,236 @@ struct SessionRow: View {
     let status: RuntimeSessionStatus?
 
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.displayTitle)
-                    .lineLimit(2)
-                HStack(spacing: 5) {
-                    Text(session.runtimeId.uppercased())
-                    Text("·")
-                    Text(session.archived == true ? "Archived" : statusLabel)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        } icon: {
-            Image(systemName: session.archived == true ? "archivebox" : (status?.isStreaming == true ? "circle.dotted" : "circle"))
-                .foregroundStyle(session.archived == true ? Color.secondary : (status?.isStreaming == true ? Color.orange : Color.secondary))
+        HStack(spacing: 8) {
+            statusIndicator
+            Text(session.displayTitle)
+                .lineLimit(2)
         }
+        .help(sessionRowHelp)
     }
 
-    private var statusLabel: String {
+    private var statusIndicator: some View {
+        Group {
+            if session.archived == true {
+                Image(systemName: "archivebox")
+                    .foregroundStyle(.secondary)
+            } else if status?.isStreaming == true {
+                Circle()
+                    .fill(.orange)
+                    .frame(width: 7, height: 7)
+            } else if status?.isCompacting == true {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Circle()
+                    .fill(.gray.opacity(0.4))
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .frame(width: 16, alignment: .center)
+    }
+
+    private var sessionRowHelp: String {
+        if session.archived == true { return "Archived" }
         if status?.isStreaming == true { return "Running" }
         if status?.isCompacting == true { return "Compacting" }
         return "Ready"
     }
 }
-
 struct TranscriptView: View {
     @ObservedObject var model: AppModel
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             if let errorMessage = model.errorMessage {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
                     Text(errorMessage)
+                        .font(.caption)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Dismiss") { model.errorMessage = nil }
-                        .buttonStyle(.borderless)
+                    Button {
+                        model.errorMessage = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .padding(12)
-                .background(.yellow.opacity(0.14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.yellow.opacity(0.12))
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if let session = model.selectedSession {
-                        Text(session.displayTitle)
-                            .font(.title2.weight(.semibold))
-                        Text("\(session.runtimeId.uppercased()) · \(session.messageCount) messages")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if session.archived == true {
-                            Label("Archived threads are read-only. Restore this thread to continue it.", systemImage: "archivebox")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if model.transcriptMessages.isEmpty {
-                            Text(session.firstMessage.isEmpty ? "No transcript messages yet." : session.firstMessage)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        } else {
-                            ForEach(Array(model.transcriptMessages.enumerated()), id: \.offset) { _, message in
-                                MessageRow(message: message)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        if let session = model.selectedSession {
+                            if session.archived == true {
+                                Label("Archived — read-only", systemImage: "archivebox")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
+                            if model.transcriptMessages.isEmpty {
+                                ContentUnavailableView(
+                                    session.firstMessage.isEmpty ? "No messages yet" : "Start the conversation",
+                                    systemImage: "bubble.left",
+                                    description: Text(session.firstMessage.isEmpty ? "Send the first message below." : session.firstMessage)
+                                )
+                                .frame(maxWidth: .infinity)
+                            } else {
+                                ForEach(Array(model.transcriptMessages.enumerated()), id: \.offset) { _, message in
+                                    MessageRow(message: message)
+                                }
+                            }
+                        } else {
+                            ContentUnavailableView(
+                                "Select a thread",
+                                systemImage: "bubble.left.and.bubble.right",
+                                description: Text("Choose a thread from the sidebar or start a new one.")
+                            )
+                            .frame(maxWidth: .infinity)
                         }
-                    } else {
-                        ContentUnavailableView(
-                            "Select a session",
-                            systemImage: "bubble.left.and.bubble.right",
-                            description: Text("Choose an existing session or create a new one for this project.")
-                        )
+                        Color.clear
+                            .frame(height: 1)
+                            .id("transcript-bottom")
+                    }
+                    .frame(maxWidth: 780, alignment: .leading)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 24)
+                }
+                .onChange(of: model.transcriptMessages.count) {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
                 }
-                .frame(maxWidth: 820, alignment: .leading)
-                .padding(32)
             }
 
             Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                if !model.promptImageAttachments.isEmpty {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            ForEach(model.promptImageAttachments) { attachment in
-                                PromptImageAttachmentChip(attachment: attachment) {
-                                    model.removePromptImage(attachment)
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 64)
-                }
-                HStack(alignment: .bottom, spacing: 12) {
-                    Button("Attach Images…") { model.choosePromptImages() }
-                        .disabled(
-                            model.selectedSession == nil
-                                || model.selectedSession?.archived == true
-                                || !model.canUseProjectRuntime
-                                || model.isSending
-                                || model.promptImageAttachments.count >= nativePromptAttachmentLimit
-                        )
-                    TextField("Ask Pi Agent…", text: $model.prompt, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...6)
-                        .onSubmit {
-                            if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
-                        }
-                    Button(model.isSending ? "Sending…" : "Send") {
-                        model.sendPrompt()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(
-                        model.selectedSession == nil
-                            || model.selectedSession?.archived == true
-                            || (model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.promptImageAttachments.isEmpty)
-							|| !model.canUseProjectRuntime
-                            || model.isSending
-                    )
-                }
-            }
-            .padding(16)
+            ComposerBar(model: model, focused: $composerFocused)
+        }
+        .onChange(of: model.selectedSessionID) {
+            composerFocused = true
+        }
+        .task {
+            composerFocused = true
         }
     }
 }
 
+struct ComposerBar: View {
+    @ObservedObject var model: AppModel
+    @FocusState.Binding var focused: Bool
+
+    private var isReadOnly: Bool {
+        model.selectedSession == nil
+            || model.selectedSession?.archived == true
+            || !model.canUseProjectRuntime
+    }
+
+    private var canSend: Bool {
+        !isReadOnly
+            && !model.isSending
+            && (!model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.promptImageAttachments.isEmpty)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !model.promptImageAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.promptImageAttachments) { attachment in
+                            PromptImageAttachmentChip(attachment: attachment) {
+                                model.removePromptImage(attachment)
+                            }
+                        }
+                    }
+                }
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                Button {
+                    model.choosePromptImages()
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(isReadOnly ? Color.secondary : Color.accentColor)
+                .help("Attach images…")
+                .disabled(
+                    isReadOnly
+                        || model.isSending
+                        || model.promptImageAttachments.count >= nativePromptAttachmentLimit
+                )
+
+                TextField(placeholder, text: $model.prompt, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .lineLimit(1...8)
+                    .focused($focused)
+                    .disabled(isReadOnly || model.isSending)
+                    .onSubmit {
+                        if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
+                    }
+
+                if model.isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 26, height: 26)
+                } else {
+                    Button {
+                        model.sendPrompt()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(canSend ? Color.accentColor : Color.gray.opacity(0.35))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Send (Return)")
+                    .disabled(!canSend)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(.quaternary, lineWidth: 1)
+            }
+        }
+        .padding(16)
+    }
+
+    private var placeholder: String {
+        if model.selectedSession == nil { return "Select a thread to continue" }
+        if model.selectedSession?.archived == true { return "Archived threads are read-only" }
+        return "Message Pi…"
+    }
+}
 struct MessageRow: View {
     let message: RuntimeMessage
 
+    private var isUser: Bool { message.role == "user" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(message.role.capitalized)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(message.text.isEmpty ? "(non-text message)" : message.text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Image(systemName: isUser ? "person.crop.circle" : "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isUser ? Color.secondary : Color.accentColor)
+                Text(isUser ? "You" : "Pi")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            if !message.text.isEmpty {
+                Text(message.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if !message.images.isEmpty {
-                ScrollView(.horizontal) {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 8) {
                         ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
                             MessageImagePreview(image: image)
@@ -3894,11 +4021,8 @@ struct MessageRow: View {
                 .frame(maxHeight: 260)
             }
         }
-        .padding(12)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
     }
 }
-
 struct PromptImageAttachmentChip: View {
     let attachment: RuntimePromptImageAttachment
     let remove: () -> Void
