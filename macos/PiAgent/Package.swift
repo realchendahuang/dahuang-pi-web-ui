@@ -52,5 +52,10 @@ let package = Package(
             dependencies: ["PiAgentCore"],
             path: "Sources/PiAgentDataEraser"
         ),
+        .testTarget(
+            name: "PiAgentCoreTests",
+            dependencies: ["PiAgentCore"],
+            path: "Tests/PiAgentCoreTests"
+        ),
     ]
 )
