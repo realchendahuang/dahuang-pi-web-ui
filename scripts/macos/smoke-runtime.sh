@@ -245,11 +245,22 @@ curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
   -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
   --data "{\"commandId\":\"$command_id\",\"runtimeEpoch\":\"$runtime_epoch\"}" \
   http://pi-agent/runtime/commands/abort-active-work >"$runtime_test_dir/abort-receipt-after-restart.json"
+# Project authorization is App-owned and held in Runtime memory only, so the
+# App re-authorizes every connect (see PiAgentWindowRoot refresh). Mirror that
+# here: the restarted Runtime must accept a fresh authorize before the Swift
+# contract client can read sessions or workspace projections for the repo.
+restart_authorize_command_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+restart_authorize_payload="$("$node_path" --input-type=module -e 'process.stdout.write(JSON.stringify({ path: process.argv[1], commandId: process.argv[2], runtimeEpoch: process.argv[3] }))' "$repo_root" "$restart_authorize_command_id" "$restarted_runtime_epoch")"
+curl --silent --fail --unix-socket "$runtime_test_dir/sessiond.sock" \
+  -H 'content-type: application/json' \
+  -H "X-Pi-Agent-Project-Capability: $project_capability_token" \
+  --data "$restart_authorize_payload" \
+  http://pi-agent/runtime/projects/authorize >"$runtime_test_dir/restart-authorize-receipt.json"
 test "$(stat -f '%Lp' "$runtime_test_dir")" = "700"
 test "$(stat -f '%Lp' "$runtime_test_dir/sessiond.sock")" = "600"
 "$node_path" --input-type=module -e '
 import { readFile } from "node:fs/promises";
-const [healthPath, helloPath, authorizePath, receiptPath, retryPath, restartRetryPath, treePath, checkpointReceiptPath, checkpointRetryPath, checkpointsPath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath] = process.argv.slice(1);
+const [healthPath, helloPath, authorizePath, receiptPath, retryPath, restartRetryPath, treePath, checkpointReceiptPath, checkpointRetryPath, checkpointsPath, filePath, workspaceAuthorizePath, workspaceWritePath, workspaceWriteRetryPath, workspaceWrittenFilePath, workspaceImagePreviewPath, workspaceMovePath, workspaceDeletePath, workspaceWriteQueryPath, restartAuthorizePath] = process.argv.slice(1);
 const health = JSON.parse(await readFile(healthPath, "utf8"));
 const hello = JSON.parse(await readFile(helloPath, "utf8"));
 const authorized = JSON.parse(await readFile(authorizePath, "utf8"));
@@ -269,6 +280,7 @@ const workspaceImagePreview = JSON.parse(await readFile(workspaceImagePreviewPat
 const workspaceMove = JSON.parse(await readFile(workspaceMovePath, "utf8"));
 const workspaceDelete = JSON.parse(await readFile(workspaceDeletePath, "utf8"));
 const workspaceWriteQuery = JSON.parse(await readFile(workspaceWriteQueryPath, "utf8"));
+const restartAuthorized = JSON.parse(await readFile(restartAuthorizePath, "utf8"));
 if (health.ok !== true) throw new Error("Runtime health was not OK");
 if (hello.kind !== "pi-agent-runtime") throw new Error("Unexpected Runtime hello kind");
 if (hello.protocol?.major !== 1) throw new Error("Unexpected Runtime protocol major");
@@ -294,8 +306,9 @@ if (workspaceImagePreview.path !== "preview.png" || workspaceImagePreview.mimeTy
 if (!Buffer.from(workspaceImagePreview.data, "base64").equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))) throw new Error("Runtime workspace image preview bytes were invalid");
 if (workspaceMove.kind !== "move-workspace-file" || workspaceMove.status !== "completed" || workspaceMove.result?.toPath !== "Notes/renamed.txt") throw new Error("Runtime workspace move did not complete");
 if (workspaceDelete.kind !== "delete-workspace-file" || workspaceDelete.status !== "completed" || workspaceDelete.result?.existed !== true) throw new Error("Runtime workspace delete did not complete");
+if (restartAuthorized.kind !== "authorize-project" || restartAuthorized.status !== "completed" || restartAuthorized.result?.authorized !== true) throw new Error("Restarted Runtime did not accept project re-authorization");
 console.log(`Runtime smoke passed: ${hello.nodeVersion} ${hello.architecture}, epoch ${hello.runtimeEpoch}`);
-' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/abort-receipt-after-restart.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json" "$runtime_hello_nonce"
+' "$runtime_test_dir/health.json" "$runtime_test_dir/hello.json" "$runtime_test_dir/authorize-receipt.json" "$runtime_test_dir/abort-receipt.json" "$runtime_test_dir/abort-receipt-retry.json" "$runtime_test_dir/abort-receipt-after-restart.json" "$runtime_test_dir/workspace-tree.json" "$runtime_test_dir/checkpoint-receipt.json" "$runtime_test_dir/checkpoint-retry.json" "$runtime_test_dir/checkpoints.json" "$runtime_test_dir/workspace-file.json" "$runtime_test_dir/workspace-authorize-receipt.json" "$runtime_test_dir/workspace-write-receipt.json" "$runtime_test_dir/workspace-write-retry.json" "$runtime_test_dir/workspace-written-file.json" "$runtime_test_dir/workspace-image-preview.json" "$runtime_test_dir/workspace-move-receipt.json" "$runtime_test_dir/workspace-delete-receipt.json" "$runtime_test_dir/workspace-write-retry-query.json" "$runtime_test_dir/restart-authorize-receipt.json" "$runtime_hello_nonce"
 
 contract_binary="$(swift build --package-path "$repo_root/macos/PiAgent" --configuration debug --show-bin-path)/PiAgentContractCheck"
 PI_AGENT_RUNTIME_SOCKET="$runtime_test_dir/sessiond.sock" \
