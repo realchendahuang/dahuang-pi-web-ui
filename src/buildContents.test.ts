@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,15 @@ describe("production build contents", () => {
         writeFile(join(fixtureDist, "app.testSupport.js"), "export {};\n", "utf8"),
         writeFile(join(fixtureDist, "app.testSupport.js.map"), "{}\n", "utf8"),
       ]);
+      // The fixture has no scripts directory, and npm 10 runs the `prepare`
+      // lifecycle during `npm pack` even with `--ignore-scripts` (npm 11 does
+      // not). Neutralize lifecycle scripts so the tarball-contents assertion
+      // depends only on the `files` allowlist, not on npm's pack behavior.
+      const fixturePackageJson = join(fixtureRoot, "package.json");
+      const packageManifest: unknown = JSON.parse(await readFile(fixturePackageJson, "utf8"));
+      if (!isRecord(packageManifest)) throw new Error("package.json was not a JSON object");
+      packageManifest["scripts"] = {};
+      await writeFile(fixturePackageJson, `${JSON.stringify(packageManifest, null, 2)}\n`, "utf8");
 
       const npmExecPath = process.env["npm_execpath"];
       if (npmExecPath === undefined || npmExecPath.length === 0) {
