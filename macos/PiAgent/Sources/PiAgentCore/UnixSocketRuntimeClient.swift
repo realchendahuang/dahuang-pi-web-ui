@@ -96,6 +96,59 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func listModels(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> [RuntimeSessionModel] {
+        let envelope: SessionModelsEnvelope = try await request(
+            method: "GET",
+            path: "/sessions/\(Self.pathSegment(sessionId))/models",
+            query: query(cwd: cwd, runtimeId: runtimeId)
+        )
+        return envelope.models
+    }
+
+    public func setModel(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        provider: String,
+        modelId: String
+    ) async throws -> RuntimeSessionStatus {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/model",
+            body: SetModelPayload(cwd: cwd, provider: provider, modelId: modelId)
+        )
+    }
+
+    public func listThinkingLevels(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws -> [String] {
+        let envelope: ThinkingLevelsEnvelope = try await request(
+            method: "GET",
+            path: "/sessions/\(Self.pathSegment(sessionId))/thinking-levels",
+            query: query(cwd: cwd, runtimeId: runtimeId)
+        )
+        return envelope.levels
+    }
+
+    public func setThinkingLevel(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        level: String
+    ) async throws -> RuntimeSessionStatus {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/thinking-level",
+            body: SetThinkingLevelPayload(cwd: cwd, level: level)
+        )
+    }
+
     public func prompt(
         sessionId: String,
         cwd: String,
@@ -840,6 +893,25 @@ private struct ImportSessionPayload: Encodable {
         case commandId
         case runtimeEpoch
     }
+}
+
+private struct SessionModelsEnvelope: Decodable {
+    let models: [RuntimeSessionModel]
+}
+
+private struct ThinkingLevelsEnvelope: Decodable {
+    let levels: [String]
+}
+
+private struct SetModelPayload: Encodable {
+    let cwd: String
+    let provider: String
+    let modelId: String
+}
+
+private struct SetThinkingLevelPayload: Encodable {
+    let cwd: String
+    let level: String
 }
 
 private struct PromptPayload: Encodable {

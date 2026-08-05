@@ -50,6 +50,11 @@ final class AppModel: ObservableObject {
     @Published var sessions: [RuntimeSession] = []
     @Published var transcriptMessages: [RuntimeMessage] = []
     @Published var statusBySession: [String: RuntimeSessionStatus] = [:]
+    /// Model/thinking-level catalogs for the selected session, loaded on
+    /// session selection. The current choice always comes from the status
+    /// projection (`statusBySession`), not from these lists.
+    @Published var availableModels: [RuntimeSessionModel] = []
+    @Published var availableThinkingLevels: [String] = []
     @Published var isLoading = false
     @Published var isSending = false
     @Published var errorMessage: String?
@@ -200,6 +205,11 @@ final class AppModel: ObservableObject {
     var selectedSession: RuntimeSession? {
         guard let selectedSessionID else { return nil }
         return sessions.first { $0.id == selectedSessionID }
+    }
+
+    var selectedSessionStatus: RuntimeSessionStatus? {
+        guard let selectedSessionID else { return nil }
+        return statusBySession[selectedSessionID]
     }
 
     var activeSessions: [RuntimeSession] {
@@ -638,8 +648,11 @@ final class AppModel: ObservableObject {
         streamingMessage = nil
         lastSessionSequence = 0
         errorMessage = nil
+        availableModels = []
+        availableThinkingLevels = []
         guard sessionID != nil else { return }
         loadSelectedSession()
+        refreshModelOptions()
 		refreshGitCheckpoints()
         if selectedSession?.archived != true {
             startSessionEventStream()
@@ -2539,6 +2552,68 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Loads the model and thinking-level catalogs for the selected session.
+    /// Failures are non-fatal: the capsule falls back to the status-reported
+    /// model name, so a missing catalog only means fewer picker options.
+    private func refreshModelOptions() {
+        guard let session = selectedSession else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            let models = try? await client.listModels(
+                sessionId: session.id,
+                cwd: session.cwd,
+                runtimeId: session.runtimeId
+            )
+            let levels = try? await client.listThinkingLevels(
+                sessionId: session.id,
+                cwd: session.cwd,
+                runtimeId: session.runtimeId
+            )
+            guard let self, self.selectedSessionID == session.id else { return }
+            if let models { self.availableModels = models }
+            if let levels { self.availableThinkingLevels = levels }
+        }
+    }
+
+    func selectModel(provider: String, modelId: String) {
+        guard let session = selectedSession else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            do {
+                let status = try await client.setModel(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    provider: provider,
+                    modelId: modelId
+                )
+                guard let self, self.selectedSessionID == session.id else { return }
+                self.statusBySession[session.id] = status
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func selectThinkingLevel(_ level: String) {
+        guard let session = selectedSession else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            do {
+                let status = try await client.setThinkingLevel(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    level: level
+                )
+                guard let self, self.selectedSessionID == session.id else { return }
+                self.statusBySession[session.id] = status
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func startSessionEventStream() {
         stopSessionEventStream()
         guard let session = selectedSession,
@@ -2979,6 +3054,21 @@ private struct UnavailableRuntimeClient: RuntimeClient {
     ) async throws -> RuntimeCommandReceipt { throw RuntimeClientError.connectionFailed(message) }
     func messages(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeMessagePage { throw RuntimeClientError.connectionFailed(message) }
     func status(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
+    func listModels(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> [RuntimeSessionModel] { throw RuntimeClientError.connectionFailed(message) }
+    func setModel(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        provider _: String,
+        modelId _: String
+    ) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
+    func listThinkingLevels(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> [String] { throw RuntimeClientError.connectionFailed(message) }
+    func setThinkingLevel(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        level _: String
+    ) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func prompt(
         sessionId _: String,
         cwd _: String,

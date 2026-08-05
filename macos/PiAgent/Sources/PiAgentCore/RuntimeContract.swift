@@ -292,10 +292,52 @@ public struct RuntimeForkCandidate: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// Model descriptor reported by the runtime's session model catalog and by
+/// the session status projection. Every field is optional because providers
+/// differ in what they report.
+public struct RuntimeSessionModel: Decodable, Equatable, Sendable {
+    public let provider: String?
+    public let id: String?
+    public let name: String?
+    public let contextWindow: Int?
+    public let reasoning: Bool?
+
+    public init(
+        provider: String? = nil,
+        id: String? = nil,
+        name: String? = nil,
+        contextWindow: Int? = nil,
+        reasoning: Bool? = nil
+    ) {
+        self.provider = provider
+        self.id = id
+        self.name = name
+        self.contextWindow = contextWindow
+        self.reasoning = reasoning
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        contextWindow = try container.decodeIfPresent(Int.self, forKey: .contextWindow)
+        // The wire type is `unknown`; accept the common boolean form and
+        // ignore anything richer rather than failing the whole decode.
+        reasoning = try? container.decode(Bool.self, forKey: .reasoning)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, id, name, contextWindow, reasoning
+    }
+}
+
 /// Minimal status projection used to know when a prompt has settled.
 public struct RuntimeSessionStatus: Decodable, Equatable, Sendable {
     public let sessionId: String
     public let runtimeId: String?
+    public let model: RuntimeSessionModel?
+    public let thinkingLevel: String?
     public let isStreaming: Bool
     public let isCompacting: Bool
     public let isBashRunning: Bool
@@ -305,6 +347,8 @@ public struct RuntimeSessionStatus: Decodable, Equatable, Sendable {
     public init(
         sessionId: String,
         runtimeId: String? = nil,
+        model: RuntimeSessionModel? = nil,
+        thinkingLevel: String? = nil,
         isStreaming: Bool,
         isCompacting: Bool,
         isBashRunning: Bool,
@@ -313,6 +357,8 @@ public struct RuntimeSessionStatus: Decodable, Equatable, Sendable {
     ) {
         self.sessionId = sessionId
         self.runtimeId = runtimeId
+        self.model = model
+        self.thinkingLevel = thinkingLevel
         self.isStreaming = isStreaming
         self.isCompacting = isCompacting
         self.isBashRunning = isBashRunning
@@ -674,6 +720,24 @@ public protocol RuntimeClient: RuntimeHealthClient {
     ) async throws -> RuntimeCommandReceipt
     func messages(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeMessagePage
     func status(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
+    /// Model catalog for this session's provider. Unlike the receipt-based
+    /// mutations, model/thinking-level changes are direct calls that return
+    /// the updated session status.
+    func listModels(sessionId: String, cwd: String, runtimeId: String?) async throws -> [RuntimeSessionModel]
+    func setModel(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        provider: String,
+        modelId: String
+    ) async throws -> RuntimeSessionStatus
+    func listThinkingLevels(sessionId: String, cwd: String, runtimeId: String?) async throws -> [String]
+    func setThinkingLevel(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        level: String
+    ) async throws -> RuntimeSessionStatus
     func prompt(
         sessionId: String,
         cwd: String,
