@@ -738,6 +738,9 @@ public protocol RuntimeClient: RuntimeHealthClient {
         runtimeId: String?,
         level: String
     ) async throws -> RuntimeSessionStatus
+    /// Cancels the agent's in-flight work (prompt queue + current operation)
+    /// without closing the session. Direct call, no receipt.
+    func abort(sessionId: String, cwd: String, runtimeId: String?) async throws
     func prompt(
         sessionId: String,
         cwd: String,

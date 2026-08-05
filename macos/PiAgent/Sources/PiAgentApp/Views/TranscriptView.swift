@@ -73,6 +73,14 @@ struct TranscriptView: View {
 
             ComposerBar(model: model, focused: $composerFocused)
         }
+        // Auto-dismiss transient errors after a grace period; manual close
+        // still works. A new error restarts the countdown.
+        .task(id: model.errorMessage) {
+            guard model.errorMessage != nil else { return }
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            model.errorMessage = nil
+        }
         .onChange(of: model.selectedSessionID) {
             composerFocused = true
         }

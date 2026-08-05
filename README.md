@@ -31,6 +31,10 @@ cp -R "build/macos/Pi Agent.app" "/Applications/Pi Agent.app"
 ## Development
 
 - Swift sources: `macos/PiAgent/Sources/` (app, core client, helpers, contract check).
+- Swift tests: `macos/PiAgent/Tests/` (PiAgentCore unit tests, swift-testing).
+  Run with `scripts/macos/test-native.sh`; on Command Line Tools-only machines the
+  suite compile-verifies but cannot execute (Testing.framework rpath bug) — a full
+  Xcode install runs it with plain `swift test`.
 - Server sources: `src/server/`, `src/sessiond/`.
 - Validate the Node side with `npm run verify` (typecheck + lint + knip + tests).
 - The runtime bundle is assembled by `scripts/macos/build-runtime.mjs` with a SHA-256 manifest; `verify-app.sh` re-validates it.

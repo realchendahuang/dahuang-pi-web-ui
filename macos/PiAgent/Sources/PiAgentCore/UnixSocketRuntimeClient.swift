@@ -149,6 +149,18 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
+    public func abort(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?
+    ) async throws {
+        let _: AbortEnvelope = try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/abort",
+            body: AbortPayload(cwd: cwd)
+        )
+    }
+
     public func prompt(
         sessionId: String,
         cwd: String,
@@ -912,6 +924,14 @@ private struct SetModelPayload: Encodable {
 private struct SetThinkingLevelPayload: Encodable {
     let cwd: String
     let level: String
+}
+
+private struct AbortEnvelope: Decodable {
+    let aborted: Bool
+}
+
+private struct AbortPayload: Encodable {
+    let cwd: String
 }
 
 private struct PromptPayload: Encodable {

@@ -33,6 +33,12 @@ struct ComposerBar: View {
         model.prompt.hasPrefix("/goal")
     }
 
+    /// The agent is either mid-send or actively working; both states offer
+    /// the stop button instead of the send button.
+    private var isWorking: Bool {
+        model.isSending || model.selectedSessionStatus?.isStreaming == true
+    }
+
     // MARK: - Model / thinking-level capsule
 
     private var sessionStatus: RuntimeSessionStatus? {
@@ -102,7 +108,12 @@ struct ComposerBar: View {
                 .focused($focused)
                 .disabled(isReadOnly || model.isSending)
                 .onSubmit {
-                    if !NSEvent.modifierFlags.contains(.shift) { model.sendPrompt() }
+                    // Shift+Return / Option+Return insert a newline; plain
+                    // Return sends (macOS text-field convention).
+                    let modifiers = NSEvent.modifierFlags
+                    if !modifiers.contains(.shift), !modifiers.contains(.option) {
+                        model.sendPrompt()
+                    }
                 }
 
             HStack(spacing: Theme.Spacing.medium) {
@@ -158,6 +169,18 @@ struct ComposerBar: View {
                     ProgressView()
                         .controlSize(.small)
                         .frame(width: 26, height: 26)
+                } else if isWorking {
+                    Button {
+                        model.abortPrompt()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(.red.opacity(0.9))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .help("停止当前任务")
+                    .accessibilityLabel("停止当前任务")
                 } else {
                     Button {
                         model.sendPrompt()
@@ -263,7 +286,9 @@ struct ComposerBar: View {
         .help("模型与推理强度")
         .accessibilityLabel("模型与推理强度")
         .accessibilityValue(capsuleTitle)
-        .disabled(isReadOnly || model.isSending)
+        // Model/thinking changes take effect on the next prompt, so the
+        // capsule stays interactive while the agent is working.
+        .disabled(isReadOnly)
     }
 
     private var placeholder: String {
