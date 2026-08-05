@@ -36,7 +36,7 @@ describe("buildApp active profile composition", () => {
     const app = await buildApp({
       agentProfileProvider: { getActiveAgentProfile },
       config: emptyConfigService(),
-      clientDist: false,
+
       logger: false,
     });
 
@@ -70,7 +70,7 @@ describe("buildApp active profile composition", () => {
     const app = await buildApp({
       agentProfileProvider: provider,
       config: emptyConfigService(),
-      clientDist: false,
+
       logger: false,
     });
 

@@ -35,6 +35,10 @@ cp -R "build/macos/Pi Agent.app" "/Applications/Pi Agent.app"
 - Validate the Node side with `npm run verify` (typecheck + lint + knip + tests).
 - The runtime bundle is assembled by `scripts/macos/build-runtime.mjs` with a SHA-256 manifest; `verify-app.sh` re-validates it.
 
+## Known dependency advisories
+
+`npm audit` reports a handful of remaining advisories (`undici`, `brace-expansion`, `protobufjs`) nested under `@earendil-works/pi-coding-agent`'s own `npm-shrinkwrap.json`. npm overrides cannot reach them and the upstream package pins the same versions at 0.83.0, so the fix is to bump `pi-coding-agent` when upstream releases a patched build. Practical exposure is nil: the session daemon listens only on a Unix socket, `undici` is only an outbound client for trusted AI APIs, and `brace-expansion` only parses local globs.
+
 ## Repo layout
 
 - `macos/PiAgent/` — Swift package (app + `PiAgentCore` + helper executables + `PiAgentContractCheck`).

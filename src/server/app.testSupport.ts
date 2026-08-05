@@ -113,7 +113,7 @@ export function registerAppTestHooks(): void {
         plugins: () => Promise.resolve({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] }),
         readAsset: fakePiWebPluginAsset,
       },
-      clientDist: false,
+
       logger: false,
     });
   });

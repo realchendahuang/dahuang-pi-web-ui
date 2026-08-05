@@ -40,46 +40,56 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
     }
   });
 
-  it("loads login-profile PATH entries in new interactive terminals", async () => {
-    await withBashLoginProfile(async () => {
-      const service = new TerminalService();
-      try {
-        const terminal = service.create({ cwd: process.cwd() });
-        const exit = terminalExit(service, terminal.id);
+  // Login shells re-read /etc/profile and can be slow under full-suite
+  // parallel load, so these get an explicit generous timeout.
+  it(
+    "loads login-profile PATH entries in new interactive terminals",
+    { timeout: 20_000 },
+    async () => {
+      await withBashLoginProfile(async () => {
+        const service = new TerminalService();
+        try {
+          const terminal = service.create({ cwd: process.cwd() });
+          const exit = terminalExit(service, terminal.id);
 
-        service.write(terminal.id, `${LOGIN_PROFILE_COMMAND}\nexit\n`);
+          service.write(terminal.id, `${LOGIN_PROFILE_COMMAND}\nexit\n`);
 
-        expect(await exit).toContain(LOGIN_PROFILE_OUTPUT);
-      } finally {
-        service.dispose();
-      }
-    });
-  });
+          expect(await exit).toContain(LOGIN_PROFILE_OUTPUT);
+        } finally {
+          service.dispose();
+        }
+      });
+    },
+  );
 
-  it("loads login-profile PATH entries in continued interactive terminals", async () => {
-    await withBashLoginProfile(async () => {
-      const service = new TerminalService();
-      try {
-        const run = service.runCommand({
-          origin: "core",
-          projectId: "p1",
-          workspaceId: "w1",
-          cwd: process.cwd(),
-          title: "Done command",
-          command: "true",
-        });
-        await terminalExit(service, run.terminalId);
+  it(
+    "loads login-profile PATH entries in continued interactive terminals",
+    { timeout: 20_000 },
+    async () => {
+      await withBashLoginProfile(async () => {
+        const service = new TerminalService();
+        try {
+          const run = service.runCommand({
+            origin: "core",
+            projectId: "p1",
+            workspaceId: "w1",
+            cwd: process.cwd(),
+            title: "Done command",
+            command: "true",
+          });
+          await terminalExit(service, run.terminalId);
 
-        service.continue(run.terminalId);
-        const exit = terminalExit(service, run.terminalId);
-        service.write(run.terminalId, `${LOGIN_PROFILE_COMMAND}\nexit\n`);
+          service.continue(run.terminalId);
+          const exit = terminalExit(service, run.terminalId);
+          service.write(run.terminalId, `${LOGIN_PROFILE_COMMAND}\nexit\n`);
 
-        expect(await exit).toContain(LOGIN_PROFILE_OUTPUT);
-      } finally {
-        service.dispose();
-      }
-    });
-  });
+          expect(await exit).toContain(LOGIN_PROFILE_OUTPUT);
+        } finally {
+          service.dispose();
+        }
+      });
+    },
+  );
 
   describe("PI_WEB_TERMINAL propagation", () => {
     let originalPiWebTerminal: string | undefined;

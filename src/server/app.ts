@@ -1,14 +1,10 @@
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import Fastify, {
 	type FastifyInstance,
 	type FastifyReply,
 	type FastifyServerOptions,
 } from "fastify";
 import fastifyCompress from "@fastify/compress";
-import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import { resolveClientDist } from "./clientDist.js";
 import { ProjectStore } from "./storage/projectStore.js";
 import { ProjectService } from "./projects/projectService.js";
 import { WorkspaceService } from "./workspaces/workspaceService.js";
@@ -80,7 +76,6 @@ export interface AppDependencies {
 	piPackages?: PiPackageService;
 	piWebStatusCache?: PiWebStatusCache;
 	config?: PiWebConfigService;
-	clientDist?: string | false;
 	logger?: FastifyServerOptions["logger"];
 	/** Maximum accepted HTTP request body size in bytes. */
 	bodyLimit?: number;
@@ -271,8 +266,8 @@ export async function buildApp(
 		logger: deps.logger ?? true,
 		...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }),
 	});
-	// Vite proxies development API requests here, while production and machine-scoped
-	// API requests already terminate here, so this is the shared browser HTTP edge.
+	// Compress API responses above 1 KiB; the session daemon serves only local
+	// clients (Unix socket or loopback), so gzip is a cheap win on large JSON.
 	await app.register(fastifyCompress, {
 		globalCompression: true,
 		globalDecompression: false,
@@ -441,20 +436,6 @@ export async function buildApp(
 	);
 
 	registerMachineProxyRoutes(app, machines);
-
-	const clientDist = resolveClientDist({
-		override: deps.clientDist,
-		packagedCandidate: join(
-			dirname(fileURLToPath(import.meta.url)),
-			"..",
-			"client",
-		),
-		cwdCandidate: join(process.cwd(), "dist", "client"),
-	});
-	if (clientDist !== false) {
-		await app.register(fastifyStatic, { root: clientDist });
-		app.setNotFoundHandler((_request, reply) => reply.sendFile("index.html"));
-	}
 
 	return app;
 }
