@@ -174,7 +174,7 @@ public struct BundledRuntime: Sendable {
         let applicationSupport = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true)
         let runtimeState = applicationSupport.appendingPathComponent("Runtime", isDirectory: true)
-        try fileManager.createDirectory(at: runtimeState, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try RuntimeLaunchNonce.prepareSecureDirectory(runtimeState, fileManager: fileManager)
         let launchNonce = try RuntimeLaunchNonce.loadOrCreate(in: runtimeState)
         let projectCapabilityToken = try RuntimeLaunchNonce.loadOrCreate(
             in: runtimeState,

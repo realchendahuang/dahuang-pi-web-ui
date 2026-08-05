@@ -133,7 +133,11 @@ struct PiAgentContractCheck {
 		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 			.appendingPathComponent("pi-agent-launch-nonce-\(UUID().uuidString)", isDirectory: true)
 		defer { try? FileManager.default.removeItem(at: root) }
-		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+		try RuntimeLaunchNonce.prepareSecureDirectory(root)
+		let directoryAttributes = try FileManager.default.attributesOfItem(atPath: root.path)
+		precondition((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
 		let nonce = try RuntimeLaunchNonce.loadOrCreate(in: root)
 		let first = nonce.currentValue
 		precondition(first.count == 43)

@@ -46,6 +46,48 @@ public final class RuntimeLaunchNonce: @unchecked Sendable {
         return RuntimeLaunchNonce(fileURL: fileURL, nonce: nonce)
     }
 
+    /// Creates the App-owned Runtime state directory when needed and ensures
+    /// that an older or previously created directory is private before it can
+    /// hold launch secrets or a Unix socket. The leaf is opened with
+    /// `O_NOFOLLOW`, so this never repairs a symlink or a path owned by another
+    /// user into a trusted Runtime directory.
+    public static func prepareSecureDirectory(
+        _ directory: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let descriptor = open(
+            directory.path,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+        )
+        guard descriptor >= 0 else {
+            throw RuntimeClientError.connectionFailed(
+                "Could not open bundled Runtime directory safely: \(String(cString: strerror(errno)))"
+            )
+        }
+        defer { _ = close(descriptor) }
+
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else {
+            throw RuntimeClientError.connectionFailed(
+                "Could not inspect bundled Runtime directory: \(String(cString: strerror(errno)))"
+            )
+        }
+        guard (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR), metadata.st_uid == getuid() else {
+            throw RuntimeClientError.connectionFailed("Bundled Runtime directory is not a current-user directory")
+        }
+        guard fchmod(descriptor, S_IRWXU) == 0 else {
+            throw RuntimeClientError.connectionFailed(
+                "Could not restrict bundled Runtime directory permissions: \(String(cString: strerror(errno)))"
+            )
+        }
+        try validateDirectory(descriptor: descriptor)
+    }
+
     /// Rotates immediately before the supervisor launches a new child. A
     /// healthy Runtime is checked first, so reopening the App can still prove
     /// and reuse the existing Runtime without changing its nonce.
@@ -134,6 +176,21 @@ public final class RuntimeLaunchNonce: @unchecked Sendable {
         var metadata = stat()
         guard lstat(directory.path, &metadata) == 0 else {
             throw RuntimeClientError.connectionFailed("Could not inspect bundled Runtime directory: \(String(cString: strerror(errno)))")
+        }
+        guard (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR),
+              metadata.st_uid == getuid(),
+              (metadata.st_mode & 0o777) == 0o700
+        else {
+            throw RuntimeClientError.connectionFailed("Bundled Runtime directory is not a current-user 0700 directory")
+        }
+    }
+
+    private static func validateDirectory(descriptor: Int32) throws {
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else {
+            throw RuntimeClientError.connectionFailed(
+                "Could not inspect bundled Runtime directory: \(String(cString: strerror(errno)))"
+            )
         }
         guard (metadata.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR),
               metadata.st_uid == getuid(),
