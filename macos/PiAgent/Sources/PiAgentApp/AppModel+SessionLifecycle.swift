@@ -11,8 +11,8 @@ extension AppModel {
         stopSessionEventStream()
         selectedSessionID = sessionID
         transcriptMessages = []
-		extensionInteractions = []
-		extensionInteractionText = ""
+        extensionInteractions = []
+        extensionInteractionText = ""
         streamingMessage = nil
         lastSessionSequence = 0
         errorMessage = nil
@@ -21,7 +21,7 @@ extension AppModel {
         guard sessionID != nil else { return }
         loadSelectedSession()
         refreshModelOptions()
-		refreshGitCheckpoints()
+        refreshGitCheckpoints()
         if selectedSession?.archived != true {
             startSessionEventStream()
         }
@@ -42,10 +42,10 @@ extension AppModel {
     func startNewSession() {
         let client = runtimeClient
         let cwd = projectPath
-		guard canUseProjectRuntime else {
-			errorMessage = "请先授权所选项目，再创建对话。"
-			return
-		}
+        guard canUseProjectRuntime else {
+            errorMessage = "请先授权所选项目，再创建对话。"
+            return
+        }
         guard let expectedRuntimeEpoch = runtimeEpoch else {
             errorMessage = "请先重新连接 Runtime，再创建对话。"
             return
@@ -110,14 +110,14 @@ extension AppModel {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = promptImageAttachments
         guard !text.isEmpty || !attachments.isEmpty, !isSending else { return }
-		guard canUseProjectRuntime else {
-			errorMessage = "请先授权所选项目，再发送消息。"
-			return
-		}
-		guard session.archived != true else {
-			errorMessage = "请先恢复此已归档对话，再发送消息。"
-			return
-		}
+        guard canUseProjectRuntime else {
+            errorMessage = "请先授权所选项目，再发送消息。"
+            return
+        }
+        guard session.archived != true else {
+            errorMessage = "请先恢复此已归档对话，再发送消息。"
+            return
+        }
 
         let client = runtimeClient
         let cwd = projectPath

@@ -9,9 +9,9 @@ import Glibc
 
 public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, RuntimeEventStreamClient, RuntimeNotificationClient, RuntimeTerminalClient, RuntimeGitClient, RuntimeWorkspaceClient, RuntimeExtensionInteractionClient, RuntimeProjectCapabilityClient, RuntimeLegacyProjectMigrationClient, RuntimeLegacyMigrationOverviewClient, RuntimeAuthClient, Sendable {
     public let socketPath: String
-	public let projectCapabilityToken: String?
-	public let projectCapabilityTokenSecret: RuntimeLaunchNonce?
-	public let socketSecurity: RuntimeSocketSecurity
+    public let projectCapabilityToken: String?
+    public let projectCapabilityTokenSecret: RuntimeLaunchNonce?
+    public let socketSecurity: RuntimeSocketSecurity
     public let launchNonce: RuntimeLaunchNonce?
 
     public init(
@@ -22,9 +22,9 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         projectCapabilityTokenSecret: RuntimeLaunchNonce? = nil
     ) {
         self.socketPath = socketPath
-		self.projectCapabilityToken = projectCapabilityToken
-		self.projectCapabilityTokenSecret = projectCapabilityTokenSecret
-		self.socketSecurity = socketSecurity
+        self.projectCapabilityToken = projectCapabilityToken
+        self.projectCapabilityTokenSecret = projectCapabilityTokenSecret
+        self.socketSecurity = socketSecurity
         self.launchNonce = launchNonce
     }
 
@@ -199,9 +199,9 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
-	public func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
-		try await request(method: "POST", path: "/runtime/projects/authorize", body: AuthorizeProjectPayload(path: path, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch))
-	}
+    public func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
+        try await request(method: "POST", path: "/runtime/projects/authorize", body: AuthorizeProjectPayload(path: path, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch))
+    }
 
     public func archiveSession(
         sessionId: String,
@@ -632,8 +632,8 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/sessions/\(Self.pathSegment(sessionId))/events",
             query: query(cwd: cwd, runtimeId: runtimeId),
-			capabilityToken: effectiveProjectCapabilityToken,
-			socketSecurity: socketSecurity,
+            capabilityToken: effectiveProjectCapabilityToken,
+            socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeSessionEvent.self, from: data)
             }
@@ -658,8 +658,8 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/sessions/notifications/events",
             query: [("cwd", cwd)],
-			capabilityToken: effectiveProjectCapabilityToken,
-			socketSecurity: socketSecurity,
+            capabilityToken: effectiveProjectCapabilityToken,
+            socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeNotificationSummaryEvent.self, from: data)
             }
@@ -721,8 +721,8 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
             socketPath: socketPath,
             path: "/terminals/\(Self.pathSegment(id))/socket",
             query: [("cols", String(cols)), ("rows", String(rows))],
-			capabilityToken: effectiveProjectCapabilityToken,
-			socketSecurity: socketSecurity,
+            capabilityToken: effectiveProjectCapabilityToken,
+            socketSecurity: socketSecurity,
             decode: { data in
                 try JSONDecoder().decode(RuntimeTerminalEvent.self, from: data)
             }
@@ -780,7 +780,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         let socketPath = socketPath
         let encodedBody = try body.map { try JSONEncoder().encode(AnyEncodable($0)) }
         let capabilityToken = effectiveProjectCapabilityToken
-		let socketSecurity = socketSecurity
+        let socketSecurity = socketSecurity
         return try await Task.detached(priority: .userInitiated) {
             try UnixSocketHTTP.requestJSON(
                 method: method,
@@ -1141,7 +1141,7 @@ private enum UnixSocketHTTP {
         if let body {
             request += "Content-Type: application/json\r\nContent-Length: \(body.count)\r\n"
         }
-		if let capabilityToken { request += "X-Pi-Agent-Project-Capability: \(capabilityToken)\r\n" }
+        if let capabilityToken { request += "X-Pi-Agent-Project-Capability: \(capabilityToken)\r\n" }
         request += "\r\n"
         var payload = Data(request.utf8)
         if let body { payload.append(body) }
@@ -1198,7 +1198,7 @@ private enum UnixSocketTransport {
         guard !socketPath.isEmpty else {
             throw RuntimeClientError.invalidSocketPath
         }
-		try security.validate(socketPath: socketPath)
+        try security.validate(socketPath: socketPath)
 
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else {
@@ -1232,7 +1232,7 @@ private enum UnixSocketTransport {
             Darwin.close(descriptor)
             throw RuntimeClientError.connectionFailed(message)
         }
-		try security.validateConnectedPeer(descriptor: descriptor)
+        try security.validateConnectedPeer(descriptor: descriptor)
         return descriptor
     }
 
@@ -1305,8 +1305,8 @@ private final class UnixSocketWebSocket: @unchecked Sendable {
                 + "Upgrade: websocket\r\n"
                 + "Sec-WebSocket-Version: 13\r\n"
                 + "Sec-WebSocket-Key: \(key)\r\n"
-				+ (capabilityToken.map { "X-Pi-Agent-Project-Capability: \($0)\r\n" } ?? "")
-				+ "\r\n"
+                + (capabilityToken.map { "X-Pi-Agent-Project-Capability: \($0)\r\n" } ?? "")
+                + "\r\n"
             try UnixSocketTransport.writeAll(descriptor, data: Data(request.utf8))
 
             let response = try readHTTPHeaders(descriptor)
@@ -1579,8 +1579,8 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     private let socketPath: String
     private let path: String
     private let query: [(String, String)]?
-	private let capabilityToken: String?
-	private let socketSecurity: RuntimeSocketSecurity
+    private let capabilityToken: String?
+    private let socketSecurity: RuntimeSocketSecurity
     private let decode: (Data) throws -> Event
     private let lock = NSLock()
     private let eventContinuation: AsyncThrowingStream<Event, Error>.Continuation
@@ -1597,8 +1597,8 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
         self.socketPath = socketPath
         self.path = path
         self.query = query
-		self.capabilityToken = capabilityToken
-		self.socketSecurity = socketSecurity
+        self.capabilityToken = capabilityToken
+        self.socketSecurity = socketSecurity
         self.decode = decode
         let eventStream = AsyncThrowingStream<Event, Error>.makeStream()
         let readyStream = AsyncThrowingStream<Void, Error>.makeStream()
@@ -1617,8 +1617,8 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
         let socketPath = self.socketPath
         let path = self.path
         let query = self.query
-		let capabilityToken = self.capabilityToken
-		let socketSecurity = self.socketSecurity
+        let capabilityToken = self.capabilityToken
+        let socketSecurity = self.socketSecurity
         lock.unlock()
 
         let newTask = Task.detached(priority: .userInitiated) { [weak self] in

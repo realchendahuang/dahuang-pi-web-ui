@@ -42,20 +42,20 @@ struct ContentView: View {
             ForkThreadSheet(model: model, session: session)
         }
         .sheet(isPresented: $model.showGitCommitSheet) {
-			GitCommitSheet(model: model)
-		}
-		.sheet(isPresented: $model.showGitPushConfirmation) {
-			GitPushConfirmationSheet(model: model)
-		}
-		.sheet(item: Binding(
-			get: { model.gitPathPendingDiscard },
-			set: { if $0 == nil { model.cancelGitDiscard() } }
-		)) { file in
-			GitDiscardConfirmationSheet(model: model, file: file)
-		}
-		.sheet(isPresented: $model.showGitRevertConfirmation) {
-			GitRevertConfirmationSheet(model: model)
-		}
+            GitCommitSheet(model: model)
+        }
+        .sheet(isPresented: $model.showGitPushConfirmation) {
+            GitPushConfirmationSheet(model: model)
+        }
+        .sheet(item: Binding(
+            get: { model.gitPathPendingDiscard },
+            set: { if $0 == nil { model.cancelGitDiscard() } }
+        )) { file in
+            GitDiscardConfirmationSheet(model: model, file: file)
+        }
+        .sheet(isPresented: $model.showGitRevertConfirmation) {
+            GitRevertConfirmationSheet(model: model)
+        }
         .sheet(item: Binding(
             get: { model.workspaceFilePendingMove },
             set: { if $0 == nil { model.cancelWorkspaceFileMove() } }
@@ -68,12 +68,12 @@ struct ContentView: View {
         .sheet(item: $model.activeAuthFlow) { flow in
             NativeAuthFlowSheet(model: model, flow: flow)
         }
-		.sheet(item: Binding(
-			get: { model.activeExtensionInteraction },
-			set: { _ in }
-		)) { interaction in
-			ExtensionInteractionSheet(model: model, interaction: interaction)
-		}
+        .sheet(item: Binding(
+            get: { model.activeExtensionInteraction },
+            set: { _ in }
+        )) { interaction in
+            ExtensionInteractionSheet(model: model, interaction: interaction)
+        }
         .task {
             model.refreshRuntime()
         }

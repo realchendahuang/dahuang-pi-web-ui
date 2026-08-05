@@ -8,10 +8,10 @@ import UserNotifications
 @MainActor
 extension AppModel {
     func requestApplicationTermination() -> NSApplication.TerminateReply {
-		if maintenanceHelperLaunched {
-			runtimeSupervisor?.stop()
-			return .terminateNow
-		}
+        if maintenanceHelperLaunched {
+            runtimeSupervisor?.stop()
+            return .terminateNow
+        }
         guard runtimeSupervisor != nil else {
             // A development or externally supplied socket is never owned by
             // the App and must survive an App quit.
@@ -172,10 +172,10 @@ extension AppModel {
                 // A Runtime restart invalidates any terminal WebSocket. A
                 // reconnect always reads the authoritative terminal list.
                 self.stopTerminalConnection()
-				self.ensureTerminalConnection()
-				self.refreshGit()
-				self.refreshGitCheckpoints()
-				self.refreshWorkspace()
+                self.ensureTerminalConnection()
+                self.refreshGit()
+                self.refreshGitCheckpoints()
+                self.refreshWorkspace()
                 self.refreshAuthProviders()
             } catch {
                 guard self.isCurrentRuntimeRefresh(refreshToken, cwd: cwd) else { return }

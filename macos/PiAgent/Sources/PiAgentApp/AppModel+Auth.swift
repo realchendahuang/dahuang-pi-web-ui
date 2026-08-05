@@ -28,9 +28,9 @@ extension AppModel {
         }
     }
 
-	/// Exports an App-owned, redacted diagnostic report only after the user picks
-	/// an output path. Runtime/session authority and project filesystem access do
-	/// not move into Swift as part of this support operation.
+    /// Exports an App-owned, redacted diagnostic report only after the user picks
+    /// an output path. Runtime/session authority and project filesystem access do
+    /// not move into Swift as part of this support operation.
     func refreshLegacyAuthMigrationPreview() {
         guard let client = runtimeClient as? any RuntimeAuthClient, runtimeEpoch != nil else { return }
         isLegacyAuthMigrationLoading = true

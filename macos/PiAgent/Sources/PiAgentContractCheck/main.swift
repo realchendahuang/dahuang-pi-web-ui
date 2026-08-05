@@ -8,17 +8,17 @@ struct PiAgentContractCheck {
         try checkRuntimeHelloDecoding()
         try checkRuntimeCommandReceiptDecoding()
         try checkProjectCapabilityReceiptDecoding()
-		try checkLegacyMigrationOverviewDecoding()
-		try checkBundledRuntimeSocketSecurity()
-		try checkRuntimeLaunchNonce()
+        try checkLegacyMigrationOverviewDecoding()
+        try checkBundledRuntimeSocketSecurity()
+        try checkRuntimeLaunchNonce()
         try checkGitContractDecoding()
-		try checkSupportReportEncoding()
+        try checkSupportReportEncoding()
         try checkWorkspaceContractDecoding()
         try checkExtensionInteractionContractDecoding()
         try checkProjectAuthorization()
         try checkNativeProjectMigrationJournal()
         try checkNativeAppUninstallPlan()
-		try checkNativeAppDataErasePlan()
+        try checkNativeAppDataErasePlan()
         try checkSessionAndMessageDecoding()
         try checkTaskNotificationDecoding()
         try checkStreamingAndTerminalDecoding()
@@ -27,10 +27,10 @@ struct PiAgentContractCheck {
         checkImplicitLaunchIsDisabled()
         try checkExplicitLaunchPlan()
         if let socketPath = ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_SOCKET"] {
-			let client = UnixSocketRuntimeClient(
-				socketPath: socketPath,
-				projectCapabilityToken: ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"]
-			)
+            let client = UnixSocketRuntimeClient(
+                socketPath: socketPath,
+                projectCapabilityToken: ProcessInfo.processInfo.environment["PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN"]
+            )
             let health = try await client.health()
             precondition(health.ok)
             let hello = try await client.hello()
@@ -125,246 +125,246 @@ struct PiAgentContractCheck {
         let hello = try JSONDecoder().decode(RuntimeHello.self, from: data)
         try hello.requireCompatibleProtocol(major: BundledRuntime.protocolMajor)
         precondition(hello.runtimeEpoch == "epoch-1")
-		precondition(hello.manifest?.piSdkVersion == "0.81.1")
-		try hello.requireMatchingLaunchNonce("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	}
-
-	private static func checkRuntimeLaunchNonce() throws {
-		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-			.appendingPathComponent("pi-agent-launch-nonce-\(UUID().uuidString)", isDirectory: true)
-		defer { try? FileManager.default.removeItem(at: root) }
-		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
-		try RuntimeLaunchNonce.prepareSecureDirectory(root)
-		let directoryAttributes = try FileManager.default.attributesOfItem(atPath: root.path)
-		precondition((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
-		let nonce = try RuntimeLaunchNonce.loadOrCreate(in: root)
-		let first = nonce.currentValue
-		precondition(first.count == 43)
-		try nonce.rotate()
-		let second = nonce.currentValue
-		precondition(second.count == 43 && second != first)
-		let attributes = try FileManager.default.attributesOfItem(atPath: nonce.fileURL.path)
-		precondition((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-		let reloaded = try RuntimeLaunchNonce.loadOrCreate(in: root)
-		precondition(reloaded.currentValue == second)
-		let supervisor = RuntimeSupervisor(
-			plan: contractShellPlan("sleep 20", socketPath: root.appendingPathComponent("sessiond.sock").path),
-			launchSecrets: [nonce]
-		)
-		defer { supervisor.stop() }
-		try supervisor.start()
-		let launchedValue = nonce.currentValue
-		try supervisor.start()
-		precondition(nonce.currentValue == launchedValue)
-		let token = try RuntimeLaunchNonce.loadOrCreate(
-			in: root,
-			fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
-		)
-		let persistedToken = token.currentValue
-		let reattachedToken = try RuntimeLaunchNonce.loadOrCreate(
-			in: root,
-			fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
-		)
-		precondition(reattachedToken.currentValue == persistedToken)
-		let tokenOutput = root.appendingPathComponent("project-capability-token-output")
-		let tokenSupervisor = RuntimeSupervisor(
-			plan: RuntimeLaunchPlan(
-				executable: URL(fileURLWithPath: "/bin/sh"),
-				arguments: ["-c", "printf %s \"$PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN\" > \"$TOKEN_OUTPUT\"; sleep 20"],
-				environment: [
-					"PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN": "stale-token",
-					"TOKEN_OUTPUT": tokenOutput.path,
-				],
-				socketPath: root.appendingPathComponent("token-sessiond.sock").path
-			),
-			launchSecrets: [token]
-		)
-		defer { tokenSupervisor.stop() }
-		try tokenSupervisor.start()
-		precondition(token.currentValue != persistedToken)
-		for _ in 0..<100 where !FileManager.default.fileExists(atPath: tokenOutput.path) {
-			usleep(10_000)
-		}
-		let childToken = try String(contentsOf: tokenOutput, encoding: .utf8)
-		precondition(childToken == token.currentValue)
-	}
-
-	private static func checkRuntimeCommandReceiptDecoding() throws {
-		let decoder = JSONDecoder()
-		decoder.dateDecodingStrategy = .iso8601
-		let data = Data(
-			#"{"commandId":"command-1","kind":"abort-active-work","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"requested":1,"aborted":[{"sessionId":"s1","runtimeId":"pi"}],"failures":[]}}"#.utf8
-		)
-		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: data)
-		precondition(receipt.commandId == "command-1")
-		precondition(receipt.runtimeEpoch == "epoch-1")
-		precondition(receipt.status == "completed")
-		precondition(receipt.result?.requested == 1)
-		precondition(receipt.result?.failures?.isEmpty == true)
-
-		let promptData = Data(
-			#"{"commandId":"command-2","kind":"prompt","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"accepted":true,"sessionId":"s1","runtimeId":"pi"}}"#.utf8
-		)
-		let promptReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: promptData)
-		precondition(promptReceipt.result?.accepted == true)
-		precondition(promptReceipt.result?.sessionId == "s1")
-		precondition(promptReceipt.recoveredAfterRuntimeRestart == nil)
-
-		let recoveredReceipt = try decoder.decode(
-			RuntimeCommandReceipt.self,
-			from: Data(#"{"commandId":"command-recovered","kind":"prompt","runtimeEpoch":"epoch-before-restart","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","recoveredAfterRuntimeRestart":true,"result":{"accepted":true,"sessionId":"s1"}}"#.utf8)
-		)
-		precondition(recoveredReceipt.recoveredAfterRuntimeRestart == true)
-
-		let startData = Data(
-			#"{"commandId":"command-3","kind":"start-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
-		)
-		let startReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: startData)
-		precondition(startReceipt.result?.created == true)
-		precondition(startReceipt.result?.cwd == "/repo")
-
-		let archiveData = Data(
-			#"{"commandId":"command-4","kind":"archive-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"archived":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
-		)
-		let archiveReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: archiveData)
-		precondition(archiveReceipt.result?.archived == true)
-		precondition(archiveReceipt.result?.sessionId == "s2")
-
-		let restoreData = Data(
-			#"{"commandId":"command-5","kind":"restore-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"restored":true,"sessionId":"s2"}}"#.utf8
-		)
-		let restoreReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: restoreData)
-		precondition(restoreReceipt.result?.restored == true)
-
-		let deleteData = Data(
-			#"{"commandId":"command-6","kind":"delete-archived-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"deleted":true,"sessionId":"s2"}}"#.utf8
-		)
-		let deleteReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: deleteData)
-		precondition(deleteReceipt.result?.deleted == true)
-
-		let forkData = Data(
-			#"{"commandId":"command-fork","kind":"fork-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"forked":true,"session":{"id":"forked","cwd":"/repo","runtimeId":"pi","path":"/sessions/forked.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":1,"firstMessage":"fork point"},"promptDraft":"fork point"}}"#.utf8
-		)
-		let forkReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: forkData)
-		precondition(forkReceipt.result?.forked == true)
-		precondition(forkReceipt.result?.session?.id == "forked")
-		precondition(forkReceipt.result?.promptDraft == "fork point")
-
-		let importData = Data(
-			#"{"commandId":"command-import","kind":"import-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"imported":true,"session":{"id":"imported","cwd":"/repo","runtimeId":"pi","path":"/sessions/imported.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":2,"firstMessage":"imported message"}}}"#.utf8
-		)
-		let importReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: importData)
-		precondition(importReceipt.result?.imported == true)
-		precondition(importReceipt.result?.session?.id == "imported")
-
-		let terminalData = Data(
-			#"{"commandId":"command-7","kind":"create-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
-		)
-		let terminalReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: terminalData)
-		precondition(terminalReceipt.result?.created == true)
-		precondition(terminalReceipt.result?.terminal?.id == "t1")
-
-		let continuedTerminalData = Data(
-			#"{"commandId":"command-8","kind":"continue-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"continued":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
-		)
-		let continuedTerminalReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: continuedTerminalData)
-		precondition(continuedTerminalReceipt.result?.continued == true)
-	}
-
-    private static func checkGitContractDecoding() throws {
-		let decoder = JSONDecoder()
-		decoder.dateDecodingStrategy = .iso8601
-		let statusData = Data(
-			#"{"isGitRepo":true,"hash":"status-hash","branch":"main","upstream":"origin/main","ahead":1,"behind":0,"files":[{"path":"Sources/App.swift","index":"modified","workingTree":"unmodified"}],"submodules":[]}"#.utf8
-		)
-		let status = try decoder.decode(RuntimeGitStatus.self, from: statusData)
-		precondition(status.isGitRepo)
-		precondition(status.branch == "main")
-		precondition(status.files.first?.path == "Sources/App.swift")
-
-		let pushPreviewData = Data(
-			#"{"status":{"isGitRepo":true,"hash":"push-status","branch":"main","upstream":"origin/main","ahead":2,"behind":0,"files":[],"submodules":[]},"canPush":true}"#.utf8
-		)
-		let pushPreview = try decoder.decode(RuntimeGitPushPreview.self, from: pushPreviewData)
-		precondition(pushPreview.canPush)
-		precondition(pushPreview.status.upstream == "origin/main")
-
-		let revertPreviewData = Data(
-			#"{"status":{"isGitRepo":true,"hash":"clean","branch":"main","files":[],"submodules":[]},"canRevert":true,"commit":{"hash":"deadbeef","subject":"latest change"}}"#.utf8
-		)
-		let revertPreview = try decoder.decode(RuntimeGitRevertPreview.self, from: revertPreviewData)
-		precondition(revertPreview.canRevert)
-		precondition(revertPreview.commit?.hash == "deadbeef")
-
-		let receiptData = Data(
-			#"{"commandId":"git-1","kind":"commit-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"committed":true,"hash":"deadbeef","subject":"native Git","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
-		)
-		let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: receiptData)
-		precondition(receipt.result?.committed == true)
-		precondition(receipt.result?.hash == "deadbeef")
-        precondition(receipt.result?.status?.files.isEmpty == true)
-
-		let pushReceiptData = Data(
-			#"{"commandId":"push-1","kind":"push-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"pushed":true,"status":{"isGitRepo":true,"hash":"clean","branch":"main","upstream":"origin/main","ahead":0,"behind":0,"files":[],"submodules":[]}}}"#.utf8
-		)
-		let pushReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: pushReceiptData)
-		precondition(pushReceipt.result?.pushed == true)
-		precondition(pushReceipt.result?.status?.ahead == 0)
-
-		let discardReceiptData = Data(
-			#"{"commandId":"discard-1","kind":"discard-git-paths","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"discarded":true,"paths":["Sources/App.swift"],"status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
-		)
-		let discardReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: discardReceiptData)
-		precondition(discardReceipt.result?.discarded == true)
-		precondition(discardReceipt.result?.paths == ["Sources/App.swift"])
-
-		let revertReceiptData = Data(
-			#"{"commandId":"revert-1","kind":"revert-git-head","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"reverted":true,"hash":"reverted","subject":"Revert latest","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
-		)
-		let revertReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: revertReceiptData)
-		precondition(revertReceipt.result?.reverted == true)
-		precondition(revertReceipt.result?.hash == "reverted")
-
-		let checkpointData = Data(
-			#"{"commandId":"checkpoint-1","kind":"create-git-checkpoint","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"checkpointed":true,"checkpoint":{"id":"cp-1","sessionId":"thread-1","cwd":"/repo","createdAt":"2026-08-04T00:00:00Z","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]},"unstaged":{"hash":"u","diff":"diff --git","truncated":false},"staged":{"hash":"s","diff":"","truncated":false}}}}"#.utf8
-		)
-		let checkpointReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: checkpointData)
-		precondition(checkpointReceipt.result?.checkpointed == true)
-		precondition(checkpointReceipt.result?.checkpoint?.sessionId == "thread-1")
-		precondition(checkpointReceipt.result?.checkpoint?.unstaged.diff == "diff --git")
+        precondition(hello.manifest?.piSdkVersion == "0.81.1")
+        try hello.requireMatchingLaunchNonce("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     }
 
-	private static func checkSupportReportEncoding() throws {
-		let report = NativeSupportReport(
-			generatedAt: Date(timeIntervalSince1970: 1_722_844_800),
-			application: .init(
-				bundleIdentifier: "com.example.PiAgent",
-				version: "0.202608.0",
-				build: "42",
-				bundlePath: "/Applications/Pi Agent.app"
-			),
-			runtime: .init(
-				socket: "/tmp/pi-agent.sock",
-				connectionState: "Connected",
-				health: nil,
-				hello: nil,
-				diagnosticError: nil
-			),
-			project: .init(path: "/repo", authorization: "Authorized"),
-			providers: [
-				.init(id: "openai", authType: "oauth", configured: true, source: "keychain"),
-				.init(id: "anthropic", authType: "api_key", configured: false, source: nil),
-			]
-		)
-		let decoder = JSONDecoder()
-		decoder.dateDecodingStrategy = .iso8601
-		let decoded = try decoder.decode(NativeSupportReport.self, from: report.encodedJSON())
-		precondition(decoded.schemaVersion == NativeSupportReport.schemaVersion)
-		precondition(decoded.redacted)
-		precondition(decoded.providers.map(\.id) == ["anthropic", "openai"])
-		precondition(decoded.application.bundlePath == "/Applications/Pi Agent.app")
-	}
+    private static func checkRuntimeLaunchNonce() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("pi-agent-launch-nonce-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        try RuntimeLaunchNonce.prepareSecureDirectory(root)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: root.path)
+        precondition((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        let nonce = try RuntimeLaunchNonce.loadOrCreate(in: root)
+        let first = nonce.currentValue
+        precondition(first.count == 43)
+        try nonce.rotate()
+        let second = nonce.currentValue
+        precondition(second.count == 43 && second != first)
+        let attributes = try FileManager.default.attributesOfItem(atPath: nonce.fileURL.path)
+        precondition((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        let reloaded = try RuntimeLaunchNonce.loadOrCreate(in: root)
+        precondition(reloaded.currentValue == second)
+        let supervisor = RuntimeSupervisor(
+            plan: contractShellPlan("sleep 20", socketPath: root.appendingPathComponent("sessiond.sock").path),
+            launchSecrets: [nonce]
+        )
+        defer { supervisor.stop() }
+        try supervisor.start()
+        let launchedValue = nonce.currentValue
+        try supervisor.start()
+        precondition(nonce.currentValue == launchedValue)
+        let token = try RuntimeLaunchNonce.loadOrCreate(
+            in: root,
+            fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
+        )
+        let persistedToken = token.currentValue
+        let reattachedToken = try RuntimeLaunchNonce.loadOrCreate(
+            in: root,
+            fileName: RuntimeLaunchNonce.projectCapabilityTokenFileName
+        )
+        precondition(reattachedToken.currentValue == persistedToken)
+        let tokenOutput = root.appendingPathComponent("project-capability-token-output")
+        let tokenSupervisor = RuntimeSupervisor(
+            plan: RuntimeLaunchPlan(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf %s \"$PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN\" > \"$TOKEN_OUTPUT\"; sleep 20"],
+                environment: [
+                    "PI_AGENT_RUNTIME_PROJECT_CAPABILITY_TOKEN": "stale-token",
+                    "TOKEN_OUTPUT": tokenOutput.path,
+                ],
+                socketPath: root.appendingPathComponent("token-sessiond.sock").path
+            ),
+            launchSecrets: [token]
+        )
+        defer { tokenSupervisor.stop() }
+        try tokenSupervisor.start()
+        precondition(token.currentValue != persistedToken)
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: tokenOutput.path) {
+            usleep(10_000)
+        }
+        let childToken = try String(contentsOf: tokenOutput, encoding: .utf8)
+        precondition(childToken == token.currentValue)
+    }
+
+    private static func checkRuntimeCommandReceiptDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let data = Data(
+            #"{"commandId":"command-1","kind":"abort-active-work","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"requested":1,"aborted":[{"sessionId":"s1","runtimeId":"pi"}],"failures":[]}}"#.utf8
+        )
+        let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: data)
+        precondition(receipt.commandId == "command-1")
+        precondition(receipt.runtimeEpoch == "epoch-1")
+        precondition(receipt.status == "completed")
+        precondition(receipt.result?.requested == 1)
+        precondition(receipt.result?.failures?.isEmpty == true)
+
+        let promptData = Data(
+            #"{"commandId":"command-2","kind":"prompt","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"accepted":true,"sessionId":"s1","runtimeId":"pi"}}"#.utf8
+        )
+        let promptReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: promptData)
+        precondition(promptReceipt.result?.accepted == true)
+        precondition(promptReceipt.result?.sessionId == "s1")
+        precondition(promptReceipt.recoveredAfterRuntimeRestart == nil)
+
+        let recoveredReceipt = try decoder.decode(
+            RuntimeCommandReceipt.self,
+            from: Data(#"{"commandId":"command-recovered","kind":"prompt","runtimeEpoch":"epoch-before-restart","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","recoveredAfterRuntimeRestart":true,"result":{"accepted":true,"sessionId":"s1"}}"#.utf8)
+        )
+        precondition(recoveredReceipt.recoveredAfterRuntimeRestart == true)
+
+        let startData = Data(
+            #"{"commandId":"command-3","kind":"start-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
+        )
+        let startReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: startData)
+        precondition(startReceipt.result?.created == true)
+        precondition(startReceipt.result?.cwd == "/repo")
+
+        let archiveData = Data(
+            #"{"commandId":"command-4","kind":"archive-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"archived":true,"sessionId":"s2","cwd":"/repo","runtimeId":"pi"}}"#.utf8
+        )
+        let archiveReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: archiveData)
+        precondition(archiveReceipt.result?.archived == true)
+        precondition(archiveReceipt.result?.sessionId == "s2")
+
+        let restoreData = Data(
+            #"{"commandId":"command-5","kind":"restore-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"restored":true,"sessionId":"s2"}}"#.utf8
+        )
+        let restoreReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: restoreData)
+        precondition(restoreReceipt.result?.restored == true)
+
+        let deleteData = Data(
+            #"{"commandId":"command-6","kind":"delete-archived-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"deleted":true,"sessionId":"s2"}}"#.utf8
+        )
+        let deleteReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: deleteData)
+        precondition(deleteReceipt.result?.deleted == true)
+
+        let forkData = Data(
+            #"{"commandId":"command-fork","kind":"fork-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"forked":true,"session":{"id":"forked","cwd":"/repo","runtimeId":"pi","path":"/sessions/forked.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":1,"firstMessage":"fork point"},"promptDraft":"fork point"}}"#.utf8
+        )
+        let forkReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: forkData)
+        precondition(forkReceipt.result?.forked == true)
+        precondition(forkReceipt.result?.session?.id == "forked")
+        precondition(forkReceipt.result?.promptDraft == "fork point")
+
+        let importData = Data(
+            #"{"commandId":"command-import","kind":"import-session","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"imported":true,"session":{"id":"imported","cwd":"/repo","runtimeId":"pi","path":"/sessions/imported.jsonl","created":"2026-08-04T00:00:00Z","modified":"2026-08-04T00:00:00Z","messageCount":2,"firstMessage":"imported message"}}}"#.utf8
+        )
+        let importReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: importData)
+        precondition(importReceipt.result?.imported == true)
+        precondition(importReceipt.result?.session?.id == "imported")
+
+        let terminalData = Data(
+            #"{"commandId":"command-7","kind":"create-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"created":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
+        )
+        let terminalReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: terminalData)
+        precondition(terminalReceipt.result?.created == true)
+        precondition(terminalReceipt.result?.terminal?.id == "t1")
+
+        let continuedTerminalData = Data(
+            #"{"commandId":"command-8","kind":"continue-terminal","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"continued":true,"terminal":{"id":"t1","cwd":"/repo","name":"Pi Agent Terminal","createdAt":"2026-08-04T00:00:00Z","exited":false}}}"#.utf8
+        )
+        let continuedTerminalReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: continuedTerminalData)
+        precondition(continuedTerminalReceipt.result?.continued == true)
+    }
+
+    private static func checkGitContractDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let statusData = Data(
+            #"{"isGitRepo":true,"hash":"status-hash","branch":"main","upstream":"origin/main","ahead":1,"behind":0,"files":[{"path":"Sources/App.swift","index":"modified","workingTree":"unmodified"}],"submodules":[]}"#.utf8
+        )
+        let status = try decoder.decode(RuntimeGitStatus.self, from: statusData)
+        precondition(status.isGitRepo)
+        precondition(status.branch == "main")
+        precondition(status.files.first?.path == "Sources/App.swift")
+
+        let pushPreviewData = Data(
+            #"{"status":{"isGitRepo":true,"hash":"push-status","branch":"main","upstream":"origin/main","ahead":2,"behind":0,"files":[],"submodules":[]},"canPush":true}"#.utf8
+        )
+        let pushPreview = try decoder.decode(RuntimeGitPushPreview.self, from: pushPreviewData)
+        precondition(pushPreview.canPush)
+        precondition(pushPreview.status.upstream == "origin/main")
+
+        let revertPreviewData = Data(
+            #"{"status":{"isGitRepo":true,"hash":"clean","branch":"main","files":[],"submodules":[]},"canRevert":true,"commit":{"hash":"deadbeef","subject":"latest change"}}"#.utf8
+        )
+        let revertPreview = try decoder.decode(RuntimeGitRevertPreview.self, from: revertPreviewData)
+        precondition(revertPreview.canRevert)
+        precondition(revertPreview.commit?.hash == "deadbeef")
+
+        let receiptData = Data(
+            #"{"commandId":"git-1","kind":"commit-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"committed":true,"hash":"deadbeef","subject":"native Git","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+        )
+        let receipt = try decoder.decode(RuntimeCommandReceipt.self, from: receiptData)
+        precondition(receipt.result?.committed == true)
+        precondition(receipt.result?.hash == "deadbeef")
+        precondition(receipt.result?.status?.files.isEmpty == true)
+
+        let pushReceiptData = Data(
+            #"{"commandId":"push-1","kind":"push-git","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"pushed":true,"status":{"isGitRepo":true,"hash":"clean","branch":"main","upstream":"origin/main","ahead":0,"behind":0,"files":[],"submodules":[]}}}"#.utf8
+        )
+        let pushReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: pushReceiptData)
+        precondition(pushReceipt.result?.pushed == true)
+        precondition(pushReceipt.result?.status?.ahead == 0)
+
+        let discardReceiptData = Data(
+            #"{"commandId":"discard-1","kind":"discard-git-paths","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"discarded":true,"paths":["Sources/App.swift"],"status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+        )
+        let discardReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: discardReceiptData)
+        precondition(discardReceipt.result?.discarded == true)
+        precondition(discardReceipt.result?.paths == ["Sources/App.swift"])
+
+        let revertReceiptData = Data(
+            #"{"commandId":"revert-1","kind":"revert-git-head","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-05T00:00:00Z","completedAt":"2026-08-05T00:00:01Z","result":{"reverted":true,"hash":"reverted","subject":"Revert latest","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]}}}"#.utf8
+        )
+        let revertReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: revertReceiptData)
+        precondition(revertReceipt.result?.reverted == true)
+        precondition(revertReceipt.result?.hash == "reverted")
+
+        let checkpointData = Data(
+            #"{"commandId":"checkpoint-1","kind":"create-git-checkpoint","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"checkpointed":true,"checkpoint":{"id":"cp-1","sessionId":"thread-1","cwd":"/repo","createdAt":"2026-08-04T00:00:00Z","status":{"isGitRepo":true,"hash":"clean","files":[],"submodules":[]},"unstaged":{"hash":"u","diff":"diff --git","truncated":false},"staged":{"hash":"s","diff":"","truncated":false}}}}"#.utf8
+        )
+        let checkpointReceipt = try decoder.decode(RuntimeCommandReceipt.self, from: checkpointData)
+        precondition(checkpointReceipt.result?.checkpointed == true)
+        precondition(checkpointReceipt.result?.checkpoint?.sessionId == "thread-1")
+        precondition(checkpointReceipt.result?.checkpoint?.unstaged.diff == "diff --git")
+    }
+
+    private static func checkSupportReportEncoding() throws {
+        let report = NativeSupportReport(
+            generatedAt: Date(timeIntervalSince1970: 1_722_844_800),
+            application: .init(
+                bundleIdentifier: "com.example.PiAgent",
+                version: "0.202608.0",
+                build: "42",
+                bundlePath: "/Applications/Pi Agent.app"
+            ),
+            runtime: .init(
+                socket: "/tmp/pi-agent.sock",
+                connectionState: "Connected",
+                health: nil,
+                hello: nil,
+                diagnosticError: nil
+            ),
+            project: .init(path: "/repo", authorization: "Authorized"),
+            providers: [
+                .init(id: "openai", authType: "oauth", configured: true, source: "keychain"),
+                .init(id: "anthropic", authType: "api_key", configured: false, source: nil),
+            ]
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(NativeSupportReport.self, from: report.encodedJSON())
+        precondition(decoded.schemaVersion == NativeSupportReport.schemaVersion)
+        precondition(decoded.redacted)
+        precondition(decoded.providers.map(\.id) == ["anthropic", "openai"])
+        precondition(decoded.application.bundlePath == "/Applications/Pi Agent.app")
+    }
 
     private static func checkWorkspaceContractDecoding() throws {
         let decoder = JSONDecoder()
@@ -417,63 +417,63 @@ struct PiAgentContractCheck {
     }
 
     private static func checkExtensionInteractionContractDecoding() throws {
-		let decoder = JSONDecoder()
-		decoder.dateDecodingStrategy = .iso8601
-		let projection = try decoder.decode(
-			RuntimeExtensionInteraction.self,
-			from: Data(#"{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"select","title":"Choose","options":["one","two"],"createdAt":"2026-08-04T00:00:00Z","timeoutAt":"2026-08-04T00:01:00Z"}"#.utf8)
-		)
-		precondition(projection.kind == "select")
-		precondition(projection.options == ["one", "two"])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let projection = try decoder.decode(
+            RuntimeExtensionInteraction.self,
+            from: Data(#"{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"select","title":"Choose","options":["one","two"],"createdAt":"2026-08-04T00:00:00Z","timeoutAt":"2026-08-04T00:01:00Z"}"#.utf8)
+        )
+        precondition(projection.kind == "select")
+        precondition(projection.options == ["one", "two"])
 
-		let receipt = try decoder.decode(
-			RuntimeCommandReceipt.self,
-			from: Data(#"{"commandId":"interaction-command","kind":"respond-extension-interaction","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"responded":true,"interaction":{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"confirm","title":"Proceed","message":"Continue?","createdAt":"2026-08-04T00:00:00Z"}}}"#.utf8)
-		)
-		precondition(receipt.result?.responded == true)
-		precondition(receipt.result?.interaction?.id == "interaction-1")
-	}
+        let receipt = try decoder.decode(
+            RuntimeCommandReceipt.self,
+            from: Data(#"{"commandId":"interaction-command","kind":"respond-extension-interaction","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"responded":true,"interaction":{"id":"interaction-1","sessionId":"s1","cwd":"/repo","kind":"confirm","title":"Proceed","message":"Continue?","createdAt":"2026-08-04T00:00:00Z"}}}"#.utf8)
+        )
+        precondition(receipt.result?.responded == true)
+        precondition(receipt.result?.interaction?.id == "interaction-1")
+    }
 
-	private static func checkProjectCapabilityReceiptDecoding() throws {
-		let decoder = JSONDecoder()
-		decoder.dateDecodingStrategy = .iso8601
-		let receipt = try decoder.decode(
-			RuntimeCommandReceipt.self,
-			from: Data(#"{"commandId":"project-capability","kind":"authorize-project","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"authorized":true,"path":"/private/tmp/project"}}"#.utf8)
-		)
-		precondition(receipt.result?.authorized == true)
-		precondition(receipt.result?.path == "/private/tmp/project")
-	}
+    private static func checkProjectCapabilityReceiptDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let receipt = try decoder.decode(
+            RuntimeCommandReceipt.self,
+            from: Data(#"{"commandId":"project-capability","kind":"authorize-project","runtimeEpoch":"epoch-1","status":"completed","startedAt":"2026-08-04T00:00:00Z","completedAt":"2026-08-04T00:00:01Z","result":{"authorized":true,"path":"/private/tmp/project"}}"#.utf8)
+        )
+        precondition(receipt.result?.authorized == true)
+        precondition(receipt.result?.path == "/private/tmp/project")
+    }
 
-	private static func checkLegacyMigrationOverviewDecoding() throws {
-		let overview = try JSONDecoder().decode(
-			RuntimeLegacyMigrationOverview.self,
-			from: Data(#"{"legacyDataDir":"/Users/example/.pi-web","items":[{"id":"projects","source":"/Users/example/.pi-web/projects.json","sourceExists":true,"action":"reauthorize-projects","itemCount":2},{"id":"machines","source":"/Users/example/.pi-web/machines.json","sourceExists":true,"action":"retained"}]}"#.utf8)
-		)
-		precondition(overview.legacyDataDir == "/Users/example/.pi-web")
-		precondition(overview.items.map(\.id) == ["projects", "machines"])
-		precondition(overview.items[0].action == "reauthorize-projects")
-		precondition(overview.items[0].itemCount == 2)
-		precondition(overview.items[1].issue == nil)
-	}
+    private static func checkLegacyMigrationOverviewDecoding() throws {
+        let overview = try JSONDecoder().decode(
+            RuntimeLegacyMigrationOverview.self,
+            from: Data(#"{"legacyDataDir":"/Users/example/.pi-web","items":[{"id":"projects","source":"/Users/example/.pi-web/projects.json","sourceExists":true,"action":"reauthorize-projects","itemCount":2},{"id":"machines","source":"/Users/example/.pi-web/machines.json","sourceExists":true,"action":"retained"}]}"#.utf8)
+        )
+        precondition(overview.legacyDataDir == "/Users/example/.pi-web")
+        precondition(overview.items.map(\.id) == ["projects", "machines"])
+        precondition(overview.items[0].action == "reauthorize-projects")
+        precondition(overview.items[0].itemCount == 2)
+        precondition(overview.items[1].issue == nil)
+    }
 
-	private static func checkBundledRuntimeSocketSecurity() throws {
-		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-			.appendingPathComponent("pi-agent-socket-security-\(UUID().uuidString)", isDirectory: true)
-		let socketPath = root.appendingPathComponent("sessiond.sock").path
-		defer { try? FileManager.default.removeItem(at: root) }
-		try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-		try Data("not-a-socket".utf8).write(to: URL(fileURLWithPath: socketPath), options: .atomic)
-		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: socketPath)
-		do {
-			try RuntimeSocketSecurity.bundled.validate(socketPath: socketPath)
-			preconditionFailure("Bundled Runtime must reject a regular file at its socket path")
-		} catch let error as RuntimeClientError {
-			guard case let .connectionFailed(message) = error,
-					message.contains("not a Unix domain socket")
-			else { throw error }
-		}
-	}
+    private static func checkBundledRuntimeSocketSecurity() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("pi-agent-socket-security-\(UUID().uuidString)", isDirectory: true)
+        let socketPath = root.appendingPathComponent("sessiond.sock").path
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Data("not-a-socket".utf8).write(to: URL(fileURLWithPath: socketPath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: socketPath)
+        do {
+            try RuntimeSocketSecurity.bundled.validate(socketPath: socketPath)
+            preconditionFailure("Bundled Runtime must reject a regular file at its socket path")
+        } catch let error as RuntimeClientError {
+            guard case let .connectionFailed(message) = error,
+                    message.contains("not a Unix domain socket")
+            else { throw error }
+        }
+    }
 
     private static func checkProjectAuthorization() throws {
         let suite = "PiAgentContractCheck.\(UUID().uuidString)"
@@ -647,48 +647,48 @@ struct PiAgentContractCheck {
         }
     }
 
-	private static func checkNativeAppDataErasePlan() throws {
-		let fileManager = FileManager.default
-		let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-			.appendingPathComponent("pi-agent-data-erase-plan-\(UUID().uuidString)", isDirectory: true)
-		defer { try? fileManager.removeItem(at: root) }
-		let appURL = root.appendingPathComponent("Pi Agent.app", isDirectory: true)
-		let helperURL = appURL
-			.appendingPathComponent("Contents/Helpers", isDirectory: true)
-			.appendingPathComponent(NativeAppDataErasePlan.helperName)
-		try fileManager.createDirectory(at: helperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-		let info = ["CFBundleIdentifier": NativeAppUninstallPlan.expectedBundleIdentifier] as NSDictionary
-		try info.write(to: appURL.appendingPathComponent("Contents/Info.plist"), atomically: true)
-		try Data("#!/bin/sh\nexit 0\n".utf8).write(to: helperURL)
-		try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helperURL.path)
+    private static func checkNativeAppDataErasePlan() throws {
+        let fileManager = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("pi-agent-data-erase-plan-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+        let appURL = root.appendingPathComponent("Pi Agent.app", isDirectory: true)
+        let helperURL = appURL
+            .appendingPathComponent("Contents/Helpers", isDirectory: true)
+            .appendingPathComponent(NativeAppDataErasePlan.helperName)
+        try fileManager.createDirectory(at: helperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let info = ["CFBundleIdentifier": NativeAppUninstallPlan.expectedBundleIdentifier] as NSDictionary
+        try info.write(to: appURL.appendingPathComponent("Contents/Info.plist"), atomically: true)
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: helperURL)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helperURL.path)
 
-		let plan = try NativeAppDataErasePlan.prepare(
-			appBundleURL: appURL,
-			helperURL: helperURL,
-			waitForProcessID: 42,
-			fileManager: fileManager
-		)
-		precondition(plan.appBundleURL == appURL.standardizedFileURL.resolvingSymlinksInPath())
-		precondition(plan.helperURL == helperURL.standardizedFileURL.resolvingSymlinksInPath())
-		precondition(plan.dataDirectoryURL == fileManager.homeDirectoryForCurrentUser
-			.appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true))
-		precondition(plan.helperArguments == [
-			"--erase-data-when-parent-exits",
-			"--wait-for-pid", "42",
-			"--app-path", plan.appBundleURL.path,
-		])
-		do {
-			_ = try NativeAppDataErasePlan.prepare(
-				appBundleURL: appURL,
-				helperURL: appURL.appendingPathComponent("Contents/Helpers/PiAgentUninstaller"),
-				waitForProcessID: 42,
-				fileManager: fileManager
-			)
-			preconditionFailure("The data eraser must reject a different bundled helper")
-		} catch NativeAppMaintenanceError.invalidHelper {
-			// The eraser never accepts an adjacent helper or an arbitrary executable.
-		}
-	}
+        let plan = try NativeAppDataErasePlan.prepare(
+            appBundleURL: appURL,
+            helperURL: helperURL,
+            waitForProcessID: 42,
+            fileManager: fileManager
+        )
+        precondition(plan.appBundleURL == appURL.standardizedFileURL.resolvingSymlinksInPath())
+        precondition(plan.helperURL == helperURL.standardizedFileURL.resolvingSymlinksInPath())
+        precondition(plan.dataDirectoryURL == fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Pi Agent", isDirectory: true))
+        precondition(plan.helperArguments == [
+            "--erase-data-when-parent-exits",
+            "--wait-for-pid", "42",
+            "--app-path", plan.appBundleURL.path,
+        ])
+        do {
+            _ = try NativeAppDataErasePlan.prepare(
+                appBundleURL: appURL,
+                helperURL: appURL.appendingPathComponent("Contents/Helpers/PiAgentUninstaller"),
+                waitForProcessID: 42,
+                fileManager: fileManager
+            )
+            preconditionFailure("The data eraser must reject a different bundled helper")
+        } catch NativeAppMaintenanceError.invalidHelper {
+            // The eraser never accepts an adjacent helper or an arbitrary executable.
+        }
+    }
 
     private static func checkSessionAndMessageDecoding() throws {
         let sessionData = Data(
@@ -701,24 +701,24 @@ struct PiAgentContractCheck {
         precondition(session.runtimeId == "pi")
         precondition(session.messageCount == 2)
 
-		let messageData = Data(
-			#"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"world"},{"type":"image","mimeType":"image/png","data":"QUJD"}]}],"start":0,"total":2}"#.utf8
+        let messageData = Data(
+            #"{"messages":[{"id":"m1","role":"user","content":"hello"},{"id":"m2","role":"assistant","content":[{"type":"thinking","thinking":"private chain"},{"type":"text","text":"world"},{"type":"image","mimeType":"image/png","data":"QUJD"}]}],"start":0,"total":2}"#.utf8
         )
         let page = try decoder.decode(RuntimeMessagePage.self, from: messageData)
         precondition(page.messages.count == 2)
-		precondition(page.messages[0].text == "hello")
-		precondition(page.messages[1].text == "world")
-		precondition(page.messages[1].images.count == 1)
-		precondition(page.messages[1].images[0].imageData == Data([0x41, 0x42, 0x43]))
+        precondition(page.messages[0].text == "hello")
+        precondition(page.messages[1].text == "world")
+        precondition(page.messages[1].images.count == 1)
+        precondition(page.messages[1].images[0].imageData == Data([0x41, 0x42, 0x43]))
 
-		let promptAttachment = RuntimePromptImageAttachment(
-			name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3
-		)
-		let encodedAttachment = try JSONSerialization.jsonObject(
-			with: JSONEncoder().encode(promptAttachment)
-		) as? [String: Any]
-		precondition(encodedAttachment?["kind"] as? String == "image")
-		precondition(encodedAttachment?["id"] == nil)
+        let promptAttachment = RuntimePromptImageAttachment(
+            name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3
+        )
+        let encodedAttachment = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(promptAttachment)
+        ) as? [String: Any]
+        precondition(encodedAttachment?["kind"] as? String == "image")
+        precondition(encodedAttachment?["id"] == nil)
         precondition(page.total == 2)
     }
 

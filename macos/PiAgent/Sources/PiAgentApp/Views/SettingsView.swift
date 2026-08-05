@@ -50,29 +50,29 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .confirmationDialog(
-			"卸载 Pi Agent 并保留数据？",
-			isPresented: $model.showUninstallConfirmation,
-			titleVisibility: .visible
-		) {
-			Button("将 Pi Agent.app 移入废纸篓", role: .destructive) { model.confirmUninstallKeepingData() }
-			Button("取消", role: .cancel) { model.cancelUninstallKeepingData() }
-		} message: {
-			Text("Pi Agent 会确认没有活跃会话，退出后仅将经过 bundle ID 验证的自身应用移入废纸篓。Pi Agent 数据、项目文件夹、旧版 PI WEB 状态和 Keychain 凭据都会保留。")
-		}
-		.sheet(isPresented: $model.showDataEraseConfirmation, onDismiss: model.cancelDataErase) {
-			NativeDataEraseSheet(model: model)
-		}
-		.confirmationDialog(
-			"回滚最近一次项目迁移？",
-			isPresented: $model.showLegacyProjectMigrationRollbackConfirmation,
-			titleVisibility: .visible
-		) {
-			Button("回滚原生书签", role: .destructive) { model.rollbackLegacyProjectMigration() }
-			Button("取消", role: .cancel) { model.cancelLegacyProjectMigrationRollback() }
-		} message: {
-			Text("此操作仅移除该迁移新建的原生项目库书签，不会改动旧版 PI WEB 的 projects.json、所选目录、会话、凭据或手动添加的项目。")
-		}
-		.confirmationDialog(
+            "卸载 Pi Agent 并保留数据？",
+            isPresented: $model.showUninstallConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("将 Pi Agent.app 移入废纸篓", role: .destructive) { model.confirmUninstallKeepingData() }
+            Button("取消", role: .cancel) { model.cancelUninstallKeepingData() }
+        } message: {
+            Text("Pi Agent 会确认没有活跃会话，退出后仅将经过 bundle ID 验证的自身应用移入废纸篓。Pi Agent 数据、项目文件夹、旧版 PI WEB 状态和 Keychain 凭据都会保留。")
+        }
+        .sheet(isPresented: $model.showDataEraseConfirmation, onDismiss: model.cancelDataErase) {
+            NativeDataEraseSheet(model: model)
+        }
+        .confirmationDialog(
+            "回滚最近一次项目迁移？",
+            isPresented: $model.showLegacyProjectMigrationRollbackConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("回滚原生书签", role: .destructive) { model.rollbackLegacyProjectMigration() }
+            Button("取消", role: .cancel) { model.cancelLegacyProjectMigrationRollback() }
+        } message: {
+            Text("此操作仅移除该迁移新建的原生项目库书签，不会改动旧版 PI WEB 的 projects.json、所选目录、会话、凭据或手动添加的项目。")
+        }
+        .confirmationDialog(
             "将旧版凭据迁移到 Keychain？",
             isPresented: $model.showLegacyAuthMigrationConfirmation,
             titleVisibility: .visible
@@ -411,42 +411,42 @@ private struct DataSettingsDetail: View {
 
     var body: some View {
         SettingsDetail("数据") {
-			SettingsGroup("安装") {
-				SettingsRow("Pi Agent 数据", description: model.nativeAppDataPath) {
-					Button("在 Finder 中显示") { model.revealNativeAppData() }
-				}
-			}
-			SettingsGroup("维护") {
-				SettingsRow("卸载 Pi Agent", description: "仅将 Pi Agent.app 移入废纸篓，数据、项目和凭据都会保留。") {
-					Button("卸载…", role: .destructive) {
-						model.requestUninstallKeepingData()
-					}
-					.disabled(model.isUninstallPreparing)
-				}
-				if model.isUninstallPreparing {
-					ProgressView("正在检查活跃会话…")
-				} else if let message = model.uninstallMessage {
-					Text(message)
-						.font(.caption)
-						.foregroundStyle(.red)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-				Divider()
-				SettingsRow("抹掉所有 Pi Agent 数据", description: "将 Pi Agent 数据移入废纸篓并清除 Keychain 凭据，应用和你的项目都会保留。") {
-					Button("抹掉…", role: .destructive) {
-						model.requestDataErase()
-					}
-					.disabled(model.isDataErasePreparing)
-				}
-				if model.isDataErasePreparing {
-					ProgressView("正在检查活跃会话…")
-				} else if let message = model.dataEraseMessage {
-					Text(message)
-						.font(.caption)
-						.foregroundStyle(.red)
-						.fixedSize(horizontal: false, vertical: true)
-					}
-				}
+            SettingsGroup("安装") {
+                SettingsRow("Pi Agent 数据", description: model.nativeAppDataPath) {
+                    Button("在 Finder 中显示") { model.revealNativeAppData() }
+                }
+            }
+            SettingsGroup("维护") {
+                SettingsRow("卸载 Pi Agent", description: "仅将 Pi Agent.app 移入废纸篓，数据、项目和凭据都会保留。") {
+                    Button("卸载…", role: .destructive) {
+                        model.requestUninstallKeepingData()
+                    }
+                    .disabled(model.isUninstallPreparing)
+                }
+                if model.isUninstallPreparing {
+                    ProgressView("正在检查活跃会话…")
+                } else if let message = model.uninstallMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Divider()
+                SettingsRow("抹掉所有 Pi Agent 数据", description: "将 Pi Agent 数据移入废纸篓并清除 Keychain 凭据，应用和你的项目都会保留。") {
+                    Button("抹掉…", role: .destructive) {
+                        model.requestDataErase()
+                    }
+                    .disabled(model.isDataErasePreparing)
+                }
+                if model.isDataErasePreparing {
+                    ProgressView("正在检查活跃会话…")
+                } else if let message = model.dataEraseMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
         }
     }
 }
@@ -458,77 +458,77 @@ private struct MigrationSettingsDetail: View {
 
     var body: some View {
         SettingsDetail("迁移") {
-			SettingsGroup("旧版数据清单") {
-				Text("旧版 PI WEB 状态的只读清单。")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-				if model.isLegacyMigrationOverviewLoading {
-					ProgressView("正在检查旧版 PI WEB 状态…")
-				} else if let overview = model.legacyMigrationOverview {
-					LabeledContent("旧版数据", value: overview.legacyDataDir)
-					ForEach(overview.items) { item in
-						Divider()
-						VStack(alignment: .leading, spacing: 2) {
-							LabeledContent(legacyMigrationItemLabel(item.id), value: legacyMigrationActionLabel(item.action))
-							Text(item.source)
-								.font(Theme.codeCaptionFont)
-								.foregroundStyle(.secondary)
-							if let count = item.itemCount {
-								Text("发现 \(count) 个项目")
-									.font(.caption)
-									.foregroundStyle(.secondary)
-							}
-							if let issue = item.issue {
-								Text(issue)
-									.font(.caption)
-									.foregroundStyle(.orange)
-							}
-						}
-					}
-				}
-				if let error = model.legacyMigrationOverviewError {
-					Text("无法检查旧版 PI WEB 状态：\(error)")
-						.font(.caption)
-						.foregroundStyle(.orange)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-				HStack {
-					Spacer()
-					Button("检查旧版迁移") { model.refreshLegacyMigrationOverview() }
-						.disabled(model.isLegacyMigrationOverviewLoading)
-				}
-			}
-			SettingsGroup("旧版项目") {
-				if model.isLegacyProjectPreviewLoading {
-					ProgressView("正在检查旧版项目…")
-				} else if let preview = model.legacyProjectPreview {
-					if let issue = preview.issue { Text(issue).font(.caption).foregroundStyle(.orange) }
-					else if preview.candidates.isEmpty { Text(preview.sourceExists ? "未找到有效的旧版项目。" : "未找到旧版 projects.json。").foregroundStyle(.secondary) }
-					else {
-						Text("请重新选择每个原始目录以创建新的 macOS 书签，仅凭 PI WEB 路径无法授予 Pi Agent 访问权限。").font(.caption).foregroundStyle(.secondary)
-						ForEach(Array(preview.candidates.enumerated()), id: \.element.id) { index, candidate in
-							if index > 0 { Divider() }
-							HStack { VStack(alignment: .leading) { Text(candidate.name).font(.body.weight(.medium)); Text(candidate.path).font(Theme.codeCaptionFont).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Button("重新授权…") { model.reauthorizeLegacyProject(candidate) } }
-						}
-					}
-				}
-				if model.isLegacyProjectMigrationInFlight {
-					ProgressView("正在更新原生项目迁移…")
-				} else if let migration = model.legacyProjectMigration {
-					Divider()
-					LabeledContent("最近迁移", value: migration.state.rawValue)
-					if migration.rollbackEligible {
-						Button("回滚最近一次项目迁移…", role: .destructive) {
-							model.requestLegacyProjectMigrationRollback()
-						}
-					}
-				}
-				HStack {
-					Spacer()
-					Button("检查旧版项目") { model.refreshLegacyProjectPreview() }
-						.disabled(model.isLegacyProjectPreviewLoading || model.isLegacyProjectMigrationInFlight)
-				}
-			}
+            SettingsGroup("旧版数据清单") {
+                Text("旧版 PI WEB 状态的只读清单。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if model.isLegacyMigrationOverviewLoading {
+                    ProgressView("正在检查旧版 PI WEB 状态…")
+                } else if let overview = model.legacyMigrationOverview {
+                    LabeledContent("旧版数据", value: overview.legacyDataDir)
+                    ForEach(overview.items) { item in
+                        Divider()
+                        VStack(alignment: .leading, spacing: 2) {
+                            LabeledContent(legacyMigrationItemLabel(item.id), value: legacyMigrationActionLabel(item.action))
+                            Text(item.source)
+                                .font(Theme.codeCaptionFont)
+                                .foregroundStyle(.secondary)
+                            if let count = item.itemCount {
+                                Text("发现 \(count) 个项目")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let issue = item.issue {
+                                Text(issue)
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                if let error = model.legacyMigrationOverviewError {
+                    Text("无法检查旧版 PI WEB 状态：\(error)")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack {
+                    Spacer()
+                    Button("检查旧版迁移") { model.refreshLegacyMigrationOverview() }
+                        .disabled(model.isLegacyMigrationOverviewLoading)
+                }
+            }
+            SettingsGroup("旧版项目") {
+                if model.isLegacyProjectPreviewLoading {
+                    ProgressView("正在检查旧版项目…")
+                } else if let preview = model.legacyProjectPreview {
+                    if let issue = preview.issue { Text(issue).font(.caption).foregroundStyle(.orange) }
+                    else if preview.candidates.isEmpty { Text(preview.sourceExists ? "未找到有效的旧版项目。" : "未找到旧版 projects.json。").foregroundStyle(.secondary) }
+                    else {
+                        Text("请重新选择每个原始目录以创建新的 macOS 书签，仅凭 PI WEB 路径无法授予 Pi Agent 访问权限。").font(.caption).foregroundStyle(.secondary)
+                        ForEach(Array(preview.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            if index > 0 { Divider() }
+                            HStack { VStack(alignment: .leading) { Text(candidate.name).font(.body.weight(.medium)); Text(candidate.path).font(Theme.codeCaptionFont).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); Button("重新授权…") { model.reauthorizeLegacyProject(candidate) } }
+                        }
+                    }
+                }
+                if model.isLegacyProjectMigrationInFlight {
+                    ProgressView("正在更新原生项目迁移…")
+                } else if let migration = model.legacyProjectMigration {
+                    Divider()
+                    LabeledContent("最近迁移", value: migration.state.rawValue)
+                    if migration.rollbackEligible {
+                        Button("回滚最近一次项目迁移…", role: .destructive) {
+                            model.requestLegacyProjectMigrationRollback()
+                        }
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Button("检查旧版项目") { model.refreshLegacyProjectPreview() }
+                        .disabled(model.isLegacyProjectPreviewLoading || model.isLegacyProjectMigrationInFlight)
+                }
+            }
             SettingsGroup("旧版凭据") {
                 Text("将兼容的凭据从 auth.json 复制到此 Mac 的 Keychain，源文件保持不变。")
                     .font(.caption)
@@ -579,24 +579,24 @@ private struct MigrationSettingsDetail: View {
 }
 
 private func legacyMigrationItemLabel(_ id: String) -> String {
-	switch id {
-	case "projects": return "项目"
-	case "credentials": return "提供商凭据"
-	case "archived-sessions": return "已归档对话"
-	case "machines": return "远程机器"
-	case "unread": return "未读状态"
-	default: return id
-	}
+    switch id {
+    case "projects": return "项目"
+    case "credentials": return "提供商凭据"
+    case "archived-sessions": return "已归档对话"
+    case "machines": return "远程机器"
+    case "unread": return "未读状态"
+    default: return id
+    }
 }
 
 private func legacyMigrationActionLabel(_ action: String) -> String {
-	switch action {
-	case "reauthorize-projects": return "在项目中重新授权"
-	case "migrate-to-keychain": return "迁移到 Keychain"
-	case "copied-and-retained": return "已复制，源文件保留"
-	case "retained": return "已保留，暂无原生目标"
-	default: return action
-	}
+    switch action {
+    case "reauthorize-projects": return "在项目中重新授权"
+    case "migrate-to-keychain": return "迁移到 Keychain"
+    case "copied-and-retained": return "已复制，源文件保留"
+    case "retained": return "已保留，暂无原生目标"
+    default: return action
+    }
 }
 
 private func providerStatusLabel(_ provider: RuntimeAuthProvider) -> String {

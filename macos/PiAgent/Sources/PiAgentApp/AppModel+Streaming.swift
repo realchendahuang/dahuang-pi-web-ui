@@ -223,10 +223,10 @@ extension AppModel {
         }
 
         switch event.type {
-		case "extension.interaction.opened", "extension.interaction.closed":
-			if let session = selectedSession, session.id == sessionID {
-				refreshExtensionInteractions(for: session)
-			}
+        case "extension.interaction.opened", "extension.interaction.closed":
+            if let session = selectedSession, session.id == sessionID {
+                refreshExtensionInteractions(for: session)
+            }
         case "message.append":
             if let message = event.message { upsertTranscript(message) }
         case "assistant.delta":
@@ -281,81 +281,81 @@ extension AppModel {
         }
     }
 
-	func refreshExtensionInteractions(for session: RuntimeSession? = nil) {
-		guard let session = session ?? selectedSession,
-			  session.archived != true,
-			  let client = runtimeClient as? any RuntimeExtensionInteractionClient
-		else {
-			extensionInteractions = []
-			return
-		}
-		Task { [weak self] in
-			guard let self else { return }
-			do {
-				let interactions = try await client.listExtensionInteractions(
-					sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId
-				)
-				guard self.selectedSessionID == session.id else { return }
-				self.extensionInteractions = interactions
-				if let active = interactions.first, active.kind == "editor" || active.kind == "input" {
-					self.extensionInteractionText = active.prefill ?? ""
-				}
-			} catch {
-				guard self.selectedSessionID == session.id else { return }
-				self.errorMessage = "无法刷新扩展对话框：\(error.localizedDescription)"
-			}
-		}
-	}
+    func refreshExtensionInteractions(for session: RuntimeSession? = nil) {
+        guard let session = session ?? selectedSession,
+              session.archived != true,
+              let client = runtimeClient as? any RuntimeExtensionInteractionClient
+        else {
+            extensionInteractions = []
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let interactions = try await client.listExtensionInteractions(
+                    sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId
+                )
+                guard self.selectedSessionID == session.id else { return }
+                self.extensionInteractions = interactions
+                if let active = interactions.first, active.kind == "editor" || active.kind == "input" {
+                    self.extensionInteractionText = active.prefill ?? ""
+                }
+            } catch {
+                guard self.selectedSessionID == session.id else { return }
+                self.errorMessage = "无法刷新扩展对话框：\(error.localizedDescription)"
+            }
+        }
+    }
 
-	func respondToExtensionInteraction(
-		_ interaction: RuntimeExtensionInteraction,
-		response: RuntimeExtensionInteractionResponse
-	) {
-		guard !isExtensionInteractionMutationInFlight,
-			  let session = selectedSession,
-			  session.id == interaction.sessionId,
-			  let client = runtimeClient as? any RuntimeExtensionInteractionClient,
-			  let expectedRuntimeEpoch = runtimeEpoch
-		else {
-			errorMessage = "请先重新连接 Runtime，再回应扩展对话框。"
-			return
-		}
-		let commandId = UUID().uuidString
-		isExtensionInteractionMutationInFlight = true
-		errorMessage = nil
-		Task { [weak self] in
-			guard let self else { return }
-			do {
-				let receipt: RuntimeCommandReceipt
-				do {
-					receipt = try await client.respondToExtensionInteraction(
-						sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId,
-						interactionId: interaction.id, response: response,
-						commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
-					)
-				} catch {
-					receipt = try await self.commandReceiptAfterUnknownTransport(
-						client: self.runtimeClient, commandId: commandId, originalError: error
-					)
-				}
-				try self.requireCompletedReceipt(
-					receipt,
-					kind: "respond-extension-interaction",
-					expectedRuntimeEpoch: expectedRuntimeEpoch
-				)
-				guard receipt.result?.responded == true,
-					  receipt.result?.interaction?.id == interaction.id
-				else {
-					throw RuntimeClientError.serverError(500, "Runtime 交互回执不完整。")
-				}
-				self.isExtensionInteractionMutationInFlight = false
-				self.refreshExtensionInteractions(for: session)
-			} catch {
-				self.errorMessage = error.localizedDescription
-				self.isExtensionInteractionMutationInFlight = false
-			}
-		}
-	}
+    func respondToExtensionInteraction(
+        _ interaction: RuntimeExtensionInteraction,
+        response: RuntimeExtensionInteractionResponse
+    ) {
+        guard !isExtensionInteractionMutationInFlight,
+              let session = selectedSession,
+              session.id == interaction.sessionId,
+              let client = runtimeClient as? any RuntimeExtensionInteractionClient,
+              let expectedRuntimeEpoch = runtimeEpoch
+        else {
+            errorMessage = "请先重新连接 Runtime，再回应扩展对话框。"
+            return
+        }
+        let commandId = UUID().uuidString
+        isExtensionInteractionMutationInFlight = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt: RuntimeCommandReceipt
+                do {
+                    receipt = try await client.respondToExtensionInteraction(
+                        sessionId: session.id, cwd: session.cwd, runtimeId: session.runtimeId,
+                        interactionId: interaction.id, response: response,
+                        commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
+                    )
+                } catch {
+                    receipt = try await self.commandReceiptAfterUnknownTransport(
+                        client: self.runtimeClient, commandId: commandId, originalError: error
+                    )
+                }
+                try self.requireCompletedReceipt(
+                    receipt,
+                    kind: "respond-extension-interaction",
+                    expectedRuntimeEpoch: expectedRuntimeEpoch
+                )
+                guard receipt.result?.responded == true,
+                      receipt.result?.interaction?.id == interaction.id
+                else {
+                    throw RuntimeClientError.serverError(500, "Runtime 交互回执不完整。")
+                }
+                self.isExtensionInteractionMutationInFlight = false
+                self.refreshExtensionInteractions(for: session)
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isExtensionInteractionMutationInFlight = false
+            }
+        }
+    }
 
     private func appendAssistantDelta(_ delta: String) {
         guard !delta.isEmpty else { return }

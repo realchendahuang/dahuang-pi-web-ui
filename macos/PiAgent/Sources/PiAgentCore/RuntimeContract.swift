@@ -1063,35 +1063,35 @@ public struct RuntimeCommandReceipt: Decodable, Equatable, Sendable {
         public let session: RuntimeSession?
         public let promptDraft: String?
         public let continued: Bool?
-		public let staged: Bool?
-		public let unstaged: Bool?
-		public let discarded: Bool?
-		public let committed: Bool?
-		public let reverted: Bool?
-		public let pushed: Bool?
-		public let paths: [String]?
-		public let hash: String?
-		public let subject: String?
+        public let staged: Bool?
+        public let unstaged: Bool?
+        public let discarded: Bool?
+        public let committed: Bool?
+        public let reverted: Bool?
+        public let pushed: Bool?
+        public let paths: [String]?
+        public let hash: String?
+        public let subject: String?
         public let status: RuntimeGitStatus?
-		public let checkpointed: Bool?
-		public let checkpoint: RuntimeGitCheckpoint?
-		public let responded: Bool?
-		public let interaction: RuntimeExtensionInteraction?
+        public let checkpointed: Bool?
+        public let checkpoint: RuntimeGitCheckpoint?
+        public let responded: Bool?
+        public let interaction: RuntimeExtensionInteraction?
         public let authorized: Bool?
-		public let written: Bool?
-		public let deletedFile: Bool?
+        public let written: Bool?
+        public let deletedFile: Bool?
         public let moved: Bool?
-		public let migrated: Bool?
-		public let rolledBack: Bool?
-		public let migration: RuntimeLegacyAuthMigration?
-		public let existed: Bool?
-		public let fromPath: String?
-		public let toPath: String?
-		public let size: Int?
-		public let modifiedAt: Date?
-		/// Canonical real path returned only by the Runtime after it has accepted
-		/// the App-selected project capability. This is never a capability token.
-		public let path: String?
+        public let migrated: Bool?
+        public let rolledBack: Bool?
+        public let migration: RuntimeLegacyAuthMigration?
+        public let existed: Bool?
+        public let fromPath: String?
+        public let toPath: String?
+        public let size: Int?
+        public let modifiedAt: Date?
+        /// Canonical real path returned only by the Runtime after it has accepted
+        /// the App-selected project capability. This is never a capability token.
+        public let path: String?
         public let terminal: RuntimeTerminalInfo?
         public let sessionId: String?
         public let cwd: String?
