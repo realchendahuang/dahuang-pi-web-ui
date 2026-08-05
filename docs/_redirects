@@ -1,3 +1,0 @@
-# Canonical SEO redirects supported by Cloudflare Workers static assets.
-# Host and scheme redirects need Cloudflare Redirect Rules or custom Worker routing.
-/index.html / 301

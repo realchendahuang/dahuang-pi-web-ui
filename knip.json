@@ -1,9 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
-    "src/cli.ts",
     "src/plugin-api.ts",
     "src/plugin-api/unstable.ts",
+    "src/server/index.ts",
     "extensions/pi-web.ts",
     "extensions/omp-web.ts",
     "pi-web-plugins/**/pi-web-plugin.ts",

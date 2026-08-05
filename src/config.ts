@@ -872,7 +872,3 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 		value.every((item) => typeof item === "string" && item !== "")
 	);
 }
-
-export function examplePiWebConfig(config: PiWebConfig = {}): string {
-	return `${JSON.stringify({ host: config.host ?? "127.0.0.1", port: config.port ?? 31415, allowedHosts: config.allowedHosts ?? [] }, null, 2)}\n`;
-}

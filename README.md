@@ -1,207 +1,47 @@
-# PI WEB
+# Pi Agent (macOS)
 
-[![CI](https://github.com/jmfederico/pi-web/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmfederico/pi-web/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@jmfederico/pi-web)](https://www.npmjs.com/package/@jmfederico/pi-web)
-[![Node.js](https://img.shields.io/node/v/@jmfederico/pi-web)](package.json)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+A native macOS app — SwiftUI shell hosting a supervised, bundled Pi Runtime. The Node/Runtime substrate lives in this repository only as the embedded session daemon that the Swift app supervises; there is **no web UI and no npm publishing**.
 
-**PI WEB is a persistent web control plane for [Pi Coding Agent](https://github.com/earendil-works/pi/tree/main/packages/coding-agent) and [OMP](https://github.com/can1357/oh-my-pi), running agent sessions in real workspaces on your machine or server.**
+## What this is
 
-Run agents where your code, tools, credentials, and build caches live. Supervise them from any browser.
+- `macos/PiAgent` — the SwiftUI app: project library, thread navigation, transcript, SwiftTerm terminal, workspace/git panels, Keychain credentials, migration/erase/uninstall flows.
+- `macos/PiAgentRuntime` — the runtime bundle template (Node + Pi SDK + `node-pty` + this repo's `dist`), embedded into `Pi Agent.app` with a verified manifest.
+- `src/server` + `src/sessiond` — the Node session daemon the app launches and supervises over a Unix socket (the "Native Contract": health/hello, sessions, prompt, terminal, workspace, git, checkpoints, notifications, auth providers).
+- `scripts/macos/` — build, verify, and runtime smoke scripts.
 
-Website and docs: <https://pi-web.dev/>
+Why npm at all? **Pi agent itself is Node.** The Swift shell is the product; the bundled Runtime is the engine it supervises. npm is used only as the build tool for that Node substrate (and the `npm ci` inside the runtime bundle) — nothing here is published to npm anymore.
 
-![PI WEB](docs/assets/pi-web-banner.png)
+## Build
 
-![PI WEB desktop screenshot](docs/assets/pi-web-desktop.png)
-
-## Why PI WEB?
-
-Agentic development works better when the work environment is persistent.
-
-PI WEB lets you:
-
-- keep Pi and OMP agent sessions alive after browser disconnects;
-- run agents inside real repositories and git worktrees;
-- supervise multiple sessions in parallel;
-- switch between laptop, phone, tablet, and desktop;
-- use a server, workstation, or remote dev box as your agent runtime;
-- manage projects, workspaces, files, terminals, sessions, and remote machines from one web UI.
-
-Your browser is the control surface. The work stays where it can keep running.
-
-## Quick start
-
-Requirements:
-
-- Node.js 22.19.0 or newer
-- npm
-- Pi Coding Agent `>=0.81.1 <0.82`, configured for your user (embedded Pi runtime)
-- OMP installed and configured in its own profile if you want the optional OMP runtime
-- git and the development tools your agents need
-
-### Plugin-style (recommended with Pi)
-
-Install the package once with Pi, then use a single slash command:
-
-```bash
-# from GitHub
-pi install https://github.com/realchendahuang/dahuang-pi-web-ui
-
-# or a local checkout (after npm install && npm run build)
-pi install /path/to/dahuang-pi-web-ui
-```
-
-In any Pi session:
-
-```text
-/pi-web
-```
-
-That starts the Web UI (sets up local user services if needed), prints the URL, and opens the browser. No other slash subcommands required.
-
-Shell equivalent:
-
-```bash
-pi-web up
-```
-
-### Classic global install
-
-```bash
-git clone https://github.com/realchendahuang/dahuang-pi-web-ui.git
-cd dahuang-pi-web-ui
-npm install --allow-scripts=node-pty
-npm run build
-npm link   # optional: exposes pi-web on PATH
-pi-web up
-pi-web doctor
-```
-
-On npm 12, the scoped flag lets `node-pty` prepare its required native module without enabling install scripts for other dependencies.
-
-Then open:
-
-```text
-http://127.0.0.1:31415
-```
-
-Useful commands:
-
-```bash
-pi-web up
-pi-web status
-pi-web logs
-pi-web restart
-pi-web doctor
-pi-web version
-pi-web uninstall
-```
-
-<!-- Keep README guidance concise. Put install variants, troubleshooting,
-configuration, and operational details in docs/, then link from here. -->
-
-For more install options, including one-line install, Pi package install, WSL/manual usage, and remote access, see the [installation guide](https://pi-web.dev/install).
-
-## Core model
-
-PI WEB organizes work like this:
-
-```text
-Machine     a local or remote PI WEB runtime endpoint
-Project     a folder on that machine
-Workspace   a git worktree, or the project folder for non-git projects
-Session     a Pi Coding Agent chat running inside a workspace
-```
-
-A typical flow:
-
-1. Add a project.
-2. Choose a workspace or git worktree.
-3. Start a session.
-4. Let the agent work.
-5. Come back later from any browser.
-
-## Remote-first development
-
-PI WEB is designed for remote AI-driven development.
-
-Instead of tying agent work to your laptop session, run PI WEB on a machine that stays available: a server, desktop, cloud VM, home lab machine, or remote dev box.
-
-Use a private network, SSH tunnel, trusted reverse proxy, or federated PI WEB machine setup when accessing it remotely.
-
-Read more: [Remote-first development](https://pi-web.dev/remote-first)
-
-## Machines and fleets
-
-PI WEB can register other PI WEB runtimes as remote machines. One browser-facing PI WEB instance can proxy projects, files, git state, sessions, terminals, activity, Pi package management, and selected-machine settings from trusted remote machines.
-
-When a remote machine is selected, Settings tabs label their target. Pi packages, PI WEB plugin enablement, session daemon toggles, external file access, and upload defaults target the selected machine. Gateway/server settings such as host, port, allowed hosts, registered machines/tokens, and keyboard shortcuts stay local to the gateway/browser.
-
-Read more: [Fleet and machines guide](https://pi-web.dev/machines)
-
-## PI WEB plugins
-
-PI WEB supports trusted browser-side plugins that can add actions, workspace panels, and workspace metadata. Use **Settings → PI WEB plugins** to enable or disable them on the selected machine.
-
-Pi packages are a separate Pi package-manager concept. A Pi package may include a PI WEB browser plugin, but installing a package and enabling its browser plugin are different operations.
-
-Read more: [PI WEB plugin guide and API](https://pi-web.dev/plugins)
-
-## Configuration
-
-Global config lives at:
-
-```text
-$PI_WEB_CONFIG
-~/.config/pi-web/config.json
-```
-
-Project-local PI WEB config lives at:
-
-```text
-<project>/.pi-web/config.json
-```
-
-Common configuration includes host/port, path access, uploads, isolated Pi/OMP runtime profiles, PI WEB plugin enablement, shortcuts, and session daemon options. In Settings, machine-affecting config targets the selected machine; gateway host/port/allowed-hosts, remote machine registration, tokens, and keyboard shortcuts stay local.
-
-Read more: [Configuration reference](https://pi-web.dev/config)
-
-## Development
-
-Clone the repository and run the rapid UI development environment:
+Requirements: Xcode Command Line Tools (Swift), Node.js ≥ 22.19, npm.
 
 ```bash
 npm install
-npm run dev:ui
+./scripts/macos/build-app.sh release   # ~server build + swift release + runtime bundle
+./scripts/macos/verify-app.sh          # bundle + manifest + internal runtime smoke
+./scripts/macos/smoke-runtime.sh       # full native-contract runtime smoke (slow)
 ```
 
-Open the Vite URL, usually `http://localhost:31416`. It hot-reloads client changes and uses a separate dev API on port `31417`, leaving the long-lived session daemon running.
-
-See [the development workflow](./docs/development.md) for the full service layout, port override, and validation steps.
-
-Validate changes with:
+The app lands at `build/macos/Pi Agent.app`. Copy it to `/Applications`:
 
 ```bash
-npm run verify
+cp -R "build/macos/Pi Agent.app" "/Applications/Pi Agent.app"
 ```
 
-## Security model
+## Development
 
-PI WEB assumes trusted users, trusted repositories, and trusted server paths.
+- Swift sources: `macos/PiAgent/Sources/` (app, core client, helpers, contract check).
+- Server sources: `src/server/`, `src/sessiond/`.
+- Validate the Node side with `npm run verify` (typecheck + lint + knip + tests).
+- The runtime bundle is assembled by `scripts/macos/build-runtime.mjs` with a SHA-256 manifest; `verify-app.sh` re-validates it.
 
-It is not a sandbox, permission system, or multi-tenant platform. Do not expose it directly to the public internet without a trusted network, firewall, VPN, SSH tunnel, or authenticated reverse proxy.
+## Repo layout
 
-## Documentation
-
-- [Website](https://pi-web.dev/)
-- [Install](https://pi-web.dev/install)
-- [Remote-first development](https://pi-web.dev/remote-first)
-- [Machines / fleet](https://pi-web.dev/machines)
-- [Configuration](https://pi-web.dev/config)
-- [Plugins](https://pi-web.dev/plugins)
-- [FAQ](https://pi-web.dev/faq)
+- `macos/PiAgent/` — Swift package (app + `PiAgentCore` + helper executables + `PiAgentContractCheck`).
+- `src/` — TypeScript server/sessiond/shared/plugin-api, compiled into `dist/` (no browser client).
+- `extensions/`, `pi-web-plugins/` — Pi extension surface bundled into the runtime.
+- `docs/` — design and integration notes (`macos-native-app-plan.md`, `macos-pi-runtime-integration.md`).
 
 ## License
 
-MIT © 2026 Federico Jaramillo Martinez. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

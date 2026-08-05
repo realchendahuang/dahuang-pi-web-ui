@@ -32,7 +32,6 @@
   },
   "include": [
     "src/**/*.ts",
-    "vite.config.ts",
     "vitest.config.ts",
     "extensions/**/*.ts",
     "pi-web-plugins/**/*.ts"

@@ -149,20 +149,6 @@ export interface PiPackagesResponse {
 	packages: PiPackageInfo[];
 }
 
-export interface PiPackageInstallRequest {
-	source: string;
-}
-
-export interface PiPackageRemoveRequest {
-	source: string;
-	/** Optional known scope from a listed package; not an install-location picker. */
-	scope?: PiPackageScope;
-}
-
-export interface PiPackageUpdateRequest {
-	/** Omit to update all configured Pi packages. */
-	source?: string;
-}
 
 export type PiPackageMutationAction = "install" | "remove" | "update";
 
@@ -273,11 +259,6 @@ export interface SessionRef {
 	runtimeId?: AgentRuntimeId;
 }
 
-export interface StartSessionRequest {
-	cwd: string;
-	/** Omitted only by rolling-compatibility clients; the daemon chooses its configured default. */
-	runtimeId?: AgentRuntimeId;
-}
 
 export const SESSION_UNREAD_LIMIT = 1_000;
 export const SESSION_UNREAD_SESSION_ID_MAX_LENGTH = 512;
@@ -549,7 +530,6 @@ export type PromptAttachment = PromptImageAttachment | PromptFileAttachment;
  * - "folder": save the file into the workspace and reference it from the prompt
  *   text so the agent reads it with its own tools.
  */
-export type PromptAttachmentDelivery = "inline" | "folder";
 
 export interface SavedPromptAttachment {
 	/** Workspace-relative path the attachment was written to. */
@@ -626,14 +606,6 @@ export interface OAuthFlowState {
 	progress: string[];
 	info?: { message: string; links?: { url: string; label?: string }[] }[];
 	error?: string;
-}
-
-export interface ModelSelectionResponse {
-	models: SessionModel[];
-}
-
-export interface ThinkingLevelsResponse {
-	levels: string[];
 }
 
 export type SessionWarningSeverity = "info" | "warning" | "error";
@@ -911,13 +883,6 @@ export interface TerminalCommandRun {
 	metadata: Record<string, string>;
 }
 
-export interface RunTerminalCommandInput {
-	workspace: Workspace;
-	title: string;
-	command: string;
-	metadata?: Record<string, string>;
-	open?: boolean;
-}
 
 export interface TerminalCommandRunHandle {
 	run: TerminalCommandRun;
