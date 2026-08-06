@@ -45,14 +45,13 @@ A feature belongs in the README only when it materially changes the top-level pr
 | Content | Canonical destination |
 | --- | --- |
 | Product overview and shortest successful start | `README.md` |
-| Website landing-page summaries and navigation | `docs/index.html` |
-| Requirements, installation modes, PATH setup, service managers, WSL, and manual operation | `docs/install.html` |
-| Troubleshooting, diagnostics, known failure modes, and edge cases | `docs/faq.html` |
-| Configuration keys, files, precedence, defaults, and reload behavior | `docs/config.md` and `docs/config.html` |
-| Remote access and deployment model | `docs/remote-first.html` |
-| Machine federation and selected-machine behavior | `docs/machines.html` |
-| Plugin and Pi package behavior | `docs/plugins.md` and `docs/plugins.html` |
+| Native app architecture and design decisions | `docs/macos-native-app-plan.md` |
+| Bundled runtime integration, Native Contract, socket security | `docs/macos-pi-runtime-integration.md` |
+| Runtime extension surface (extensions, pi-web-plugins) | Code comments and the packages' own READMEs; no web-era browser plugin docs exist anymore |
+| Repository-specific agent conventions | `AGENTS.md` and `.agents/skills/` |
 | Internal invariants that maintainers need while changing code | Focused code comments, `AGENTS.md`, or a dedicated developer document |
+
+Web-era user documentation (`docs/config.md`, `docs/plugins.md`, `docs/index.html`, `docs/install.html`, `docs/faq.html`, and the `docs/machines.html`/`docs/remote-first.html` set) was deleted with the web product; do not reintroduce it. Anything that needs its own page must be scoped to the native macOS app + bundled Runtime product.
 
 When a topic has both Markdown and HTML representations, inspect the local convention and keep user-visible claims synchronized. Do not copy large passages into multiple surfaces merely for convenience.
 
