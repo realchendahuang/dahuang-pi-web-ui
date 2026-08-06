@@ -58,7 +58,13 @@ export function createValidationPlan(stagedPaths, options = {}) {
     ? { mode: "full", files: [] }
     : scopedValidation(relatedTestInputs(paths), "related");
 
-  return { paths, lint, tests };
+  const swift = paths.some(
+    (path) =>
+      path.startsWith("macos/") &&
+      (path.endsWith(".swift") || path.endsWith("Package.swift")),
+  );
+
+  return { paths, lint, tests, swift };
 }
 
 export function createValidationSteps(plan) {
@@ -99,6 +105,11 @@ export function createValidationSteps(plan) {
         ...plan.tests.files,
       ],
     });
+  }
+
+  if (plan.swift) {
+    // Incremental; only the changed module graph recompiles.
+    steps.push({ label: "Swift build (macOS sources changed)", swift: true });
   }
 
   return steps;
@@ -152,6 +163,15 @@ function scopedValidation(files, mode) {
 
 function runNpmStep(step) {
   console.log(`\n[pre-commit] ${step.label}`);
+  if (step.swift === true) {
+    const result = spawnSync(
+      "swift",
+      ["build", "--package-path", "macos/PiAgent"],
+      { stdio: "inherit" },
+    );
+    if (result.error !== undefined) throw result.error;
+    return result.status ?? 1;
+  }
   const invocation = npmInvocation(step.npmArgs);
   const result = spawnSync(invocation.command, invocation.args, { stdio: "inherit" });
   if (result.error !== undefined) throw result.error;

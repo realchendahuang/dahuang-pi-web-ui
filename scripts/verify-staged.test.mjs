@@ -41,7 +41,27 @@ describe("staged validation planning", () => {
           "src/docker/piWebDockerDocs.test.ts",
         ],
       },
+      swift: false,
     });
+  });
+
+  it("flags the Swift build when macOS sources are staged", () => {
+    const plan = createValidationPlan([
+      "macos/PiAgent/Sources/PiAgentApp/AppModel.swift",
+    ], { pathExists: () => true });
+
+    expect(plan.swift).toBe(true);
+    expect(createValidationSteps(plan)).toContainEqual(
+      expect.objectContaining({ swift: true }),
+    );
+
+    const packagePlan = createValidationPlan([
+      "macos/PiAgent/Package.swift",
+    ], { pathExists: () => true });
+    expect(packagePlan.swift).toBe(true);
+
+    const nonSwift = createValidationPlan(["README.md"], { pathExists: () => true });
+    expect(nonSwift.swift).toBe(false);
   });
 
   it("does not lint deleted files but still gives them to Vitest dependency analysis", () => {
