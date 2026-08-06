@@ -576,6 +576,34 @@ public struct RuntimeNotificationSummaryEvent: Codable, Equatable, Sendable {
     public let summary: RuntimeSessionNotificationInbox.Summary
 }
 
+/// One completed-work entry in the daemon's unread catalog.
+public struct RuntimeUnreadSummary: Decodable, Equatable, Sendable {
+    public let sessionId: String
+    public let cwd: String
+    public let completionOrder: Int
+    public let completedAt: String
+
+    public init(sessionId: String, cwd: String, completionOrder: Int, completedAt: String) {
+        self.sessionId = sessionId
+        self.cwd = cwd
+        self.completionOrder = completionOrder
+        self.completedAt = completedAt
+    }
+}
+
+/// Daemon-owned snapshot of sessions with completed-but-unseen work.
+public struct RuntimeUnreadCatalog: Decodable, Equatable, Sendable {
+    public let catalogId: String
+    public let catalogRevision: Int
+    public let sessions: [RuntimeUnreadSummary]
+
+    public init(catalogId: String, catalogRevision: Int, sessions: [RuntimeUnreadSummary]) {
+        self.catalogId = catalogId
+        self.catalogRevision = catalogRevision
+        self.sessions = sessions
+    }
+}
+
 /// A terminal record returned by the Node PTY owner.
 public struct RuntimeTerminalInfo: Codable, Equatable, Identifiable, Sendable {
     public let id: String
@@ -750,6 +778,15 @@ public protocol RuntimeClient: RuntimeHealthClient {
     /// Cancels the agent's in-flight work (prompt queue + current operation)
     /// without closing the session. Direct call, no receipt.
     func abort(sessionId: String, cwd: String, runtimeId: String?) async throws
+    /// Daemon-owned unread catalog for completed work, newest first.
+    func unreadCatalog(cwd: String) async throws -> RuntimeUnreadCatalog
+    /// Marks one session's unread completion as seen and returns the new catalog.
+    func acknowledgeUnread(
+        sessionId: String,
+        cwd: String,
+        catalogId: String,
+        throughCompletionOrder: Int
+    ) async throws -> RuntimeUnreadCatalog
     func prompt(
         sessionId: String,
         cwd: String,

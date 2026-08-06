@@ -224,6 +224,12 @@ struct SetThinkingLevelPayload: Encodable {
     let level: String
 }
 
+struct UnreadAcknowledgePayload: Encodable {
+    let cwd: String
+    let catalogId: String
+    let throughCompletionOrder: Int
+}
+
 struct CycleModelPayload: Encodable {
     let cwd: String
     let direction: String

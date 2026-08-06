@@ -107,6 +107,29 @@ struct RuntimeContractCodableTests {
         #expect(event.chunk == "part")
     }
 
+    @Test func decodesUnreadCatalog() throws {
+        let catalog: RuntimeUnreadCatalog = try decode("""
+        {
+            "catalogId": "cat-1",
+            "catalogRevision": 3,
+            "sessions": [
+                {
+                    "sessionId": "s2",
+                    "cwd": "/projects/a",
+                    "completionOrder": 7,
+                    "completedAt": "2026-08-05T09:00:00Z"
+                }
+            ]
+        }
+        """)
+
+        #expect(catalog.catalogId == "cat-1")
+        #expect(catalog.catalogRevision == 3)
+        #expect(catalog.sessions.count == 1)
+        #expect(catalog.sessions[0].sessionId == "s2")
+        #expect(catalog.sessions[0].completionOrder == 7)
+    }
+
     @Test func surfacesErrorMessageForSessionError() throws {
         let event: RuntimeSessionEvent = try decode(#"{"type": "session.error", "text": "boom"}"#)
 

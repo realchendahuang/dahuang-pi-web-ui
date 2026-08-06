@@ -160,6 +160,31 @@ extension UnixSocketRuntimeClient {
         )
     }
 
+    public func unreadCatalog(cwd: String) async throws -> RuntimeUnreadCatalog {
+        try await request(
+            method: "GET",
+            path: "/sessions/unread",
+            query: [(cwd, cwd)]
+        )
+    }
+
+    public func acknowledgeUnread(
+        sessionId: String,
+        cwd: String,
+        catalogId: String,
+        throughCompletionOrder: Int
+    ) async throws -> RuntimeUnreadCatalog {
+        try await request(
+            method: "POST",
+            path: "/sessions/\(Self.pathSegment(sessionId))/unread/acknowledge",
+            body: UnreadAcknowledgePayload(
+                cwd: cwd,
+                catalogId: catalogId,
+                throughCompletionOrder: throughCompletionOrder
+            )
+        )
+    }
+
     public func prompt(
         sessionId: String,
         cwd: String,

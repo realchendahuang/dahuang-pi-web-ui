@@ -1,9 +1,5 @@
-import AppKit
+import Foundation
 import PiAgentCore
-import SwiftUI
-import SwiftTerm
-import UniformTypeIdentifiers
-import UserNotifications
 
 @MainActor
 extension AppModel {

@@ -1,9 +1,5 @@
-import AppKit
+import Foundation
 import PiAgentCore
-import SwiftUI
-import SwiftTerm
-import UniformTypeIdentifiers
-import UserNotifications
 
 @MainActor
 extension AppModel {
@@ -132,6 +128,44 @@ extension AppModel {
             } catch {
                 self?.errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Refreshes the unread catalog for the current project. Cheap local
+    /// GET; failures are ignored so the badge just goes stale.
+    func refreshUnread() {
+        let client = runtimeClient
+        let cwd = projectPath
+        guard !cwd.isEmpty else { return }
+        Task { [weak self] in
+            guard let catalog = try? await client.unreadCatalog(cwd: cwd) else { return }
+            guard let self else { return }
+            self.latestUnreadCatalog = catalog
+            self.unreadSessionIDs = Set(catalog.sessions.map(\.sessionId))
+        }
+    }
+
+    /// Acknowledges the selected session's unread entry once the user opens
+    /// it, then applies the returned catalog to the badge set.
+    func acknowledgeSelectedUnread() {
+        guard let session = selectedSession,
+              unreadSessionIDs.contains(session.id),
+              let catalog = latestUnreadCatalog,
+              let summary = catalog.sessions.first(where: {
+                  $0.sessionId == session.id && $0.cwd == session.cwd
+              })
+        else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            guard let updated = try? await client.acknowledgeUnread(
+                sessionId: session.id,
+                cwd: session.cwd,
+                catalogId: catalog.catalogId,
+                throughCompletionOrder: summary.completionOrder
+            ) else { return }
+            guard let self else { return }
+            self.latestUnreadCatalog = updated
+            self.unreadSessionIDs = Set(updated.sessions.map(\.sessionId))
         }
     }
 
@@ -293,8 +327,10 @@ extension AppModel {
             streamingMessage = nil
         case "status.update":
             if let status = event.status { statusBySession[sessionID] = status }
-            // A fresh status settles any in-flight stop request.
+            // A fresh status settles any in-flight stop request; it also
+            // marks the moment work completed, so refresh the unread badges.
             isAborting = false
+            refreshUnread()
         case "session.name":
             updateSessionName(sessionID: event.sessionId ?? sessionID, name: event.name)
         case "session.created":

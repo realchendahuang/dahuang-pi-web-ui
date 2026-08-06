@@ -14,7 +14,13 @@ struct NativeAuthFlowSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("连接 \(flow.providerName)").font(.title2.weight(.semibold))
             if let auth = flow.auth {
-                Button("在浏览器中打开授权") { openURL(URL(string: auth.url)!) }
+                Button("在浏览器中打开授权") {
+                    // The runtime builds this URL; a malformed value should
+                    // never crash the sheet, just do nothing.
+                    if let url = URL(string: auth.url) {
+                        openURL(url)
+                    }
+                }
                 if let instructions = auth.instructions { Text(instructions).foregroundStyle(.secondary) }
                 if let code = auth.deviceCode?.userCode { Text("设备代码：\(code)").textSelection(.enabled) }
             }

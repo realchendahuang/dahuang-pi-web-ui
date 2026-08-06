@@ -55,6 +55,12 @@ final class AppModel: ObservableObject {
     /// projection (`statusBySession`), not from these lists.
     @Published var availableModels: [RuntimeSessionModel] = []
     @Published var availableThinkingLevels: [String] = []
+    /// Session ids with completed-but-unseen work, from the daemon's unread
+    /// catalog (cwd-scoped). Shown as a badge in the sidebar; selecting a
+    /// session acknowledges its entry.
+    @Published var unreadSessionIDs: Set<String> = []
+    /// Latest catalog snapshot backing the badge set and acknowledge calls.
+    var latestUnreadCatalog: RuntimeUnreadCatalog?
     @Published var isLoading = false
     @Published var isSending = false
     /// True while a stop request is in flight; cleared by the runtime's next
@@ -525,6 +531,13 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         level _: String
     ) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func abort(sessionId _: String, cwd _: String, runtimeId _: String?) async throws { throw RuntimeClientError.connectionFailed(message) }
+    func unreadCatalog(cwd _: String) async throws -> RuntimeUnreadCatalog { throw RuntimeClientError.connectionFailed(message) }
+    func acknowledgeUnread(
+        sessionId _: String,
+        cwd _: String,
+        catalogId _: String,
+        throughCompletionOrder _: Int
+    ) async throws -> RuntimeUnreadCatalog { throw RuntimeClientError.connectionFailed(message) }
     func cycleModel(
         sessionId _: String,
         cwd _: String,

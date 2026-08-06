@@ -13,11 +13,19 @@
 set -uo pipefail
 cd "$(dirname "$0")/../../macos/PiAgent"
 
-swift package clean >/dev/null 2>&1
-swift test >/dev/null 2>&1 || true  # warm build (macro-module quirk)
-output="$(swift test 2>&1)"
-status=$?
-
+# The first build after a clean intermittently loses the swift-testing macro
+# module (CLT toolchain quirk). Retry until the build settles.
+attempt=0
+while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
+    output="$(swift test 2>&1)"
+    status=$?
+    if echo "$output" | grep -qE "TestingMacros.*not found|macro implementation type"; then
+        echo "[test-native] macro-module race on attempt $attempt; retrying" >&2
+        continue
+    fi
+    break
+done
 if [ "$status" -eq 0 ]; then
     echo "$output" | tail -5
     exit 0

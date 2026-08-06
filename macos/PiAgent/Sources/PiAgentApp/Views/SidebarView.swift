@@ -86,7 +86,8 @@ struct SidebarView: View {
                     SidebarThreadRow(
                         session: session,
                         status: model.statusBySession[session.id],
-                        isSelected: model.selectedSessionID == session.id
+                        isSelected: model.selectedSessionID == session.id,
+                        isUnread: model.unreadSessionIDs.contains(session.id)
                     ) {
                         model.selectSession(session.id)
                     }
@@ -112,7 +113,8 @@ struct SidebarView: View {
                             SidebarThreadRow(
                                 session: session,
                                 status: nil,
-                                isSelected: model.selectedSessionID == session.id
+                                isSelected: model.selectedSessionID == session.id,
+                                isUnread: false
                             ) {
                                 model.selectSession(session.id)
                             }
@@ -283,6 +285,7 @@ private struct SidebarThreadRow: View {
     let session: RuntimeSession
     let status: RuntimeSessionStatus?
     let isSelected: Bool
+    let isUnread: Bool
     let select: () -> Void
     @StateObject private var hover = HoverState()
 
@@ -292,6 +295,14 @@ private struct SidebarThreadRow: View {
                 Text(session.displayTitle)
                     .font(.callout)
                     .lineLimit(1)
+                if isUnread {
+                    // Blue badge for completed-but-unseen work; distinct from
+                    // the accent streaming dot on the trailing edge.
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                }
                 Spacer(minLength: 0)
                 trailingStatus
             }
