@@ -75,6 +75,15 @@ When using this escape hatch:
 - Assert the behavior caused by the handler, such as state changes or calls to injected callbacks/controllers.
 - Avoid assertions about the exact shape of Lit's private data beyond the minimum needed to find the handler; fail with clear errors if the template cannot be inspected.
 
+## Swift tests (macOS app)
+
+PiAgentCore unit tests live in `macos/PiAgent/Tests/PiAgentCoreTests` (swift-testing, not XCTest):
+
+- Run/compile-verify with `scripts/macos/test-native.sh`. On Command Line Tools-only machines the suite compile-verifies but cannot execute — the swift-testing runner cannot dlopen its bundle because the CLT layout puts `Testing.framework` somewhere the runner does not search (rpath bug). A full Xcode install runs it for real with plain `swift test`.
+- The script always starts from `swift package clean` because the first incremental build after a clean intermittently loses the `TestingMacros` plugin; the warm-then-verify pattern in the script is load-bearing.
+- Write tests with `import Testing`, `@Test`/`@Suite` macros, and `#expect`. There is no teardown-block API on this toolchain; use a `final class` harness with `deinit` cleanup or a deinit cleanup registry.
+- When changing `macos/` sources, the pre-commit hook runs an incremental `swift build`; the `verify-app.sh` smoke and `smoke-runtime.sh` cover the full Native Contract.
+
 ## Checks to run
 
 Run the narrowest meaningful check first:
@@ -83,5 +92,6 @@ Run the narrowest meaningful check first:
 - Source or exported type changes: also run `npm run typecheck`.
 - Non-trivial test helper, component, or lint-sensitive changes: run `npx eslint <changed-file>` or `npm run lint` when broader lint coverage is needed.
 - Cross-cutting changes or final merge review: prefer `npm run verify`.
+- macOS source changes: `scripts/macos/test-native.sh` for PiAgentCore tests, then `scripts/macos/build-app.sh release` + `scripts/macos/verify-app.sh` for the full bundle.
 
 Record exact commands and results when working under relay/audit workflows or when handing work to another agent.
