@@ -16,8 +16,8 @@ import {
 /**
  * Registers the App-to-bundled-Runtime project boundary. It is intentionally
  * absent for the existing development/sessiond path, where no launch token is
- * supplied. The browser-facing daemon therefore retains its compatibility
- * contract while an App-owned Runtime cannot widen access through a raw cwd.
+ * supplied. The daemon therefore retains its compatibility contract while an
+ * App-owned Runtime cannot widen access through a raw cwd.
  */
 export function registerNativeProjectCapabilityRoutes(
 	app: FastifyInstance,

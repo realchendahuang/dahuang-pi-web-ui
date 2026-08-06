@@ -36,7 +36,7 @@ struct ComposerBar: View {
     /// The agent is either mid-send or actively working; both states offer
     /// the stop button instead of the send button.
     private var isWorking: Bool {
-        model.isSending || model.selectedSessionStatus?.isStreaming == true
+        model.isSending || model.isAborting || model.selectedSessionStatus?.isStreaming == true
     }
 
     // MARK: - Model / thinking-level capsule
@@ -173,14 +173,15 @@ struct ComposerBar: View {
                     Button {
                         model.abortPrompt()
                     } label: {
-                        Image(systemName: "stop.circle.fill")
+                        Image(systemName: model.isAborting ? "stop.circle" : "stop.circle.fill")
                             .font(.system(size: 26))
-                            .foregroundStyle(.red.opacity(0.9))
+                            .foregroundStyle(model.isAborting ? Color.secondary : Color.red.opacity(0.9))
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.escape, modifiers: [])
                     .help("停止当前任务")
                     .accessibilityLabel("停止当前任务")
+                    .disabled(model.isAborting)
                 } else {
                     Button {
                         model.sendPrompt()

@@ -57,6 +57,9 @@ final class AppModel: ObservableObject {
     @Published var availableThinkingLevels: [String] = []
     @Published var isLoading = false
     @Published var isSending = false
+    /// True while a stop request is in flight; cleared by the runtime's next
+    /// status.update, or immediately when the request fails.
+    @Published var isAborting = false
     @Published var errorMessage: String?
     @Published var isProjectExpanded = true
     @Published var terminalInfo: RuntimeTerminalInfo?

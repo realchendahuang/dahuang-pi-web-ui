@@ -70,6 +70,8 @@ extension AppModel {
                 )
                 guard let self, self.selectedSessionID == session.id else { return }
                 self.statusBySession[session.id] = status
+                // The new provider may advertise a different catalog.
+                self.refreshModelOptions()
             } catch {
                 self?.errorMessage = error.localizedDescription
             }
@@ -99,7 +101,8 @@ extension AppModel {
     /// runtime sends a `status.update` afterwards, so the spinner clears on
     /// its own; we only surface failures here.
     func abortPrompt() {
-        guard let session = selectedSession else { return }
+        guard let session = selectedSession, !isAborting else { return }
+        isAborting = true
         let client = runtimeClient
         Task { [weak self] in
             do {
@@ -108,7 +111,15 @@ extension AppModel {
                     cwd: session.cwd,
                     runtimeId: session.runtimeId
                 )
+                // The runtime follows up with a status.update whose
+                // isStreaming:false clears isAborting; fall back to a local
+                // clear when the session had no active work to settle.
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(2))
+                    self?.isAborting = false
+                }
             } catch {
+                self?.isAborting = false
                 self?.errorMessage = error.localizedDescription
             }
         }
@@ -244,6 +255,8 @@ extension AppModel {
             streamingMessage = nil
         case "status.update":
             if let status = event.status { statusBySession[sessionID] = status }
+            // A fresh status settles any in-flight stop request.
+            isAborting = false
         case "session.name":
             updateSessionName(sessionID: event.sessionId ?? sessionID, name: event.name)
         case "session.created":

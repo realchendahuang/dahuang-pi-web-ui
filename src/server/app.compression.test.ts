@@ -5,7 +5,7 @@ import { appTestContext, fakeRemoteClient, registerAppTestHooks } from "./app.te
 
 registerAppTestHooks();
 
-describe("browser-facing HTTP compression", () => {
+describe("local HTTP compression", () => {
   it("negotiates compression for large local-machine API responses", async () => {
     const marker = "local transcript content ".repeat(256);
     appTestContext.piWebConfig = {
