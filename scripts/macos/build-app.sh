@@ -28,6 +28,9 @@ cp "$keychain_helper_path" "$app_path/Contents/Helpers/PiAgentKeychainHelper"
 cp "$uninstaller_helper_path" "$app_path/Contents/Helpers/PiAgentUninstaller"
 cp "$data_eraser_helper_path" "$app_path/Contents/Helpers/PiAgentDataEraser"
 cp "$package_root/Info.plist" "$app_path/Contents/Info.plist"
+app_version="$(node -p 'require("./package.json").version')"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_version" "$app_path/Contents/Info.plist"
 cp "$package_root/THIRD_PARTY_NOTICES.md" "$app_path/Contents/Resources/THIRD_PARTY_NOTICES.md"
 # Compile the checked-in 1024px source icon into a full .icns set. Regenerate
 # the source with: swift scripts/macos/generate-app-icon.swift macos/PiAgent/Resources/AppIcon.png
