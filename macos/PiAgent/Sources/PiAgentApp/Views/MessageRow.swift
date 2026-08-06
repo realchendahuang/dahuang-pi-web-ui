@@ -26,6 +26,11 @@ struct MessageRow: View {
 private struct UserMessageRow: View {
     let message: RuntimeMessage
 
+    private var copyText: String? {
+        let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     var body: some View {
         HStack {
             Spacer(minLength: 48)
@@ -45,6 +50,14 @@ private struct UserMessageRow: View {
                 }
             }
             .frame(maxWidth: 560)
+            .contextMenu {
+                if let copyText {
+                    Button("复制消息") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(copyText, forType: .string)
+                    }
+                }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("你")
@@ -84,6 +97,15 @@ private struct AssistantMessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                Button("复制消息") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            }
+        }
     }
 }
 

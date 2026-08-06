@@ -525,6 +525,13 @@ private struct UnavailableRuntimeClient: RuntimeClient {
         level _: String
     ) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func abort(sessionId _: String, cwd _: String, runtimeId _: String?) async throws { throw RuntimeClientError.connectionFailed(message) }
+    func cycleModel(
+        sessionId _: String,
+        cwd _: String,
+        runtimeId _: String?,
+        direction _: String
+    ) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
+    func cycleThinkingLevel(sessionId _: String, cwd _: String, runtimeId _: String?) async throws -> RuntimeSessionStatus { throw RuntimeClientError.connectionFailed(message) }
     func prompt(
         sessionId _: String,
         cwd _: String,

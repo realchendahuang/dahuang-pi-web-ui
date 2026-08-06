@@ -105,6 +105,17 @@ struct PiAgentApp: App {
                     lifecycleDelegate.activeModel?.refreshRuntime()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+                Divider()
+                Button("下一个模型") {
+                    lifecycleDelegate.activeModel?.cycleModel(direction: "forward")
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(lifecycleDelegate.activeModel?.selectedSessionStatus?.model == nil)
+                Button("下一个推理强度") {
+                    lifecycleDelegate.activeModel?.cycleThinkingLevel()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(lifecycleDelegate.activeModel?.selectedSessionStatus?.thinkingLevel == nil)
             }
         }
 

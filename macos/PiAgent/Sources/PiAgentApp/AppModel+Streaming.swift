@@ -97,6 +97,44 @@ extension AppModel {
         }
     }
 
+    func cycleModel(direction: String = "forward") {
+        guard let session = selectedSession, !isSending else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            do {
+                let status = try await client.cycleModel(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId,
+                    direction: direction
+                )
+                guard let self, self.selectedSessionID == session.id else { return }
+                self.statusBySession[session.id] = status
+                self.refreshModelOptions()
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func cycleThinkingLevel() {
+        guard let session = selectedSession, !isSending else { return }
+        let client = runtimeClient
+        Task { [weak self] in
+            do {
+                let status = try await client.cycleThinkingLevel(
+                    sessionId: session.id,
+                    cwd: session.cwd,
+                    runtimeId: session.runtimeId
+                )
+                guard let self, self.selectedSessionID == session.id else { return }
+                self.statusBySession[session.id] = status
+            } catch {
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// Cancels the agent's in-flight work for the selected session. The
     /// runtime sends a `status.update` afterwards, so the spinner clears on
     /// its own; we only surface failures here.

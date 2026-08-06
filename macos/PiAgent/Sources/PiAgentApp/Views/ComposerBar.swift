@@ -115,6 +115,38 @@ struct ComposerBar: View {
                         model.sendPrompt()
                     }
                 }
+                .onPasteCommand(of: nativePromptImageContentTypes + [.tiff]) { providers in
+                    guard let provider = providers.first else { return }
+                    guard let typeIdentifier = provider.registeredTypeIdentifiers.first else { return }
+                    _ = provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+                        guard let data else { return }
+                        let type = UTType(typeIdentifier)
+                        // Clipboard screenshots often arrive as TIFF; the
+                        // runtime only accepts PNG/JPEG/GIF/WebP, so convert.
+                        if type?.conforms(to: .tiff) == true,
+                           let rep = NSBitmapImageRep(data: data),
+                           let png = rep.representation(using: .png, properties: [:]) {
+                            model.addPromptImageData(png, name: "粘贴的图片.png", mimeType: "image/png")
+                        } else if let mime = type?.preferredMIMEType {
+                            model.addPromptImageData(data, name: "粘贴的图片", mimeType: mime)
+                        }
+                    }
+                }
+                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                    let group = DispatchGroup()
+                    var urls: [URL] = []
+                    for provider in providers {
+                        group.enter()
+                        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                            if let url { urls.append(url) }
+                            group.leave()
+                        }
+                    }
+                    group.notify(queue: .main) {
+                        if !urls.isEmpty { model.addPromptImageURLs(urls) }
+                    }
+                    return true
+                }
 
             HStack(spacing: Theme.Spacing.medium) {
                 Button {

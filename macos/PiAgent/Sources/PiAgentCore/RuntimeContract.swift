@@ -738,6 +738,15 @@ public protocol RuntimeClient: RuntimeHealthClient {
         runtimeId: String?,
         level: String
     ) async throws -> RuntimeSessionStatus
+    /// Cycles to the next/previous model the provider offers. Direct call.
+    func cycleModel(
+        sessionId: String,
+        cwd: String,
+        runtimeId: String?,
+        direction: String
+    ) async throws -> RuntimeSessionStatus
+    /// Cycles to the next thinking level (when the model supports it).
+    func cycleThinkingLevel(sessionId: String, cwd: String, runtimeId: String?) async throws -> RuntimeSessionStatus
     /// Cancels the agent's in-flight work (prompt queue + current operation)
     /// without closing the session. Direct call, no receipt.
     func abort(sessionId: String, cwd: String, runtimeId: String?) async throws

@@ -28,709 +28,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         self.launchNonce = launchNonce
     }
 
-    public func health() async throws -> RuntimeHealth {
-        try await request(method: "GET", path: "/health")
-    }
-
-    public func hello() async throws -> RuntimeHello {
-        let hello: RuntimeHello = try await request(method: "GET", path: "/runtime/hello")
-        if let launchNonce { try hello.requireMatchingLaunchNonce(launchNonce.currentValue) }
-        return hello
-    }
-
-    public func legacyProjectMigrationPreview() async throws -> RuntimeLegacyProjectPreview {
-        try await request(method: "GET", path: "/projects/legacy-migration/preview")
-    }
-
-    public func legacyMigrationOverview() async throws -> RuntimeLegacyMigrationOverview {
-        try await request(method: "GET", path: "/migration/legacy/overview")
-    }
-
-    public func listSessions(cwd: String) async throws -> [RuntimeSession] {
-        try await request(
-            method: "GET",
-            path: "/sessions",
-            query: query(cwd: cwd, runtimeId: nil)
-        )
-    }
-
-    public func startSession(
-        cwd: String,
-        runtimeId: String?,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/sessions",
-            body: StartSessionPayload(
-                cwd: cwd,
-                runtimeId: runtimeId,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func messages(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> RuntimeMessagePage {
-        try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/messages",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-    }
-
-    public func status(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> RuntimeSessionStatus {
-        try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/status",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-    }
-
-    public func listModels(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> [RuntimeSessionModel] {
-        let envelope: SessionModelsEnvelope = try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/models",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-        return envelope.models
-    }
-
-    public func setModel(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        provider: String,
-        modelId: String
-    ) async throws -> RuntimeSessionStatus {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/model",
-            body: SetModelPayload(cwd: cwd, provider: provider, modelId: modelId)
-        )
-    }
-
-    public func listThinkingLevels(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> [String] {
-        let envelope: ThinkingLevelsEnvelope = try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/thinking-levels",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-        return envelope.levels
-    }
-
-    public func setThinkingLevel(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        level: String
-    ) async throws -> RuntimeSessionStatus {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/thinking-level",
-            body: SetThinkingLevelPayload(cwd: cwd, level: level)
-        )
-    }
-
-    public func abort(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws {
-        let _: AbortEnvelope = try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/abort",
-            body: AbortPayload(cwd: cwd)
-        )
-    }
-
-    public func prompt(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        text: String,
-        attachments: [RuntimePromptImageAttachment],
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/prompt",
-            query: nil,
-            body: PromptPayload(
-                cwd: cwd,
-                text: text,
-                runtimeId: runtimeId,
-                attachments: attachments,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func abortActiveWork(
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/runtime/commands/abort-active-work",
-            body: RuntimeCommandPayload(
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func authorizeProject(path: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
-        try await request(method: "POST", path: "/runtime/projects/authorize", body: AuthorizeProjectPayload(path: path, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch))
-    }
-
-    public func archiveSession(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await sessionMutation(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/archive",
-            cwd: cwd,
-            runtimeId: runtimeId,
-            commandId: commandId,
-            expectedRuntimeEpoch: expectedRuntimeEpoch
-        )
-    }
-
-    public func restoreSession(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await sessionMutation(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/restore",
-            cwd: cwd,
-            runtimeId: runtimeId,
-            commandId: commandId,
-            expectedRuntimeEpoch: expectedRuntimeEpoch
-        )
-    }
-
-    public func deleteArchivedSession(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "DELETE",
-            path: "/sessions/\(Self.pathSegment(sessionId))",
-            query: query(cwd: cwd, runtimeId: runtimeId),
-            body: RuntimeCommandPayload(
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func forkCandidates(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> [RuntimeForkCandidate] {
-        let response: ForkCandidatesResponse = try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/fork-candidates",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-        return response.candidates
-    }
-
-    public func forkSession(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        entryId: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/fork",
-            body: ForkSessionPayload(
-                cwd: cwd,
-                runtimeId: runtimeId,
-                entryId: entryId,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func importSession(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        inputPath: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/import",
-            body: ImportSessionPayload(
-                cwd: cwd,
-                runtimeId: runtimeId,
-                inputPath: inputPath,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func commandReceipt(commandId: String) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "GET",
-            path: "/runtime/commands/\(Self.pathSegment(commandId))"
-        )
-    }
-
-    public func gitStatus(cwd: String) async throws -> RuntimeGitStatus {
-        try await request(method: "GET", path: "/git/status", query: [("cwd", cwd)])
-    }
-
-    public func gitDiff(cwd: String, path: String?, staged: Bool) async throws -> RuntimeGitDiff {
-        var values = [("cwd", cwd), ("staged", staged ? "true" : "false")]
-        if let path, !path.isEmpty { values.append(("path", path)) }
-        return try await request(method: "GET", path: "/git/diff", query: values)
-    }
-
-    public func stageGitPaths(
-        cwd: String,
-        paths: [String],
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await gitPathsMutation(
-            path: "/git/stage", cwd: cwd, paths: paths,
-            commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
-        )
-    }
-
-    public func unstageGitPaths(
-        cwd: String,
-        paths: [String],
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await gitPathsMutation(
-            path: "/git/unstage", cwd: cwd, paths: paths,
-            commandId: commandId, expectedRuntimeEpoch: expectedRuntimeEpoch
-        )
-    }
-
-    public func discardGitPaths(
-        cwd: String,
-        paths: [String],
-        confirmed: Bool,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST", path: "/git/discard",
-            body: GitDiscardPayload(
-                cwd: cwd,
-                paths: paths,
-                confirmed: confirmed,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func commitGit(
-        cwd: String,
-        message: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST", path: "/git/commit",
-            body: GitCommitPayload(cwd: cwd, message: message, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch)
-        )
-    }
-
-    public func gitPushPreview(cwd: String) async throws -> RuntimeGitPushPreview {
-        try await request(method: "GET", path: "/git/push-preview", query: [("cwd", cwd)])
-    }
-
-    public func pushGit(
-        cwd: String,
-        confirmed: Bool,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST", path: "/git/push",
-            body: GitPushPayload(
-                cwd: cwd,
-                confirmed: confirmed,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func gitRevertPreview(cwd: String) async throws -> RuntimeGitRevertPreview {
-        try await request(method: "GET", path: "/git/revert-preview", query: [("cwd", cwd)])
-    }
-
-    public func revertGitHead(
-        cwd: String,
-        confirmed: Bool,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST", path: "/git/revert-head",
-            body: GitRevertPayload(
-                cwd: cwd,
-                confirmed: confirmed,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func gitCheckpoints(cwd: String, sessionId: String) async throws -> [RuntimeGitCheckpoint] {
-        try await request(
-            method: "GET", path: "/git/checkpoints",
-            query: [("cwd", cwd), ("sessionId", sessionId)]
-        )
-    }
-
-    public func createGitCheckpoint(
-        cwd: String,
-        sessionId: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST", path: "/git/checkpoints",
-            body: GitCheckpointPayload(
-                cwd: cwd,
-                sessionId: sessionId,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func workspaceTree(cwd: String, path: String?) async throws -> RuntimeWorkspaceTree {
-        var values = [("cwd", cwd)]
-        if let path, !path.isEmpty { values.append(("path", path)) }
-        return try await request(method: "GET", path: "/workspace/tree", query: values)
-    }
-
-    public func authProviders() async throws -> RuntimeAuthProviders {
-        try await request(method: "GET", path: "/auth/providers", query: [("mode", "login")])
-    }
-
-    public func startOAuthLogin(providerId: String) async throws -> RuntimeAuthFlow {
-        try await request(method: "POST", path: "/auth/oauth", body: AuthProviderPayload(providerId: providerId))
-    }
-
-    public func startInteractiveApiKeyLogin(providerId: String) async throws -> RuntimeAuthFlow {
-        try await request(method: "POST", path: "/auth/api-key/interactive", body: AuthProviderPayload(providerId: providerId))
-    }
-
-    public func authFlow(id: String) async throws -> RuntimeAuthFlow {
-        try await request(method: "GET", path: "/auth/oauth/\(Self.pathSegment(id))")
-    }
-
-    public func respondAuthFlow(id: String, requestId: String, value: String) async throws -> RuntimeAuthFlow {
-        try await request(method: "POST", path: "/auth/oauth/\(Self.pathSegment(id))/respond", body: AuthResponsePayload(requestId: requestId, value: value))
-    }
-
-    public func cancelAuthFlow(id: String) async throws -> RuntimeAuthFlow {
-        try await request(method: "POST", path: "/auth/oauth/\(Self.pathSegment(id))/cancel", body: EmptyAuthPayload())
-    }
-
-    public func legacyAuthMigrationPreview() async throws -> RuntimeLegacyAuthMigrationPreview {
-        try await request(method: "GET", path: "/auth/legacy-migration/preview")
-    }
-
-    public func migrateLegacyAuth(providerIds: [String], commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/auth/legacy-migration",
-            body: LegacyAuthMigrationPayload(providerIds: providerIds, commandId: commandId, runtimeEpoch: expectedRuntimeEpoch)
-        )
-    }
-
-    public func rollbackLegacyAuthMigration(id: String, commandId: String, expectedRuntimeEpoch: String) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/auth/legacy-migration/\(Self.pathSegment(id))/rollback",
-            body: RuntimeCommandPayload(commandId: commandId, runtimeEpoch: expectedRuntimeEpoch)
-        )
-    }
-
-    public func workspaceFile(cwd: String, path: String) async throws -> RuntimeWorkspaceFile {
-        try await request(
-            method: "GET",
-            path: "/workspace/file",
-            query: [("cwd", cwd), ("path", path)]
-        )
-    }
-
-    public func workspaceImagePreview(cwd: String, path: String) async throws -> RuntimeWorkspaceImagePreview {
-        try await request(
-            method: "GET",
-            path: "/workspace/file/preview",
-            query: [("cwd", cwd), ("path", path)]
-        )
-    }
-
-    public func writeWorkspaceFile(
-        cwd: String,
-        path: String,
-        content: String,
-        overwrite: Bool,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "PUT",
-            path: "/workspace/file",
-            body: WorkspaceWritePayload(
-                cwd: cwd,
-                path: path,
-                content: content,
-                overwrite: overwrite,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func deleteWorkspaceFile(
-        cwd: String,
-        path: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "DELETE",
-            path: "/workspace/file",
-            body: WorkspaceDeletePayload(
-                cwd: cwd,
-                path: path,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func moveWorkspaceFile(
-        cwd: String,
-        fromPath: String,
-        toPath: String,
-        overwrite: Bool,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/workspace/file/move",
-            body: WorkspaceMovePayload(
-                cwd: cwd,
-                fromPath: fromPath,
-                toPath: toPath,
-                overwrite: overwrite,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func listExtensionInteractions(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> [RuntimeExtensionInteraction] {
-        let response: ExtensionInteractionsResponse = try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/interactions",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-        return response.interactions
-    }
-
-    public func respondToExtensionInteraction(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?,
-        interactionId: String,
-        response: RuntimeExtensionInteractionResponse,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/sessions/\(Self.pathSegment(sessionId))/interactions/\(Self.pathSegment(interactionId))/respond",
-            body: ExtensionInteractionResponsePayload(
-                cwd: cwd,
-                runtimeId: runtimeId,
-                response: response,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func streamSnapshot(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> RuntimeStreamSnapshot {
-        try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/stream-snapshot",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-    }
-
-    public func subscribe(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) -> RuntimeEventSubscription {
-        let runner = UnixSocketStreamRunner<RuntimeSessionEvent>(
-            socketPath: socketPath,
-            path: "/sessions/\(Self.pathSegment(sessionId))/events",
-            query: query(cwd: cwd, runtimeId: runtimeId),
-            capabilityToken: effectiveProjectCapabilityToken,
-            socketSecurity: socketSecurity,
-            decode: { data in
-                try JSONDecoder().decode(RuntimeSessionEvent.self, from: data)
-            }
-        )
-        return runner.eventSubscription()
-    }
-
-    public func notificationInbox(
-        sessionId: String,
-        cwd: String,
-        runtimeId: String?
-    ) async throws -> RuntimeSessionNotificationInbox {
-        try await request(
-            method: "GET",
-            path: "/sessions/\(Self.pathSegment(sessionId))/notifications",
-            query: query(cwd: cwd, runtimeId: runtimeId)
-        )
-    }
-
-    public func subscribeNotificationSummaries(cwd: String) -> RuntimeNotificationSubscription {
-        let runner = UnixSocketStreamRunner<RuntimeNotificationSummaryEvent>(
-            socketPath: socketPath,
-            path: "/sessions/notifications/events",
-            query: [("cwd", cwd)],
-            capabilityToken: effectiveProjectCapabilityToken,
-            socketSecurity: socketSecurity,
-            decode: { data in
-                try JSONDecoder().decode(RuntimeNotificationSummaryEvent.self, from: data)
-            }
-        )
-        return runner.notificationSubscription()
-    }
-
-    public func listTerminals(cwd: String) async throws -> [RuntimeTerminalInfo] {
-        try await request(
-            method: "GET",
-            path: "/terminals",
-            query: [("cwd", cwd)]
-        )
-    }
-
-    public func createTerminal(
-        cwd: String,
-        name: String,
-        cols: Int,
-        rows: Int,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/terminals",
-            body: TerminalCreatePayload(
-                cwd: cwd,
-                name: name,
-                cols: cols,
-                rows: rows,
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func continueTerminal(
-        id: String,
-        commandId: String,
-        expectedRuntimeEpoch: String
-    ) async throws -> RuntimeCommandReceipt {
-        try await request(
-            method: "POST",
-            path: "/terminals/\(Self.pathSegment(id))/continue",
-            body: RuntimeCommandPayload(
-                commandId: commandId,
-                runtimeEpoch: expectedRuntimeEpoch
-            )
-        )
-    }
-
-    public func subscribeTerminal(
-        id: String,
-        cols: Int,
-        rows: Int
-    ) -> RuntimeTerminalSubscription {
-        let runner = UnixSocketStreamRunner<RuntimeTerminalEvent>(
-            socketPath: socketPath,
-            path: "/terminals/\(Self.pathSegment(id))/socket",
-            query: [("cols", String(cols)), ("rows", String(rows))],
-            capabilityToken: effectiveProjectCapabilityToken,
-            socketSecurity: socketSecurity,
-            decode: { data in
-                try JSONDecoder().decode(RuntimeTerminalEvent.self, from: data)
-            }
-        )
-        return runner.terminalSubscription()
-    }
-
-    private func query(cwd: String, runtimeId: String?) -> [(String, String)] {
+    func query(cwd: String, runtimeId: String?) -> [(String, String)] {
         var values = [("cwd", cwd)]
         if let runtimeId, !runtimeId.isEmpty {
             values.append(("runtimeId", runtimeId))
@@ -738,7 +36,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         return values
     }
 
-    private func sessionMutation(
+    func sessionMutation(
         method: String,
         path: String,
         cwd: String,
@@ -758,7 +56,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
-    private func gitPathsMutation(
+    func gitPathsMutation(
         path: String,
         cwd: String,
         paths: [String],
@@ -771,7 +69,7 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         )
     }
 
-    private func request<Response: Decodable & Sendable>(
+    func request<Response: Decodable & Sendable>(
         method: String,
         path: String,
         query: [(String, String)]? = nil,
@@ -792,18 +90,18 @@ public struct UnixSocketRuntimeClient: RuntimeClient, RuntimeHelloClient, Runtim
         }.value
     }
 
-    private var effectiveProjectCapabilityToken: String? {
+    var effectiveProjectCapabilityToken: String? {
         projectCapabilityTokenSecret?.currentValue ?? projectCapabilityToken
     }
 
-    private static func pathSegment(_ value: String) -> String {
+    static func pathSegment(_ value: String) -> String {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 }
 
-private struct StartSessionPayload: Encodable {
+struct StartSessionPayload: Encodable {
     let cwd: String
     let runtimeId: String?
     let commandId: String
@@ -825,15 +123,15 @@ private struct StartSessionPayload: Encodable {
     }
 }
 
-private struct ForkCandidatesResponse: Decodable {
+struct ForkCandidatesResponse: Decodable {
     let candidates: [RuntimeForkCandidate]
 }
 
-private struct ExtensionInteractionsResponse: Decodable {
+struct ExtensionInteractionsResponse: Decodable {
     let interactions: [RuntimeExtensionInteraction]
 }
 
-private struct ExtensionInteractionResponsePayload: Encodable {
+struct ExtensionInteractionResponsePayload: Encodable {
     let cwd: String
     let runtimeId: String?
     let response: RuntimeExtensionInteractionResponse
@@ -857,7 +155,7 @@ private struct ExtensionInteractionResponsePayload: Encodable {
     private enum CodingKeys: String, CodingKey { case cwd, runtimeId, commandId, runtimeEpoch, cancelled, selected, confirmed, text }
 }
 
-private struct ForkSessionPayload: Encodable {
+struct ForkSessionPayload: Encodable {
     let cwd: String
     let runtimeId: String?
     let entryId: String
@@ -882,7 +180,7 @@ private struct ForkSessionPayload: Encodable {
     }
 }
 
-private struct ImportSessionPayload: Encodable {
+struct ImportSessionPayload: Encodable {
     let cwd: String
     let runtimeId: String?
     let inputPath: String
@@ -907,34 +205,43 @@ private struct ImportSessionPayload: Encodable {
     }
 }
 
-private struct SessionModelsEnvelope: Decodable {
+struct SessionModelsEnvelope: Decodable {
     let models: [RuntimeSessionModel]
 }
 
-private struct ThinkingLevelsEnvelope: Decodable {
+struct ThinkingLevelsEnvelope: Decodable {
     let levels: [String]
 }
 
-private struct SetModelPayload: Encodable {
+struct SetModelPayload: Encodable {
     let cwd: String
     let provider: String
     let modelId: String
 }
 
-private struct SetThinkingLevelPayload: Encodable {
+struct SetThinkingLevelPayload: Encodable {
     let cwd: String
     let level: String
 }
 
-private struct AbortEnvelope: Decodable {
-    let aborted: Bool
+struct CycleModelPayload: Encodable {
+    let cwd: String
+    let direction: String
 }
 
-private struct AbortPayload: Encodable {
+struct CycleThinkingLevelPayload: Encodable {
     let cwd: String
 }
 
-private struct PromptPayload: Encodable {
+struct AbortEnvelope: Decodable {
+    let aborted: Bool
+}
+
+struct AbortPayload: Encodable {
+    let cwd: String
+}
+
+struct PromptPayload: Encodable {
     let cwd: String
     let text: String
     let runtimeId: String?
@@ -962,18 +269,18 @@ private struct PromptPayload: Encodable {
     }
 }
 
-private struct RuntimeCommandPayload: Encodable {
+struct RuntimeCommandPayload: Encodable {
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct AuthorizeProjectPayload: Encodable { let path: String; let commandId: String; let runtimeEpoch: String }
-private struct AuthProviderPayload: Encodable { let providerId: String }
-private struct AuthResponsePayload: Encodable { let requestId: String; let value: String }
-private struct EmptyAuthPayload: Encodable {}
-private struct LegacyAuthMigrationPayload: Encodable { let providerIds: [String]; let commandId: String; let runtimeEpoch: String }
+struct AuthorizeProjectPayload: Encodable { let path: String; let commandId: String; let runtimeEpoch: String }
+struct AuthProviderPayload: Encodable { let providerId: String }
+struct AuthResponsePayload: Encodable { let requestId: String; let value: String }
+struct EmptyAuthPayload: Encodable {}
+struct LegacyAuthMigrationPayload: Encodable { let providerIds: [String]; let commandId: String; let runtimeEpoch: String }
 
-private struct SessionMutationPayload: Encodable {
+struct SessionMutationPayload: Encodable {
     let cwd: String
     let runtimeId: String?
     let commandId: String
@@ -995,7 +302,7 @@ private struct SessionMutationPayload: Encodable {
     }
 }
 
-private struct TerminalCreatePayload: Encodable {
+struct TerminalCreatePayload: Encodable {
     let cwd: String
     let name: String
     let cols: Int
@@ -1004,14 +311,14 @@ private struct TerminalCreatePayload: Encodable {
     let runtimeEpoch: String
 }
 
-private struct GitPathsPayload: Encodable {
+struct GitPathsPayload: Encodable {
     let cwd: String
     let paths: [String]
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct GitDiscardPayload: Encodable {
+struct GitDiscardPayload: Encodable {
     let cwd: String
     let paths: [String]
     let confirmed: Bool
@@ -1019,35 +326,35 @@ private struct GitDiscardPayload: Encodable {
     let runtimeEpoch: String
 }
 
-private struct GitCommitPayload: Encodable {
+struct GitCommitPayload: Encodable {
     let cwd: String
     let message: String
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct GitPushPayload: Encodable {
+struct GitPushPayload: Encodable {
     let cwd: String
     let confirmed: Bool
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct GitRevertPayload: Encodable {
+struct GitRevertPayload: Encodable {
     let cwd: String
     let confirmed: Bool
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct GitCheckpointPayload: Encodable {
+struct GitCheckpointPayload: Encodable {
     let cwd: String
     let sessionId: String
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct WorkspaceWritePayload: Encodable {
+struct WorkspaceWritePayload: Encodable {
     let cwd: String
     let path: String
     let content: String
@@ -1056,14 +363,14 @@ private struct WorkspaceWritePayload: Encodable {
     let runtimeEpoch: String
 }
 
-private struct WorkspaceDeletePayload: Encodable {
+struct WorkspaceDeletePayload: Encodable {
     let cwd: String
     let path: String
     let commandId: String
     let runtimeEpoch: String
 }
 
-private struct WorkspaceMovePayload: Encodable {
+struct WorkspaceMovePayload: Encodable {
     let cwd: String
     let fromPath: String
     let toPath: String
@@ -1072,11 +379,11 @@ private struct WorkspaceMovePayload: Encodable {
     let runtimeEpoch: String
 }
 
-private struct EmptyResponse: Decodable, Sendable {}
+struct EmptyResponse: Decodable, Sendable {}
 
 /// Type-erased Encodable wrapper used by the transport's generic request
 /// boundary. It keeps JSON encoding out of the SwiftUI feature layer.
-private struct AnyEncodable: Encodable {
+struct AnyEncodable: Encodable {
     private let encodeValue: (Encoder) throws -> Void
 
     init(_ value: any Encodable) {
@@ -1186,7 +493,7 @@ private enum UnixSocketHTTP {
 
 }
 
-private struct RuntimeErrorResponse: Decodable {
+struct RuntimeErrorResponse: Decodable {
     let error: String?
 }
 
@@ -1575,7 +882,7 @@ private final class UnixSocketWebSocket: @unchecked Sendable {
 /// Owns one WebSocket read loop and closes it when the subscription is
 /// cancelled. The generic runner is shared by session JSON events and
 /// terminal JSON messages; terminal writes use the same masked-frame path.
-private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable {
+final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable {
     private let socketPath: String
     private let path: String
     private let query: [(String, String)]?
@@ -1739,7 +1046,7 @@ private final class UnixSocketStreamRunner<Event: Sendable>: @unchecked Sendable
     }
 }
 
-private extension UnixSocketStreamRunner where Event == RuntimeSessionEvent {
+extension UnixSocketStreamRunner where Event == RuntimeSessionEvent {
     func eventSubscription() -> RuntimeEventSubscription {
         start()
         return RuntimeEventSubscription(
@@ -1750,7 +1057,7 @@ private extension UnixSocketStreamRunner where Event == RuntimeSessionEvent {
     }
 }
 
-private extension UnixSocketStreamRunner where Event == RuntimeNotificationSummaryEvent {
+extension UnixSocketStreamRunner where Event == RuntimeNotificationSummaryEvent {
     func notificationSubscription() -> RuntimeNotificationSubscription {
         start()
         return RuntimeNotificationSubscription(
@@ -1761,7 +1068,7 @@ private extension UnixSocketStreamRunner where Event == RuntimeNotificationSumma
     }
 }
 
-private extension UnixSocketStreamRunner where Event == RuntimeTerminalEvent {
+extension UnixSocketStreamRunner where Event == RuntimeTerminalEvent {
     func terminalSubscription() -> RuntimeTerminalSubscription {
         start()
         return RuntimeTerminalSubscription(
@@ -1778,12 +1085,12 @@ private extension UnixSocketStreamRunner where Event == RuntimeTerminalEvent {
     }
 }
 
-private struct TerminalInputPayload: Encodable {
+struct TerminalInputPayload: Encodable {
     let type: String
     let data: String
 }
 
-private struct TerminalResizePayload: Encodable {
+struct TerminalResizePayload: Encodable {
     let type: String
     let cols: Int
     let rows: Int

@@ -182,10 +182,15 @@ extension AppModel {
         panel.prompt = "添加图片"
         panel.message = "Pi Agent 会将支持的图片内联发送到所选对话。每张图片不得超过 4.5 MB。"
         guard panel.runModal() == .OK else { return }
+        addPromptImageURLs(panel.urls)
+    }
 
+    /// Shared ingestion for every attachment path (open panel, paste, drop).
+    /// Keeps the size/type/limit checks in one place.
+    func addPromptImageURLs(_ urls: [URL]) {
         var accepted: [RuntimePromptImageAttachment] = []
         var rejected: [String] = []
-        for url in panel.urls {
+        for url in urls {
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             do {
@@ -207,6 +212,26 @@ extension AppModel {
                 rejected.append(url.lastPathComponent)
             }
         }
+        appendAcceptedAttachments(accepted, rejectedNames: rejected)
+    }
+
+    /// Adds a pasted clipboard image as an attachment.
+    func addPromptImageData(_ data: Data, name: String, mimeType: String) {
+        guard data.count > 0, data.count <= nativeInlineImageLimit else { return }
+        let attachment = RuntimePromptImageAttachment(
+            name: name,
+            mimeType: mimeType,
+            data: data.base64EncodedString(),
+            size: data.count
+        )
+        appendAcceptedAttachments([attachment], rejectedNames: [])
+    }
+
+    private func appendAcceptedAttachments(
+        _ accepted: [RuntimePromptImageAttachment],
+        rejectedNames: [String]
+    ) {
+        var rejected = rejectedNames
         let capacity = max(0, nativePromptAttachmentLimit - promptImageAttachments.count)
         promptImageAttachments.append(contentsOf: accepted.prefix(capacity))
         if accepted.count > capacity { rejected.append("超过 \(nativePromptAttachmentLimit) 张图片") }
